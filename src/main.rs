@@ -22,7 +22,6 @@ async fn main() -> anyhow::Result<()> {
         tasks.push(());
     }
 
-    let stealer = tasks.stealer();
     let mut jobs = Vec::new();
 
     let start = std::time::Instant::now();
@@ -30,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     for _ in 0..c {
         let url = url.clone();
         let client = client.clone();
-        let stealer = stealer.clone();
+        let stealer = tasks.stealer();
         let job = tokio::spawn(async move {
             while let crossbeam::deque::Steal::Success(()) = stealer.steal() {
                 // TODO retry on error or not?
