@@ -1,4 +1,3 @@
-use anyhow::Context;
 use clap::Clap;
 use url::Url;
 
@@ -8,54 +7,45 @@ struct Opts {
     url: String,
 }
 
-lazy_static::lazy_static! {
-    static ref CLIENT: reqwest::Client = reqwest::Client::new();
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opts: Opts = Opts::parse();
     let url = Url::parse(opts.url.as_str())?;
+    let client = reqwest::Client::new();
 
     let c: usize = 50;
     let n: usize = 200;
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let tasks = crossbeam::deque::Worker::new_fifo();
 
-    let mut waits = Vec::new();
+    for _ in 0..n {
+        tasks.push(());
+    }
+
+    let stealer = tasks.stealer();
+    let mut jobs = Vec::new();
+
     let start = std::time::Instant::now();
 
     for _ in 0..c {
-        let tx = tx.clone();
         let url = url.clone();
-        // wait exit for the program
-        // exit program while running reqwest cause error
-        let (w_tx, w_rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            loop {
+        let client = client.clone();
+        let stealer = stealer.clone();
+        let job = tokio::spawn(async move {
+            while let crossbeam::deque::Steal::Success(()) = stealer.steal() {
                 let url = url.clone();
-                let resp = CLIENT.get(url).send().await?;
-                let status = resp.status();
+                let resp = client.get(url).send().await?;
+                let _status = resp.status();
                 resp.bytes().await?;
-                if tx.send(status).is_err() {
-                    let _ = w_tx.send(());
-                    return Ok::<(), anyhow::Error>(());
-                }
             }
+            Ok::<(), anyhow::Error>(())
         });
-        waits.push(w_rx);
+        jobs.push(job);
     }
 
-    for _ in 0..n {
-        rx.recv().await.context("recv")?;
-    }
-    rx.close();
+    futures::future::join_all(jobs).await;
 
     let duration = std::time::Instant::now() - start;
-
-    for w in waits {
-        w.await?;
-    }
 
     dbg!(duration);
     dbg!(n as f64 / duration.as_secs_f64());
