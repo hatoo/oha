@@ -8,6 +8,10 @@ struct Opts {
     url: String,
 }
 
+lazy_static::lazy_static! {
+    static ref CLIENT: reqwest::Client = reqwest::Client::new();
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opts: Opts = Opts::parse();
@@ -30,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move {
             loop {
                 let url = url.clone();
-                let resp = reqwest::get(url).await?;
+                let resp = CLIENT.get(url).send().await?;
                 let status = resp.status();
                 resp.bytes().await?;
                 if tx.send(status).is_err() {
