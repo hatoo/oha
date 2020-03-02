@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
         let stealer = stealer.clone();
         let job = tokio::spawn(async move {
             while let crossbeam::deque::Steal::Success(()) = stealer.steal() {
+                // TODO retry on error or not?
                 let url = url.clone();
                 let resp = client.get(url).send().await?;
                 let _status = resp.status();
