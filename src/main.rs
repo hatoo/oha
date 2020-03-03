@@ -60,11 +60,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
     } else {
-        let mut tasks = Vec::new();
-        for _ in 0..opts.n_requests {
-            tasks.push(request(client.clone(), url.clone()));
-        }
-        work::work(tasks, opts.n_workers).await
+        work::work(
+            (0..opts.n_requests).map(|_| request(client.clone(), url.clone())),
+            opts.n_workers,
+        )
+        .await
     };
 
     let res: Vec<_> = res.into_iter().map(|v| v.into_iter()).flatten().collect();
