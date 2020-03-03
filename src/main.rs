@@ -19,31 +19,19 @@ async fn main() -> anyhow::Result<()> {
     let tasks = crossbeam::deque::Worker::new_fifo();
 
     for _ in 0..n {
-        tasks.push(());
+        let url = url.clone();
+        let client = client.clone();
+        tasks.push(async move {
+            let resp = client.get(url).send().await?;
+            let status = resp.status();
+            resp.bytes().await?;
+            Ok::<_, anyhow::Error>(status)
+        });
     }
-
-    let mut jobs = Vec::new();
 
     let start = std::time::Instant::now();
 
-    for _ in 0..c {
-        let url = url.clone();
-        let client = client.clone();
-        let stealer = tasks.stealer();
-        let job = tokio::spawn(async move {
-            while let crossbeam::deque::Steal::Success(()) = stealer.steal() {
-                // TODO retry on error or not?
-                let url = url.clone();
-                let resp = client.get(url).send().await?;
-                let _status = resp.status();
-                resp.bytes().await?;
-            }
-            Ok::<(), anyhow::Error>(())
-        });
-        jobs.push(job);
-    }
-
-    futures::future::join_all(jobs).await;
+    work(tasks.stealer(), c).await;
 
     let duration = std::time::Instant::now() - start;
 
@@ -51,4 +39,22 @@ async fn main() -> anyhow::Result<()> {
     dbg!(n as f64 / duration.as_secs_f64());
 
     Ok(())
+}
+
+async fn work<T>(
+    stealer: crossbeam::deque::Stealer<impl std::future::Future<Output = T>>,
+    n_workers: usize,
+) -> Vec<Vec<T>> {
+    futures::future::join_all(
+        (0..n_workers)
+            .map(|_| async {
+                let mut ret = Vec::new();
+                while let crossbeam::deque::Steal::Success(w) = stealer.steal() {
+                    ret.push(w.await);
+                }
+                ret
+            })
+            .collect::<Vec<_>>(),
+    )
+    .await
 }
