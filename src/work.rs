@@ -28,9 +28,13 @@ pub async fn work_with_qps<T, F: std::future::Future<Output = T>>(
     let (tx, rx) = crossbeam::channel::unbounded();
 
     tokio::spawn(async move {
-        for _ in 0..n_tasks {
+        let start = std::time::Instant::now();
+        for i in 0..n_tasks {
             tx.send(()).unwrap();
-            tokio::time::delay_for(std::time::Duration::from_secs(1) / qps as u32).await;
+            tokio::time::delay_until(
+                (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+            )
+            .await;
         }
         // tx gone
     });
