@@ -61,7 +61,8 @@ async fn main() -> anyhow::Result<()> {
         .await
     } else {
         work::work(
-            (0..opts.n_requests).map(|_| request(client.clone(), url.clone())),
+            || request(client.clone(), url.clone()),
+            opts.n_requests,
             opts.n_workers,
         )
         .await

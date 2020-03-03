@@ -1,17 +1,18 @@
-pub async fn work<T, I: IntoIterator<Item = impl std::future::Future<Output = T>>>(
-    tasks: I,
+pub async fn work<T, F: std::future::Future<Output = T>>(
+    task_generator: impl Fn() -> F,
+    n_tasks: usize,
     n_workers: usize,
 ) -> Vec<Vec<T>> {
     let injector = crossbeam::deque::Injector::new();
 
-    for t in tasks {
-        injector.push(t);
+    for _ in 0..n_tasks {
+        injector.push(());
     }
 
     futures::future::join_all((0..n_workers).map(|_| async {
         let mut ret = Vec::new();
-        while let crossbeam::deque::Steal::Success(w) = injector.steal() {
-            ret.push(w.await);
+        while let crossbeam::deque::Steal::Success(()) = injector.steal() {
+            ret.push(task_generator().await);
         }
         ret
     }))
