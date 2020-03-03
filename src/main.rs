@@ -129,6 +129,14 @@ async fn main() -> anyhow::Result<()> {
             / res.iter().filter(|r| r.is_ok()).count()
     );
     println!();
+    println!("Latency distribution:");
+    print_distribution(
+        &res.iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.duration.as_secs_f64())
+            .collect::<Vec<_>>(),
+    );
+    println!();
 
     let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
 
@@ -181,4 +189,18 @@ async fn work_duration<T, F: std::future::Future<Output = T>>(
         ret
     }))
     .await
+}
+
+fn print_distribution(values: &[f64]) {
+    let mut buf = values.to_vec();
+    float_ord::sort(&mut buf);
+
+    for &p in &[10, 25, 50, 75, 90, 95, 99] {
+        let i = (f64::from(p) / 100.0 * buf.len() as f64) as usize;
+        println!(
+            "  {}% in {:.4} secs",
+            p,
+            buf.get(i).unwrap_or(&std::f64::NAN)
+        );
+    }
 }

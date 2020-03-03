@@ -16,4 +16,4 @@ crossbeam = "0.7"
 futures = "0.3"
 parse_duration = "2"
 average = "0.10.4"
-
+float-ord = "0.2.0"
