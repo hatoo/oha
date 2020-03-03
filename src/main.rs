@@ -29,10 +29,9 @@ async fn main() -> anyhow::Result<()> {
 
     let start = std::time::Instant::now();
 
-    let res = work(tasks, c).await;
-    dbg!(res.into_iter().map(|v| v.len()).collect::<Vec<_>>());
-
+    let res = work_tasks(tasks, c).await;
     let duration = std::time::Instant::now() - start;
+    dbg!(res.into_iter().map(|v| v.len()).collect::<Vec<_>>());
 
     dbg!(duration);
     dbg!(n as f64 / duration.as_secs_f64());
@@ -40,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn work<T, I: IntoIterator<Item = impl std::future::Future<Output = T>>>(
+async fn work_tasks<T, I: IntoIterator<Item = impl std::future::Future<Output = T>>>(
     tasks: I,
     n_workers: usize,
 ) -> Vec<Vec<T>> {
@@ -50,16 +49,12 @@ async fn work<T, I: IntoIterator<Item = impl std::future::Future<Output = T>>>(
         injector.push(t);
     }
 
-    futures::future::join_all(
-        (0..n_workers)
-            .map(|_| async {
-                let mut ret = Vec::new();
-                while let crossbeam::deque::Steal::Success(w) = injector.steal() {
-                    ret.push(w.await);
-                }
-                ret
-            })
-            .collect::<Vec<_>>(),
-    )
+    futures::future::join_all((0..n_workers).map(|_| async {
+        let mut ret = Vec::new();
+        while let crossbeam::deque::Steal::Success(w) = injector.steal() {
+            ret.push(w.await);
+        }
+        ret
+    }))
     .await
 }
