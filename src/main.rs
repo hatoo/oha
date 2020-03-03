@@ -1,8 +1,17 @@
 use clap::Clap;
 use url::Url;
 
+struct ParseDuration(std::time::Duration);
+
+impl std::str::FromStr for ParseDuration {
+    type Err = parse_duration::parse::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_duration::parse(s).map(ParseDuration)
+    }
+}
+
 #[derive(Clap)]
-#[clap(version = "0.0.0", author = "hatoo")]
+#[clap(version = clap::crate_version!(), author = clap::crate_authors!())]
 struct Opts {
     #[clap(help = "URL to request")]
     url: String,
@@ -10,33 +19,48 @@ struct Opts {
     n_requests: usize,
     #[clap(help = "Number of workers", short = "c", default_value = "50")]
     n_workers: usize,
+    #[clap(help = "Duration", short = "z")]
+    duration: Option<ParseDuration>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let opts: Opts = Opts::parse();
+    let mut opts: Opts = Opts::parse();
     let url = Url::parse(opts.url.as_str())?;
     let client = reqwest::Client::new();
 
-    let mut tasks = Vec::new();
-
-    for _ in 0..opts.n_requests {
-        tasks.push(async {
-            let resp = client.get(url.clone()).send().await?;
-            let status = resp.status();
-            resp.bytes().await?;
-            Ok::<_, anyhow::Error>(status)
-        });
-    }
-
     let start = std::time::Instant::now();
+    let res = if let Some(ParseDuration(duration)) = opts.duration.take() {
+        work_duration(
+            || async {
+                let resp = client.get(url.clone()).send().await?;
+                let status = resp.status();
+                resp.bytes().await?;
+                Ok::<_, anyhow::Error>(status)
+            },
+            duration,
+            opts.n_workers,
+        )
+        .await
+    } else {
+        let mut tasks = Vec::new();
+        for _ in 0..opts.n_requests {
+            tasks.push(async {
+                let resp = client.get(url.clone()).send().await?;
+                let status = resp.status();
+                resp.bytes().await?;
+                Ok::<_, anyhow::Error>(status)
+            });
+        }
+        work(tasks, opts.n_workers).await
+    };
 
-    let res = work(tasks, opts.n_workers).await;
     let duration = std::time::Instant::now() - start;
-    dbg!(res.into_iter().map(|v| v.len()).collect::<Vec<_>>());
+
+    let total = res.iter().map(|v| v.len()).sum::<usize>();
 
     dbg!(duration);
-    dbg!(opts.n_requests as f64 / duration.as_secs_f64());
+    dbg!(total as f64 / duration.as_secs_f64());
 
     Ok(())
 }
