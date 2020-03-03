@@ -23,6 +23,12 @@ struct Opts {
     duration: Option<ParseDuration>,
 }
 
+struct RequestResult {
+    duration: std::time::Duration,
+    status: reqwest::StatusCode,
+    len_bytes: usize,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
@@ -33,10 +39,16 @@ async fn main() -> anyhow::Result<()> {
     let res = if let Some(ParseDuration(duration)) = opts.duration.take() {
         work_duration(
             || async {
+                let s = std::time::Instant::now();
                 let resp = client.get(url.clone()).send().await?;
                 let status = resp.status();
-                resp.bytes().await?;
-                Ok::<_, anyhow::Error>(status)
+                let len_bytes = resp.bytes().await?.len();
+                let duration = std::time::Instant::now() - s;
+                Ok::<_, anyhow::Error>(RequestResult {
+                    duration,
+                    status,
+                    len_bytes,
+                })
             },
             duration,
             opts.n_workers,
@@ -46,21 +58,75 @@ async fn main() -> anyhow::Result<()> {
         let mut tasks = Vec::new();
         for _ in 0..opts.n_requests {
             tasks.push(async {
+                let s = std::time::Instant::now();
                 let resp = client.get(url.clone()).send().await?;
                 let status = resp.status();
-                resp.bytes().await?;
-                Ok::<_, anyhow::Error>(status)
+                let len_bytes = resp.bytes().await?.len();
+                let duration = std::time::Instant::now() - s;
+                Ok::<_, anyhow::Error>(RequestResult {
+                    duration,
+                    status,
+                    len_bytes,
+                })
             });
         }
         work(tasks, opts.n_workers).await
     };
 
+    let res: Vec<_> = res.into_iter().map(|v| v.into_iter()).flatten().collect();
+
     let duration = std::time::Instant::now() - start;
 
-    let total = res.iter().map(|v| v.len()).sum::<usize>();
-
-    dbg!(duration);
-    dbg!(total as f64 / duration.as_secs_f64());
+    println!("Summary:");
+    println!(
+        "  Success rate:\t{:.4}",
+        res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64
+    );
+    println!("  Total:\t{:.4} secs", duration.as_secs_f64());
+    println!(
+        "  Slowest:\t{:.4} secs",
+        res.iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.duration.as_secs_f64())
+            .collect::<average::Max>()
+            .max()
+    );
+    println!(
+        "  Fastest:\t{:.4} secs",
+        res.iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.duration.as_secs_f64())
+            .collect::<average::Min>()
+            .min()
+    );
+    println!(
+        "  Average:\t{:.4} secs",
+        res.iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.duration.as_secs_f64())
+            .collect::<average::Mean>()
+            .mean()
+    );
+    println!(
+        "  Requests/sec:\t{:.4} secs",
+        res.len() as f64 / duration.as_secs_f64()
+    );
+    println!();
+    println!(
+        "  Total data:\t{} bytes",
+        res.iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.len_bytes)
+            .sum::<usize>()
+    );
+    println!(
+        "  Size/request:\t{:.4} bytes",
+        res.iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(|r| r.len_bytes)
+            .sum::<usize>()
+            / res.iter().filter(|r| r.is_ok()).count()
+    );
 
     Ok(())
 }
