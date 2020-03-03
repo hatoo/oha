@@ -32,6 +32,19 @@ pub struct RequestResult {
     len_bytes: usize,
 }
 
+async fn request(client: reqwest::Client, url: Url) -> anyhow::Result<RequestResult> {
+    let s = std::time::Instant::now();
+    let resp = client.get(url.clone()).send().await?;
+    let status = resp.status();
+    let len_bytes = resp.bytes().await?.len();
+    let duration = std::time::Instant::now() - s;
+    Ok::<_, anyhow::Error>(RequestResult {
+        duration,
+        status,
+        len_bytes,
+    })
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
@@ -41,18 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let start = std::time::Instant::now();
     let res = if let Some(ParseDuration(duration)) = opts.duration.take() {
         work::work_duration(
-            || async {
-                let s = std::time::Instant::now();
-                let resp = client.get(url.clone()).send().await?;
-                let status = resp.status();
-                let len_bytes = resp.bytes().await?.len();
-                let duration = std::time::Instant::now() - s;
-                Ok::<_, anyhow::Error>(RequestResult {
-                    duration,
-                    status,
-                    len_bytes,
-                })
-            },
+            || request(client.clone(), url.clone()),
             duration,
             opts.n_workers,
         )
@@ -60,18 +62,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         let mut tasks = Vec::new();
         for _ in 0..opts.n_requests {
-            tasks.push(async {
-                let s = std::time::Instant::now();
-                let resp = client.get(url.clone()).send().await?;
-                let status = resp.status();
-                let len_bytes = resp.bytes().await?.len();
-                let duration = std::time::Instant::now() - s;
-                Ok::<_, anyhow::Error>(RequestResult {
-                    duration,
-                    status,
-                    len_bytes,
-                })
-            });
+            tasks.push(request(client.clone(), url.clone()));
         }
         work::work(tasks, opts.n_workers).await
     };
