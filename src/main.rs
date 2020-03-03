@@ -55,12 +55,22 @@ async fn main() -> anyhow::Result<()> {
 
     let start = std::time::Instant::now();
     let res = if let Some(ParseDuration(duration)) = opts.duration.take() {
-        work::work_duration(
-            || request(client.clone(), url.clone()),
-            duration,
-            opts.n_workers,
-        )
-        .await
+        if let Some(qps) = opts.query_per_second.take() {
+            work::work_duration_with_qps(
+                || request(client.clone(), url.clone()),
+                qps,
+                duration,
+                opts.n_workers,
+            )
+            .await
+        } else {
+            work::work_duration(
+                || request(client.clone(), url.clone()),
+                duration,
+                opts.n_workers,
+            )
+            .await
+        }
     } else {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_with_qps(
