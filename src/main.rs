@@ -24,6 +24,8 @@ struct Opts {
     n_workers: usize,
     #[clap(help = "Duration", short = "z")]
     duration: Option<ParseDuration>,
+    #[clap(help = "query per second", short = "q")]
+    query_per_second: Option<usize>,
 }
 
 pub struct RequestResult {
@@ -60,12 +62,22 @@ async fn main() -> anyhow::Result<()> {
         )
         .await
     } else {
-        work::work(
-            || request(client.clone(), url.clone()),
-            opts.n_requests,
-            opts.n_workers,
-        )
-        .await
+        if let Some(qps) = opts.query_per_second.take() {
+            work::work_with_qps(
+                || request(client.clone(), url.clone()),
+                qps,
+                opts.n_requests,
+                opts.n_workers,
+            )
+            .await
+        } else {
+            work::work(
+                || request(client.clone(), url.clone()),
+                opts.n_requests,
+                opts.n_workers,
+            )
+            .await
+        }
     };
 
     let res: Vec<_> = res.into_iter().map(|v| v.into_iter()).flatten().collect();
