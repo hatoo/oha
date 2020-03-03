@@ -19,10 +19,8 @@ async fn main() -> anyhow::Result<()> {
     let tasks = crossbeam::deque::Worker::new_fifo();
 
     for _ in 0..n {
-        let url = url.clone();
-        let client = client.clone();
-        tasks.push(async move {
-            let resp = client.get(url).send().await?;
+        tasks.push(async {
+            let resp = client.get(url.clone()).send().await?;
             let status = resp.status();
             resp.bytes().await?;
             Ok::<_, anyhow::Error>(status)
