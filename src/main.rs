@@ -1,4 +1,5 @@
 use clap::Clap;
+use std::collections::HashMap;
 use url::Url;
 
 struct ParseDuration(std::time::Duration);
@@ -127,6 +128,21 @@ async fn main() -> anyhow::Result<()> {
             .sum::<usize>()
             / res.iter().filter(|r| r.is_ok()).count()
     );
+    println!();
+
+    let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
+
+    for s in res.iter().filter_map(|r| r.as_ref().ok()).map(|r| r.status) {
+        *status_dist.entry(s).or_default() += 1;
+    }
+
+    let mut status_v: Vec<(reqwest::StatusCode, usize)> = status_dist.into_iter().collect();
+    status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
+
+    println!("Status code distribution:");
+    for (status, count) in status_v {
+        println!("  [{}] {} responses", status.as_str(), count);
+    }
 
     Ok(())
 }
