@@ -80,8 +80,20 @@ async fn main() -> anyhow::Result<()> {
     let data_collector = if opts.no_tui {
         tokio::spawn(async move {
             let mut all = Vec::new();
-            while let Some(report) = rx.recv().await {
-                all.push(report);
+            loop {
+                tokio::select! {
+                    report = rx.recv() => {
+                        if let Some(report) = report {
+                            all.push(report);
+                        } else {
+                            break;
+                        }
+                    }
+                    Ok(()) = tokio::signal::ctrl_c() => {
+                        printer::print(&all, start.elapsed());
+                        std::process::exit(0);
+                    }
+                }
             }
             all
         })
@@ -217,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
                     match event {
                         Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) => {
                             std::mem::drop(terminal);
-                            printer::print(&all, std::time::Instant::now() - start);
+                            printer::print(&all, start.elapsed);
                             std::process::exit(0);
                         }
 
