@@ -211,6 +211,7 @@ async fn main() -> anyhow::Result<()> {
                     match event {
                         Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) => {
                             std::mem::drop(terminal);
+                            printer::print(&all, std::time::Instant::now() - start);
                             std::process::exit(0);
                         }
 
