@@ -60,6 +60,17 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
         )
         .get_appropriate_unit(true)
     );
+    println!(
+        "  Size/sec:\t{}",
+        Byte::from_bytes(
+            (res.iter()
+                .filter_map(|r| r.as_ref().ok())
+                .map(|r| r.len_bytes)
+                .sum::<usize>() as f64
+                / total_duration.as_secs_f64()) as u128
+        )
+        .get_appropriate_unit(true)
+    );
     println!();
     println!("Latency distribution:");
     print_distribution(
