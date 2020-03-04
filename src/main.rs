@@ -16,15 +16,15 @@ impl std::str::FromStr for ParseDuration {
 #[derive(Clap)]
 #[clap(version = clap::crate_version!(), author = clap::crate_authors!())]
 struct Opts {
-    #[clap(help = "URL to request")]
+    #[clap(help = "Target URL.")]
     url: String,
-    #[clap(help = "Number of requests", short = "n", default_value = "200")]
+    #[clap(help = "Number of requests.", short = "n", default_value = "200")]
     n_requests: usize,
-    #[clap(help = "Number of workers", short = "c", default_value = "50")]
+    #[clap(help = "Number of workers.", short = "c", default_value = "50")]
     n_workers: usize,
-    #[clap(help = "Duration", short = "z")]
+    #[clap(help = "Duration.\nExamples: -z 10s -z 3m.", short = "z")]
     duration: Option<ParseDuration>,
-    #[clap(help = "query per second", short = "q")]
+    #[clap(help = "Query per second limit.", short = "q")]
     query_per_second: Option<usize>,
 }
 
