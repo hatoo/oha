@@ -154,10 +154,15 @@ async fn main() -> anyhow::Result<()> {
                 let bin = resolution / count as f64;
 
                 let mut bar_num_req = vec![0u64; count];
+                let short_bin = start.elapsed().as_secs_f64() % bin;
                 for r in all.iter().rev() {
                     if let Ok(r) = r.as_ref() {
-                        let past = now - r.end;
-                        let i = (past.as_secs_f64() / bin) as usize;
+                        let past = (now - r.end).as_secs_f64();
+                        let i = if past <= short_bin {
+                            0
+                        } else {
+                            1 + ((past - short_bin) / bin) as usize
+                        };
                         if i >= bar_num_req.len() {
                             break;
                         }
@@ -220,7 +225,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 // 60fps
-                tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
+                tokio::time::delay_for(std::time::Duration::from_secs(1) / 30).await;
             }
             all
         })
