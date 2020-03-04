@@ -138,15 +138,15 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
+                let now = std::time::Instant::now();
+
                 let progress = if let Some(d) = duration {
-                    ((std::time::Instant::now() - start).as_secs_f64() / d.as_secs_f64())
+                    ((now - start).as_secs_f64() / d.as_secs_f64())
                         .max(0.0)
                         .min(1.0)
                 } else {
                     (all.len() as f64 / n_requests as f64).max(0.0).min(1.0)
                 };
-
-                let now = std::time::Instant::now();
 
                 let resolution = 12.0_f64.min(duration.map(|d| d.as_secs_f64()).unwrap_or(12.0));
                 let count = 12;
