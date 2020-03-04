@@ -2,7 +2,7 @@ use super::RequestResult;
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub fn print<E>(res: Vec<Result<RequestResult, E>>, total_duration: Duration) {
+pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     println!("Summary:");
     println!(
         "  Success rate:\t{:.4}",

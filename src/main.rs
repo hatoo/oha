@@ -93,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
     let res: Vec<_> = res.into_iter().map(|v| v.into_iter()).flatten().collect();
     let duration = std::time::Instant::now() - start;
 
-    printer::print(res, duration);
+    printer::print(&res, duration);
 
     Ok(())
 }
