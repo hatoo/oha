@@ -34,17 +34,25 @@ pub struct RequestResult {
     len_bytes: usize,
 }
 
-async fn request(client: reqwest::Client, url: Url) -> anyhow::Result<RequestResult> {
-    let s = std::time::Instant::now();
-    let resp = client.get(url.clone()).send().await?;
-    let status = resp.status();
-    let len_bytes = resp.bytes().await?.len();
-    let duration = std::time::Instant::now() - s;
-    Ok::<_, anyhow::Error>(RequestResult {
-        duration,
-        status,
-        len_bytes,
-    })
+async fn request(
+    client: reqwest::Client,
+    url: Url,
+    reporter: tokio::sync::mpsc::UnboundedSender<anyhow::Result<RequestResult>>,
+) -> Result<(), tokio::sync::mpsc::error::SendError<anyhow::Result<RequestResult>>> {
+    let result = async move {
+        let s = std::time::Instant::now();
+        let resp = client.get(url.clone()).send().await?;
+        let status = resp.status();
+        let len_bytes = resp.bytes().await?.len();
+        let duration = std::time::Instant::now() - s;
+        Ok::<_, anyhow::Error>(RequestResult {
+            duration,
+            status,
+            len_bytes,
+        })
+    }
+    .await;
+    reporter.send(result)
 }
 
 #[tokio::main]
@@ -53,11 +61,22 @@ async fn main() -> anyhow::Result<()> {
     let url = Url::parse(opts.url.as_str())?;
     let client = reqwest::Client::new();
 
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let realtime_tui = tokio::spawn(async move {
+        let mut all = Vec::new();
+        while let Some(report) = rx.recv().await {
+            // TODO: Some tui here
+            all.push(report);
+        }
+        all
+    });
+
     let start = std::time::Instant::now();
-    let res = if let Some(ParseDuration(duration)) = opts.duration.take() {
+    if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_duration_with_qps(
-                || request(client.clone(), url.clone()),
+                || request(client.clone(), url.clone(), tx.clone()),
                 qps,
                 duration,
                 opts.n_workers,
@@ -65,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
             .await
         } else {
             work::work_duration(
-                || request(client.clone(), url.clone()),
+                || request(client.clone(), url.clone(), tx.clone()),
                 duration,
                 opts.n_workers,
             )
@@ -74,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_with_qps(
-                || request(client.clone(), url.clone()),
+                || request(client.clone(), url.clone(), tx.clone()),
                 qps,
                 opts.n_requests,
                 opts.n_workers,
@@ -82,15 +101,16 @@ async fn main() -> anyhow::Result<()> {
             .await
         } else {
             work::work(
-                || request(client.clone(), url.clone()),
+                || request(client.clone(), url.clone(), tx.clone()),
                 opts.n_requests,
                 opts.n_workers,
             )
             .await
         }
     };
+    std::mem::drop(tx);
 
-    let res: Vec<_> = res.into_iter().map(|v| v.into_iter()).flatten().collect();
+    let res: Vec<_> = realtime_tui.await?;
     let duration = std::time::Instant::now() - start;
 
     printer::print(&res, duration);
