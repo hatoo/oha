@@ -179,7 +179,7 @@ async fn main() -> anyhow::Result<()> {
                     .draw(|mut f| {
                         let chunks = Layout::default()
                             .direction(Direction::Vertical)
-                            .constraints([Constraint::Min(3), Constraint::Percentage(90)].as_ref())
+                            .constraints([Constraint::Max(3), Constraint::Length(16)].as_ref())
                             .split(f.size());
 
                         let mut gauge = Gauge::default()
