@@ -75,6 +75,8 @@ async fn main() -> anyhow::Result<()> {
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
+    let start = std::time::Instant::now();
+
     let data_collector = if opts.no_tui {
         tokio::spawn(async move {
             let mut all = Vec::new();
@@ -116,7 +118,6 @@ async fn main() -> anyhow::Result<()> {
             }
         });
 
-        let start = std::time::Instant::now();
         let duration = opts.duration.as_ref().map(|d| d.0.clone());
         let n_requests = opts.n_requests;
 
@@ -232,7 +233,6 @@ async fn main() -> anyhow::Result<()> {
         .boxed()
     };
 
-    let start = std::time::Instant::now();
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_duration_with_qps(
