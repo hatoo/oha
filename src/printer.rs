@@ -1,4 +1,5 @@
 use super::RequestResult;
+use byte_unit::Byte;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -39,19 +40,25 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     );
     println!();
     println!(
-        "  Total data:\t{} bytes",
-        res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes)
-            .sum::<usize>()
+        "  Total data:\t{}",
+        Byte::from_bytes(
+            res.iter()
+                .filter_map(|r| r.as_ref().ok())
+                .map(|r| r.len_bytes as u128)
+                .sum::<u128>()
+        )
+        .get_appropriate_unit(true)
     );
     println!(
-        "  Size/request:\t{:.4} bytes",
-        res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes)
-            .sum::<usize>()
-            / res.iter().filter(|r| r.is_ok()).count()
+        "  Size/request:\t{}",
+        Byte::from_bytes(
+            (res.iter()
+                .filter_map(|r| r.as_ref().ok())
+                .map(|r| r.len_bytes)
+                .sum::<usize>()
+                / res.iter().filter(|r| r.is_ok()).count()) as u128
+        )
+        .get_appropriate_unit(true)
     );
     println!();
     println!("Latency distribution:");
