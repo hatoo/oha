@@ -1,4 +1,5 @@
 use clap::Clap;
+use futures::prelude::*;
 use url::Url;
 
 mod printer;
@@ -26,6 +27,8 @@ struct Opts {
     duration: Option<ParseDuration>,
     #[clap(help = "Query per second limit.", short = "q")]
     query_per_second: Option<usize>,
+    #[clap(help = "No realtime tui", long = "no-tui")]
+    no_tui: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -64,30 +67,42 @@ async fn main() -> anyhow::Result<()> {
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let realtime_tui = tokio::spawn(async move {
-        use tokio::sync::mpsc::error::TryRecvError;
-        let mut all = Vec::new();
-        'outer: loop {
-            loop {
-                match rx.try_recv() {
-                    Ok(report) => {
-                        all.push(report);
-                    }
-                    Err(TryRecvError::Empty) => {
-                        break;
-                    }
-                    Err(TryRecvError::Closed) => {
-                        break 'outer;
+    let data_collector = if opts.no_tui {
+        tokio::spawn(async move {
+            let mut all = Vec::new();
+            while let Some(report) = rx.recv().await {
+                all.push(report);
+            }
+            all
+        })
+        .boxed()
+    } else {
+        tokio::spawn(async move {
+            use tokio::sync::mpsc::error::TryRecvError;
+            let mut all = Vec::new();
+            'outer: loop {
+                loop {
+                    match rx.try_recv() {
+                        Ok(report) => {
+                            all.push(report);
+                        }
+                        Err(TryRecvError::Empty) => {
+                            break;
+                        }
+                        Err(TryRecvError::Closed) => {
+                            break 'outer;
+                        }
                     }
                 }
-            }
-            // Some tui here
+                // Some tui here
 
-            // 60fps
-            tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
-        }
-        all
-    });
+                // 60fps
+                tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
+            }
+            all
+        })
+        .boxed()
+    };
 
     let start = std::time::Instant::now();
     if let Some(ParseDuration(duration)) = opts.duration.take() {
@@ -127,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
     };
     std::mem::drop(tx);
 
-    let res: Vec<_> = realtime_tui.await?;
+    let res: Vec<_> = data_collector.await?;
     let duration = std::time::Instant::now() - start;
 
     printer::print(&res, duration);
