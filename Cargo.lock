@@ -556,23 +556,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "average",
- "byte-unit",
- "clap",
- "crossbeam",
- "float-ord",
- "futures",
- "parse_duration",
- "reqwest",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -824,6 +807,23 @@ checksum = "46203554f085ff89c235cd12f7075f3233af9b11ed7c9e16dfe2560d03313ce6"
 dependencies = [
  "hermit-abi",
  "libc",
+]
+
+[[package]]
+name = "oha"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "average",
+ "byte-unit",
+ "clap",
+ "crossbeam",
+ "float-ord",
+ "futures",
+ "parse_duration",
+ "reqwest",
+ "tokio",
+ "url",
 ]
 
 [[package]]
