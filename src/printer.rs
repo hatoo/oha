@@ -14,7 +14,7 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
         "  Slowest:\t{:.4} secs",
         res.iter()
             .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration.as_secs_f64())
+            .map(|r| r.duration().as_secs_f64())
             .collect::<average::Max>()
             .max()
     );
@@ -22,7 +22,7 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
         "  Fastest:\t{:.4} secs",
         res.iter()
             .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration.as_secs_f64())
+            .map(|r| r.duration().as_secs_f64())
             .collect::<average::Min>()
             .min()
     );
@@ -30,7 +30,7 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
         "  Average:\t{:.4} secs",
         res.iter()
             .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration.as_secs_f64())
+            .map(|r| r.duration().as_secs_f64())
             .collect::<average::Mean>()
             .mean()
     );
@@ -76,7 +76,7 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     print_distribution(
         &res.iter()
             .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration.as_secs_f64())
+            .map(|r| r.duration().as_secs_f64())
             .collect::<Vec<_>>(),
     );
     println!();

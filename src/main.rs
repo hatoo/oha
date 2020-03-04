@@ -33,9 +33,16 @@ struct Opts {
 
 #[derive(Debug, Clone)]
 pub struct RequestResult {
-    duration: std::time::Duration,
+    start: std::time::Instant,
+    end: std::time::Instant,
     status: reqwest::StatusCode,
     len_bytes: usize,
+}
+
+impl RequestResult {
+    pub fn duration(&self) -> std::time::Duration {
+        self.end - self.start
+    }
 }
 
 async fn request(
@@ -44,13 +51,14 @@ async fn request(
     reporter: tokio::sync::mpsc::UnboundedSender<anyhow::Result<RequestResult>>,
 ) -> Result<(), tokio::sync::mpsc::error::SendError<anyhow::Result<RequestResult>>> {
     let result = async move {
-        let s = std::time::Instant::now();
+        let start = std::time::Instant::now();
         let resp = client.get(url.clone()).send().await?;
         let status = resp.status();
         let len_bytes = resp.bytes().await?.len();
-        let duration = std::time::Instant::now() - s;
+        let end = std::time::Instant::now();
         Ok::<_, anyhow::Error>(RequestResult {
-            duration,
+            start,
+            end,
             status,
             len_bytes,
         })
@@ -77,9 +85,44 @@ async fn main() -> anyhow::Result<()> {
         })
         .boxed()
     } else {
+        use std::io;
+
+        use termion::event::{Event, Key};
+        use termion::input::MouseTerminal;
+        use termion::input::TermRead;
+        use termion::raw::IntoRawMode;
+        use termion::screen::AlternateScreen;
+        use tui::backend::TermionBackend;
+        use tui::layout::{Constraint, Direction, Layout};
+        use tui::style::{Color, Modifier, Style};
+        use tui::widgets::{BarChart, Block, Borders, Gauge};
+        use tui::Terminal;
+
+        let stdout = io::stdout().into_raw_mode()?;
+        let stdout = MouseTerminal::from(stdout);
+        let stdout = AlternateScreen::from(stdout);
+        let backend = TermionBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.hide_cursor()?;
+
+        let stdin = io::stdin();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        std::thread::spawn(move || {
+            for c in stdin.events() {
+                if let Ok(evt) = c {
+                    event_tx.send(evt).unwrap();
+                }
+            }
+        });
+
+        let start = std::time::Instant::now();
+        let duration = opts.duration.as_ref().map(|d| d.0.clone());
+        let n_requests = opts.n_requests;
+
         tokio::spawn(async move {
             use tokio::sync::mpsc::error::TryRecvError;
-            let mut all = Vec::new();
+            let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
             'outer: loop {
                 loop {
                     match rx.try_recv() {
@@ -94,7 +137,86 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
+
+                let progress = if let Some(d) = duration {
+                    ((std::time::Instant::now() - start).as_secs_f64() / d.as_secs_f64())
+                        .max(0.0)
+                        .min(1.0)
+                } else {
+                    (all.len() as f64 / n_requests as f64).max(0.0).min(1.0)
+                };
+
+                let now = std::time::Instant::now();
+
+                let resolution = 12.0_f64.min(duration.map(|d| d.as_secs_f64()).unwrap_or(12.0));
+                let count = 12;
+
+                let bin = resolution / count as f64;
+
+                let mut bar_num_req = vec![0u64; count];
+                for r in all.iter().rev() {
+                    if let Ok(r) = r.as_ref() {
+                        let past = now - r.end;
+                        let i = (past.as_secs_f64() / bin) as usize;
+                        if i >= bar_num_req.len() {
+                            break;
+                        }
+                        bar_num_req[i] += 1;
+                    }
+                }
+
+                let bar_num_req: Vec<(String, u64)> = bar_num_req
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, n)| (format!("{:.1}s", bin * i as f64), n))
+                    .collect();
+
+                let bar_num_req_str: Vec<(&str, u64)> =
+                    bar_num_req.iter().map(|(a, b)| (a.as_str(), *b)).collect();
+
                 // Some tui here
+                terminal
+                    .draw(|mut f| {
+                        let chunks = Layout::default()
+                            .direction(Direction::Vertical)
+                            .constraints([Constraint::Min(3), Constraint::Percentage(90)].as_ref())
+                            .split(f.size());
+
+                        let mut gauge = Gauge::default()
+                            .block(Block::default().title("Progress").borders(Borders::ALL))
+                            .style(Style::default().fg(Color::White))
+                            .ratio(progress);
+                        f.render(&mut gauge, chunks[0]);
+
+                        let mut barchart = BarChart::default()
+                            .block(
+                                Block::default()
+                                    .title("Requests - number of requests / past seconds")
+                                    .borders(Borders::ALL),
+                            )
+                            .data(bar_num_req_str.as_slice())
+                            .bar_width(
+                                bar_num_req
+                                    .iter()
+                                    .map(|(s, _)| s.chars().count())
+                                    .max()
+                                    .map(|w| w + 2)
+                                    .unwrap_or(1) as u16,
+                            );
+                        f.render(&mut barchart, chunks[1]);
+                    })
+                    .unwrap();
+
+                while let Ok(event) = event_rx.try_recv() {
+                    match event {
+                        Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) => {
+                            std::mem::drop(terminal);
+                            std::process::exit(0);
+                        }
+
+                        _ => (),
+                    }
+                }
 
                 // 60fps
                 tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
