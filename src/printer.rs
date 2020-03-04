@@ -35,7 +35,7 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
             .mean()
     );
     println!(
-        "  Requests/sec:\t{:.4} secs",
+        "  Requests/sec:\t{:.4}",
         res.len() as f64 / total_duration.as_secs_f64()
     );
     println!();
