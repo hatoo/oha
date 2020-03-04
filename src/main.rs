@@ -167,7 +167,7 @@ async fn main() -> anyhow::Result<()> {
                 let bin = resolution / count as f64;
 
                 let mut bar_num_req = vec![0u64; count];
-                let short_bin = start.elapsed().as_secs_f64() % bin;
+                let short_bin = (now - start).as_secs_f64() % bin;
                 for r in all.iter().rev() {
                     if let Ok(r) = r.as_ref() {
                         let past = (now - r.end).as_secs_f64();
@@ -229,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
                     match event {
                         Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) => {
                             std::mem::drop(terminal);
-                            printer::print(&all, start.elapsed);
+                            printer::print(&all, start.elapsed());
                             std::process::exit(0);
                         }
 
@@ -238,7 +238,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 // 60fps
-                tokio::time::delay_for(std::time::Duration::from_secs(1) / 30).await;
+                tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
             }
             all
         })
