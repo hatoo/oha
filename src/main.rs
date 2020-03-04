@@ -28,6 +28,7 @@ struct Opts {
     query_per_second: Option<usize>,
 }
 
+#[derive(Debug, Clone)]
 pub struct RequestResult {
     duration: std::time::Duration,
     status: reqwest::StatusCode,
@@ -64,10 +65,26 @@ async fn main() -> anyhow::Result<()> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     let realtime_tui = tokio::spawn(async move {
+        use tokio::sync::mpsc::error::TryRecvError;
         let mut all = Vec::new();
-        while let Some(report) = rx.recv().await {
-            // TODO: Some tui here
-            all.push(report);
+        'outer: loop {
+            loop {
+                match rx.try_recv() {
+                    Ok(report) => {
+                        all.push(report);
+                    }
+                    Err(TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(TryRecvError::Closed) => {
+                        break 'outer;
+                    }
+                }
+            }
+            // Some tui here
+
+            // 60fps
+            tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
         }
         all
     });
