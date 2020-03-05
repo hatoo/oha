@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::io;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
 use tokio::sync::mpsc::error::TryRecvError;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
-use tui::widgets::{BarChart, Block, Borders, Gauge};
+use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
 use tui::Terminal;
 
 use crate::RequestResult;
@@ -94,14 +95,94 @@ impl<B: tui::backend::Backend> Monitor<B> {
                 .draw(|mut f| {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([Constraint::Max(3), Constraint::Length(16)].as_ref())
+                        .constraints(
+                            [
+                                Constraint::Length(3),
+                                Constraint::Length(6),
+                                Constraint::Percentage(40),
+                            ]
+                            .as_ref(),
+                        )
                         .split(f.size());
+
+                    let chunks2 = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints(
+                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
+                        )
+                        .split(chunks[1]);
 
                     let mut gauge = Gauge::default()
                         .block(Block::default().title("Progress").borders(Borders::ALL))
                         .style(Style::default().fg(Color::White))
                         .ratio(progress);
                     f.render(&mut gauge, chunks[0]);
+
+                    let last_1_sec = all
+                        .iter()
+                        .rev()
+                        .filter_map(|r| r.as_ref().ok())
+                        .take_while(|r| (now - r.start).as_secs_f64() <= 1.0)
+                        .collect::<Vec<_>>();
+                    let statics_text = [
+                        Text::raw(format!("Query per second: {}\n", last_1_sec.len())),
+                        Text::raw(format!(
+                            "Slowest: {:.4} secs\n",
+                            last_1_sec
+                                .iter()
+                                .map(|r| r.duration())
+                                .max()
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(std::f64::NAN)
+                        )),
+                        Text::raw(format!(
+                            "Fastest: {:.4} secs\n",
+                            last_1_sec
+                                .iter()
+                                .map(|r| r.duration())
+                                .min()
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(std::f64::NAN)
+                        )),
+                        Text::raw(format!(
+                            "Average: {:.4} secs\n",
+                            last_1_sec
+                                .iter()
+                                .map(|r| r.duration())
+                                .sum::<std::time::Duration>()
+                                .as_secs_f64()
+                                / last_1_sec.len() as f64
+                        )),
+                    ];
+                    let mut statics = Paragraph::new(statics_text.iter()).block(
+                        Block::default()
+                            .title("statics for last 1 second")
+                            .borders(Borders::ALL),
+                    );
+                    f.render(&mut statics, chunks2[0]);
+
+                    let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
+
+                    for s in last_1_sec.iter().map(|r| r.status) {
+                        *status_dist.entry(s).or_default() += 1;
+                    }
+
+                    let mut status_v: Vec<(reqwest::StatusCode, usize)> =
+                        status_dist.into_iter().collect();
+                    status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
+
+                    let mut statics2_string = String::new();
+                    for (status, count) in status_v {
+                        statics2_string +=
+                            format!("  [{}] {} responses", status.as_str(), count).as_str();
+                    }
+                    let statics2_text = [Text::raw(statics2_string)];
+                    let mut statics2 = Paragraph::new(statics2_text.iter()).block(
+                        Block::default()
+                            .title("Status code distribution")
+                            .borders(Borders::ALL),
+                    );
+                    f.render(&mut statics2, chunks2[1]);
 
                     let mut barchart = BarChart::default()
                         .block(
@@ -118,7 +199,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
                                 .map(|w| w + 2)
                                 .unwrap_or(1) as u16,
                         );
-                    f.render(&mut barchart, chunks[1]);
+                    f.render(&mut barchart, chunks[2]);
                 })
                 .unwrap();
             while let Ok(event) = event_rx.try_recv() {
