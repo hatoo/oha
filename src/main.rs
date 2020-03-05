@@ -125,12 +125,14 @@ async fn main() -> anyhow::Result<()> {
         std::thread::spawn(move || {
             for c in stdin.events() {
                 if let Ok(evt) = c {
-                    event_tx.send(evt).unwrap();
+                    if event_tx.send(evt).is_err() {
+                        break;
+                    }
                 }
             }
         });
 
-        let duration = opts.duration.as_ref().map(|d| d.0.clone());
+        let duration = opts.duration.as_ref().map(|d| d.0);
         let n_requests = opts.n_requests;
 
         tokio::spawn(async move {
@@ -161,8 +163,8 @@ async fn main() -> anyhow::Result<()> {
                     (all.len() as f64 / n_requests as f64).max(0.0).min(1.0)
                 };
 
-                let resolution = 12.0_f64.min(duration.map(|d| d.as_secs_f64()).unwrap_or(12.0));
-                let count = 12;
+                let resolution = 32.0;
+                let count = 32;
 
                 let bin = resolution / count as f64;
 
