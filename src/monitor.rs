@@ -28,7 +28,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
         let stdin = io::stdin();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        tokio::spawn(async move {
+        std::thread::spawn(move || {
             for c in stdin.events() {
                 if let Ok(evt) = c {
                     if event_tx.send(evt).is_err() {
