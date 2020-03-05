@@ -27,7 +27,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
         let stdin = io::stdin();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        std::thread::spawn(move || {
+        tokio::spawn(async move {
             for c in stdin.events() {
                 if let Ok(evt) = c {
                     if event_tx.send(evt).is_err() {
@@ -61,10 +61,8 @@ impl<B: tui::backend::Backend> Monitor<B> {
                 EndLine::NumQuery(n) => (all.len() as f64 / *n as f64).max(0.0).min(1.0),
             };
 
-            let resolution = 32.0;
             let count = 32;
-
-            let bin = resolution / count as f64;
+            let bin = 1.0;
 
             let mut bar_num_req = vec![0u64; count];
             let short_bin = (now - self.start).as_secs_f64() % bin;
