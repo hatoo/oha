@@ -1,30 +1,25 @@
+![demo](demo.gif)
+
 ```bash
-oha on  master is 📦 v0.1.0 via 🦀 v1.43.0-nightly
-❯ cargo run --release -- http://localhost:8080
-    Finished release [optimized] target(s) in 0.12s
-     Running `target/release/oha 'http://localhost:8080'`
-Summary:
-  Success rate:	1.0000
-  Total:	0.0614 secs
-  Slowest:	0.0387 secs
-  Fastest:	0.0046 secs
-  Average:	0.0140 secs
-  Requests/sec:	3255.0904
+oha 0.1.0
+hatoo <hato2000@gmail.com>
 
-  Total data:	119.53 KiB
-  Size/request:	612.00 B
-  Size/sec:	1.90 MiB
+USAGE:
+    oha [FLAGS] [OPTIONS] <url>
 
-Latency distribution:
-  10% in 0.0070 secs
-  25% in 0.0086 secs
-  50% in 0.0096 secs
-  75% in 0.0249 secs
-  90% in 0.0296 secs
-  95% in 0.0321 secs
-  99% in 0.0382 secs
+ARGS:
+    <url>    Target URL.
 
-Status code distribution:
-  [200] 200 responses
+FLAGS:
+    -h, --help       Prints help information
+        --no-tui     No realtime tui
+    -V, --version    Prints version information
 
+OPTIONS:
+    -z <duration>                Duration.
+                                 Examples: -z 10s -z 3m.
+        --fps <fps>              Frame per second for tui. [default: 16]
+    -n <n-requests>              Number of requests. [default: 200]
+    -c <n-workers>               Number of workers. [default: 50]
+    -q <query-per-second>        Query per second limit.
 ```
