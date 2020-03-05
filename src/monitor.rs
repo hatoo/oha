@@ -39,10 +39,14 @@ impl<B: tui::backend::Backend> Monitor<B> {
         });
 
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
+        let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
         'outer: loop {
             loop {
                 match self.report_receiver.try_recv() {
                     Ok(report) => {
+                        if let Ok(report) = report.as_ref() {
+                            *status_dist.entry(report.status).or_default() += 1;
+                        }
                         all.push(report);
                     }
                     Err(TryRecvError::Empty) => {
@@ -161,20 +165,14 @@ impl<B: tui::backend::Backend> Monitor<B> {
                     );
                     f.render(&mut statics, chunks2[0]);
 
-                    let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
-
-                    for s in last_1_sec.iter().map(|r| r.status) {
-                        *status_dist.entry(s).or_default() += 1;
-                    }
-
                     let mut status_v: Vec<(reqwest::StatusCode, usize)> =
-                        status_dist.into_iter().collect();
+                        status_dist.clone().into_iter().collect();
                     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
                     let mut statics2_string = String::new();
                     for (status, count) in status_v {
                         statics2_string +=
-                            format!("  [{}] {} responses", status.as_str(), count).as_str();
+                            format!("[{}] {} responses", status.as_str(), count).as_str();
                     }
                     let statics2_text = [Text::raw(statics2_string)];
                     let mut statics2 = Paragraph::new(statics2_text.iter()).block(
