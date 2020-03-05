@@ -30,7 +30,7 @@ struct Opts {
     query_per_second: Option<usize>,
     #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
-    #[clap(help = "Frame per second for tui.", default_value = "8", long = "fps")]
+    #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
 }
 
