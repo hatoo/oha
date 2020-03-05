@@ -19,6 +19,7 @@ pub struct Monitor<B: tui::backend::Backend> {
     pub end_line: EndLine,
     pub report_receiver: tokio::sync::mpsc::UnboundedReceiver<anyhow::Result<RequestResult>>,
     pub start: std::time::Instant,
+    pub fps: usize,
 }
 
 impl<B: tui::backend::Backend> Monitor<B> {
@@ -134,7 +135,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
             }
 
             // 60fps
-            tokio::time::delay_for(std::time::Duration::from_secs(1) / 60).await;
+            tokio::time::delay_for(std::time::Duration::from_secs(1) / self.fps as u32).await;
         }
 
         all

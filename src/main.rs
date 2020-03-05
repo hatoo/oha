@@ -30,6 +30,8 @@ struct Opts {
     query_per_second: Option<usize>,
     #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
+    #[clap(help = "Frame per second for tui.", default_value = "8", long = "fps")]
+    fps: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or(monitor::EndLine::NumQuery(opts.n_requests)),
                 report_receiver: rx,
                 start,
+                fps: opts.fps,
             }
             .monitor(),
         )
