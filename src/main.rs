@@ -149,39 +149,18 @@ async fn main() -> anyhow::Result<()> {
         client: client.clone(),
     };
 
+    let task_generator = || async { tx.send(req.clone().request().await) };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
-            work::work_duration_with_qps(
-                || async { tx.send(req.clone().request().await) },
-                qps,
-                duration,
-                opts.n_workers,
-            )
-            .await
+            work::work_duration_with_qps(task_generator, qps, duration, opts.n_workers).await
         } else {
-            work::work_duration(
-                || async { tx.send(req.clone().request().await) },
-                duration,
-                opts.n_workers,
-            )
-            .await
+            work::work_duration(task_generator, duration, opts.n_workers).await
         }
     } else {
         if let Some(qps) = opts.query_per_second.take() {
-            work::work_with_qps(
-                || async { tx.send(req.clone().request().await) },
-                qps,
-                opts.n_requests,
-                opts.n_workers,
-            )
-            .await
+            work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
         } else {
-            work::work(
-                || async { tx.send(req.clone().request().await) },
-                opts.n_requests,
-                opts.n_workers,
-            )
-            .await
+            work::work(task_generator, opts.n_requests, opts.n_workers).await
         }
     };
     std::mem::drop(tx);
