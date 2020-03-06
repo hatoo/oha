@@ -189,10 +189,10 @@ async fn main() -> anyhow::Result<()> {
             work::work(task_generator, opts.n_requests, opts.n_workers).await
         }
     };
+    let duration = start.elapsed();
     std::mem::drop(tx);
 
     let res: Vec<_> = data_collector.await?;
-    let duration = std::time::Instant::now() - start;
 
     printer::print(&res, duration);
 
