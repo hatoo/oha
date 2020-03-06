@@ -1,3 +1,4 @@
+use byte_unit::Byte;
 use std::collections::HashMap;
 use std::io;
 use termion::event::{Event, Key};
@@ -102,7 +103,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
                         .constraints(
                             [
                                 Constraint::Length(3),
-                                Constraint::Length(6),
+                                Constraint::Length(7),
                                 Constraint::Percentage(40),
                             ]
                             .as_ref(),
@@ -156,6 +157,13 @@ impl<B: tui::backend::Backend> Monitor<B> {
                                 .sum::<std::time::Duration>()
                                 .as_secs_f64()
                                 / last_1_sec.len() as f64
+                        )),
+                        Text::raw(format!(
+                            "Data: {}\n",
+                            Byte::from_bytes(
+                                last_1_sec.iter().map(|r| r.len_bytes as u128).sum::<u128>()
+                            )
+                            .get_appropriate_unit(true)
                         )),
                     ];
                     let mut statics = Paragraph::new(statics_text.iter()).block(
