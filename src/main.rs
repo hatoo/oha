@@ -42,6 +42,8 @@ struct Opts {
     method: reqwest::Method,
     #[clap(help = "HTTP header", short = "H")]
     headers: Vec<String>,
+    #[clap(help = "Timeout for each request. Default to infinite.", short = "t")]
+    timeout: Option<ParseDuration>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,15 +66,19 @@ struct Request {
     method: reqwest::Method,
     url: Url,
     headers: HeaderMap,
+    timeout: Option<std::time::Duration>,
 }
 
 impl Request {
     async fn request(self) -> anyhow::Result<RequestResult> {
         let start = std::time::Instant::now();
-        let req = self
+        let mut req = self
             .client
             .request(self.method, self.url)
             .headers(self.headers);
+        if let Some(timeout) = self.timeout {
+            req = req.timeout(timeout);
+        }
         let resp = req.send().await?;
         let status = resp.status();
         let len_bytes = resp.bytes().await?.len();
@@ -166,6 +172,7 @@ async fn main() -> anyhow::Result<()> {
         url,
         client: client.clone(),
         headers,
+        timeout: opts.timeout.map(|t| t.0),
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
