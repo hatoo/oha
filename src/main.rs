@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Clap;
 use futures::prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -143,7 +144,9 @@ async fn main() -> anyhow::Result<()> {
         use tui::backend::TermionBackend;
         use tui::Terminal;
 
-        let stdout = io::stdout().into_raw_mode()?;
+        let stdout = io::stdout().into_raw_mode().context(
+            "Failed to make STDOUT into raw mode. You can use `--no-tui` to disable realtime tui.",
+        )?;
         let stdout = MouseTerminal::from(stdout);
         let stdout = AlternateScreen::from(stdout);
         let backend = TermionBackend::new(stdout);
