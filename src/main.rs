@@ -17,7 +17,7 @@ impl std::str::FromStr for ParseDuration {
 }
 
 #[derive(Clap)]
-#[clap(version = clap::crate_version!(), author = clap::crate_authors!())]
+#[clap(version = clap::crate_version!(), author = clap::crate_authors!(), about = "HTTP load generator, inspired by rakyll/hey with tui animation")]
 struct Opts {
     #[clap(help = "Target URL.")]
     url: String,
