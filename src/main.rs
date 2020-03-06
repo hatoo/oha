@@ -1,5 +1,6 @@
 use clap::Clap;
 use futures::prelude::*;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use url::Url;
 
 mod monitor;
@@ -32,7 +33,6 @@ struct Opts {
     no_tui: bool,
     #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
-
     #[clap(
         help = "HTTP method",
         short = "m",
@@ -40,6 +40,8 @@ struct Opts {
         default_value = "GET"
     )]
     method: reqwest::Method,
+    #[clap(help = "HTTP header", short = "H")]
+    headers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,12 +63,17 @@ struct Request {
     client: reqwest::Client,
     method: reqwest::Method,
     url: Url,
+    headers: HeaderMap,
 }
 
 impl Request {
     async fn request(self) -> anyhow::Result<RequestResult> {
         let start = std::time::Instant::now();
-        let resp = self.client.request(self.method, self.url).send().await?;
+        let req = self
+            .client
+            .request(self.method, self.url)
+            .headers(self.headers);
+        let resp = req.send().await?;
         let status = resp.status();
         let len_bytes = resp.bytes().await?.len();
         let end = std::time::Instant::now();
@@ -84,6 +91,17 @@ async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
     let url = Url::parse(opts.url.as_str())?;
     let client = reqwest::Client::new();
+    let headers: HeaderMap = opts
+        .headers
+        .into_iter()
+        .map(|s| {
+            let header = s.splitn(2, ": ").collect::<Vec<_>>();
+            anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+            let name = HeaderName::from_bytes(header[0].as_bytes())?;
+            let value = HeaderValue::from_str(header[1])?;
+            Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
+        })
+        .collect::<anyhow::Result<HeaderMap>>()?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -147,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
         method: opts.method,
         url,
         client: client.clone(),
+        headers,
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
