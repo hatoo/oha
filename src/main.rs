@@ -32,6 +32,14 @@ struct Opts {
     no_tui: bool,
     #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
+
+    #[clap(
+        help = "HTTP method",
+        short = "m",
+        long = "method",
+        default_value = "GET"
+    )]
+    method: reqwest::Method,
 }
 
 #[derive(Debug, Clone)]
@@ -48,14 +56,17 @@ impl RequestResult {
     }
 }
 
-async fn request(
+#[derive(Clone)]
+struct Request {
     client: reqwest::Client,
+    method: reqwest::Method,
     url: Url,
-    reporter: tokio::sync::mpsc::UnboundedSender<anyhow::Result<RequestResult>>,
-) -> Result<(), tokio::sync::mpsc::error::SendError<anyhow::Result<RequestResult>>> {
-    let result = async move {
+}
+
+impl Request {
+    async fn request(self) -> anyhow::Result<RequestResult> {
         let start = std::time::Instant::now();
-        let resp = client.get(url.clone()).send().await?;
+        let resp = self.client.request(self.method, self.url).send().await?;
         let status = resp.status();
         let len_bytes = resp.bytes().await?.len();
         let end = std::time::Instant::now();
@@ -66,8 +77,6 @@ async fn request(
             len_bytes,
         })
     }
-    .await;
-    reporter.send(result)
 }
 
 #[tokio::main]
@@ -134,10 +143,16 @@ async fn main() -> anyhow::Result<()> {
         .boxed()
     };
 
+    let req = Request {
+        method: opts.method,
+        url,
+        client: client.clone(),
+    };
+
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_duration_with_qps(
-                || request(client.clone(), url.clone(), tx.clone()),
+                || async { tx.send(req.clone().request().await) },
                 qps,
                 duration,
                 opts.n_workers,
@@ -145,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
             .await
         } else {
             work::work_duration(
-                || request(client.clone(), url.clone(), tx.clone()),
+                || async { tx.send(req.clone().request().await) },
                 duration,
                 opts.n_workers,
             )
@@ -154,7 +169,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_with_qps(
-                || request(client.clone(), url.clone(), tx.clone()),
+                || async { tx.send(req.clone().request().await) },
                 qps,
                 opts.n_requests,
                 opts.n_workers,
@@ -162,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
             .await
         } else {
             work::work(
-                || request(client.clone(), url.clone(), tx.clone()),
+                || async { tx.send(req.clone().request().await) },
                 opts.n_requests,
                 opts.n_workers,
             )
