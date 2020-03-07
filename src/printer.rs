@@ -106,8 +106,13 @@ fn print_histogram(values: &[f64]) {
     }
     let lines = 11;
     let mut bucket: Vec<u64> = vec![0; lines];
+    let average = values.iter().collect::<average::Mean>().mean();
     let min = values.iter().collect::<average::Min>().min();
-    let max = values.iter().collect::<average::Max>().max();
+    let max = values
+        .iter()
+        .collect::<average::Max>()
+        .max()
+        .min(average * 3.0);
     let step = (max - min) / lines as f64;
 
     for &v in values {
@@ -118,7 +123,7 @@ fn print_histogram(values: &[f64]) {
     let max_bar = *bucket.iter().max().unwrap();
 
     for (i, &b) in bucket.iter().enumerate() {
-        let t = min + (i + 1) as f64 * step;
+        let t = min + i as f64 * step;
         print!("  {:.3} [{}]\t", t, b);
         bar(b as f64 / max_bar as f64);
         println!();
