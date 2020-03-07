@@ -3,6 +3,12 @@ name = "oha"
 version = "0.1.0"
 authors = ["hatoo <hato2000@gmail.com>"]
 edition = "2018"
+description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation."
+repository = "https://github.com/hatoo/oha"
+readme = "README.md"
+keywords = ["cli", "load-testing", "performance", "http"]
+categories = ["command-line-utilities", "network-programming", "web-programming::http-client", "development-tools::profiling"]
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
