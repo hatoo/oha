@@ -45,6 +45,8 @@ struct Opts {
     headers: Vec<String>,
     #[clap(help = "Timeout for each request. Default to infinite.", short = "t")]
     timeout: Option<ParseDuration>,
+    #[clap(help = "HTTP Accept Header.", short = "A")]
+    accept_header: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +67,7 @@ impl RequestResult {
 struct Request {
     client: reqwest::Client,
     method: reqwest::Method,
+    accept: Option<HeaderValue>,
     url: Url,
     headers: HeaderMap,
     timeout: Option<std::time::Duration>,
@@ -79,6 +82,9 @@ impl Request {
             .headers(self.headers);
         if let Some(timeout) = self.timeout {
             req = req.timeout(timeout);
+        }
+        if let Some(accept) = self.accept {
+            req = req.header(reqwest::header::ACCEPT, accept);
         }
         let resp = req.send().await?;
         let status = resp.status();
@@ -176,6 +182,10 @@ async fn main() -> anyhow::Result<()> {
         client: client.clone(),
         headers,
         timeout: opts.timeout.map(|t| t.0),
+        accept: match opts.accept_header {
+            Some(h) => Some(HeaderValue::from_bytes(h.as_bytes())?),
+            None => None,
+        },
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
