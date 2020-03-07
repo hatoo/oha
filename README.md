@@ -3,7 +3,7 @@
 ```bash
 oha 0.1.0
 hatoo <hato2000@gmail.com>
-HTTP load generator, inspired by rakyll/hey with tui animation
+Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
 USAGE:
     oha [FLAGS] [OPTIONS] <url>
@@ -12,10 +12,11 @@ ARGS:
     <url>    Target URL.
 
 FLAGS:
-    -h, --help       Prints help information
-        --no-tui     No realtime tui
-        --http2      Only HTTP2
-    -V, --version    Prints version information
+        --disable-compression    Disable compression.
+    -h, --help                   Prints help information
+        --no-tui                 No realtime tui
+        --http2                  Only HTTP2
+    -V, --version                Prints version information
 
 OPTIONS:
     -A <accept-header>           HTTP Accept Header.
@@ -33,5 +34,6 @@ OPTIONS:
     -c <n-workers>               Number of workers. [default: 50]
     -x <proxy>                   HTTP proxy
     -q <query-per-second>        Query per second limit.
+        --redirect <redirect>    Limit for number of Redirect. [default: 10]
     -t <timeout>                 Timeout for each request. Default to infinite.
 ```

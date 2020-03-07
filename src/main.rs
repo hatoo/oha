@@ -64,7 +64,11 @@ struct Opts {
     host: Option<String>,
     #[clap(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
-    #[clap(help = "Limit for umber of Redirect.", default_value = "10")]
+    #[clap(
+        help = "Limit for number of Redirect.",
+        default_value = "10",
+        long = "redirect"
+    )]
     redirect: usize,
 }
 
