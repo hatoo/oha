@@ -14,7 +14,7 @@ license = "MIT"
 
 [dependencies]
 clap = { git = "https://github.com/clap-rs/clap/", rev = "19c20f7c00310900ce6667baedfe1190e20eeeab" }
-reqwest = { version = "0.10", features = ["json"] }
+reqwest = { version = "0.10" }
 tokio = { version = "0.2", features = ["full"] }
 anyhow = "1"
 url = "2"
