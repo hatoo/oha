@@ -49,15 +49,14 @@ pub async fn work_with_qps<T, F: std::future::Future<Output = T>>(
     .await
 }
 
-pub async fn work_duration<T, F: std::future::Future<Output = T>>(
+pub async fn work_until<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
-    duration: std::time::Duration,
+    dead_line: std::time::Instant,
     n_workers: usize,
 ) -> Vec<Vec<T>> {
-    let start = std::time::Instant::now();
     futures::future::join_all((0..n_workers).map(|_| async {
         let mut ret = Vec::new();
-        while (start.elapsed()) < duration {
+        while std::time::Instant::now() < dead_line {
             ret.push(task_generator().await);
         }
         ret
@@ -65,18 +64,18 @@ pub async fn work_duration<T, F: std::future::Future<Output = T>>(
     .await
 }
 
-pub async fn work_duration_with_qps<T, F: std::future::Future<Output = T>>(
+pub async fn work_until_with_qps<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
     qps: usize,
-    duration: std::time::Duration,
+    start: std::time::Instant,
+    dead_line: std::time::Instant,
     n_workers: usize,
 ) -> Vec<Vec<T>> {
     let (tx, rx) = crossbeam::channel::unbounded();
-    let start = std::time::Instant::now();
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
-            if start.elapsed() > duration {
+            if std::time::Instant::now() > dead_line {
                 break;
             }
             if tx.send(()).is_err() {
@@ -93,7 +92,7 @@ pub async fn work_duration_with_qps<T, F: std::future::Future<Output = T>>(
     let ret = futures::future::join_all((0..n_workers).map(|_| async {
         let mut ret = Vec::new();
         while let Ok(()) = rx.recv() {
-            if std::time::Instant::now() - start > duration {
+            if std::time::Instant::now() > dead_line {
                 break;
             }
             ret.push(task_generator().await)
