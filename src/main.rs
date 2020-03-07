@@ -60,6 +60,8 @@ struct Opts {
     proxy: Option<String>,
     #[clap(help = "Only HTTP2", long = "http2")]
     only_http2: bool,
+    #[clap(help = "HTTP Host header", long = "host")]
+    host: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +148,12 @@ async fn main() -> anyhow::Result<()> {
     if let Some(h) = opts.content_type {
         headers.insert(
             reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_bytes(h.as_bytes())?,
+        );
+    }
+    if let Some(h) = opts.host {
+        headers.insert(
+            reqwest::header::HOST,
             HeaderValue::from_bytes(h.as_bytes())?,
         );
     }
