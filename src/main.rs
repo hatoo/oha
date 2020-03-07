@@ -62,6 +62,8 @@ struct Opts {
     only_http2: bool,
     #[clap(help = "HTTP Host header", long = "host")]
     host: Option<String>,
+    #[clap(help = "Disable compression.", long = "disable-compression")]
+    disable_compression: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +158,9 @@ async fn main() -> anyhow::Result<()> {
             reqwest::header::HOST,
             HeaderValue::from_bytes(h.as_bytes())?,
         );
+    }
+    if opts.disable_compression {
+        client_builder = client_builder.no_gzip();
     }
 
     let client = client_builder.default_headers(headers).build()?;
