@@ -52,6 +52,8 @@ struct Opts {
     body_string: Option<String>,
     #[clap(help = "HTTP request body from file.", short = "D")]
     body_path: Option<std::path::PathBuf>,
+    #[clap(help = "Content-Type.", short = "T")]
+    content_type: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +82,7 @@ struct Request {
     headers: HeaderMap,
     timeout: Option<std::time::Duration>,
     body: Option<&'static [u8]>,
+    content_type: Option<HeaderValue>,
 }
 
 impl Request {
@@ -97,6 +100,9 @@ impl Request {
         }
         if let Some(body) = self.body {
             req = req.body(body);
+        }
+        if let Some(content_type) = self.content_type {
+            req = req.header(reqwest::header::CONTENT_TYPE, content_type);
         }
         let resp = req.send().await?;
         let status = resp.status();
@@ -211,6 +217,10 @@ async fn main() -> anyhow::Result<()> {
             None => None,
         },
         body: unsafe { BODY.as_ref().map(|b| b.as_slice()) },
+        content_type: match opts.content_type {
+            Some(h) => Some(HeaderValue::from_bytes(h.as_bytes())?),
+            None => None,
+        },
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
