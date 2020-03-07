@@ -72,13 +72,17 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
         .get_appropriate_unit(true)
     );
     println!();
+    let durations = res
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<Vec<_>>();
+
+    println!("Response time histogram:");
+    print_histogram(&durations);
+    println!();
     println!("Latency distribution:");
-    print_distribution(
-        &res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<Vec<_>>(),
-    );
+    print_distribution(&durations);
     println!();
 
     let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
@@ -93,6 +97,39 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     println!("Status code distribution:");
     for (status, count) in status_v {
         println!("  [{}] {} responses", status.as_str(), count);
+    }
+}
+
+fn print_histogram(values: &[f64]) {
+    if values.is_empty() {
+        return;
+    }
+    let lines = 11;
+    let mut bucket: Vec<u64> = vec![0; lines];
+    let min = values.iter().collect::<average::Min>().min();
+    let max = values.iter().collect::<average::Max>().max();
+    let step = (max - min) / lines as f64;
+
+    for &v in values {
+        let i = std::cmp::min(((v - min) / step) as usize, lines - 1);
+        bucket[i] += 1;
+    }
+
+    let max_bar = *bucket.iter().max().unwrap();
+
+    for (i, &b) in bucket.iter().enumerate() {
+        let t = min + (i + 1) as f64 * step;
+        print!("  {:.3} [{}]\t", t, b);
+        bar(b as f64 / max_bar as f64);
+        println!();
+    }
+}
+
+fn bar(ratio: f64) {
+    // TODO: Use more block element code to show more precise bar
+    let width = 32;
+    for _ in 0..(width as f64 * ratio) as usize {
+        print!("■");
     }
 }
 
