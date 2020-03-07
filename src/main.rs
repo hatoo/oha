@@ -64,6 +64,8 @@ struct Opts {
     host: Option<String>,
     #[clap(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
+    #[clap(help = "Limit for umber of Redirect.", default_value = "10")]
+    redirect: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +164,12 @@ async fn main() -> anyhow::Result<()> {
     if opts.disable_compression {
         client_builder = client_builder.no_gzip().no_brotli();
     }
+
+    client_builder = client_builder.redirect(if opts.redirect == 0 {
+        reqwest::redirect::Policy::none()
+    } else {
+        reqwest::redirect::Policy::limited(opts.redirect)
+    });
 
     let client = client_builder.default_headers(headers).build()?;
 
