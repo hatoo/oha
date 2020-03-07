@@ -124,7 +124,7 @@ fn print_histogram(values: &[f64]) {
 
     for (i, &b) in bucket.iter().enumerate() {
         let t = min + i as f64 * step;
-        print!("  {:.3} [{}]\t", t, b);
+        print!("  {:.3} [{}]\t|", t, b);
         bar(b as f64 / max_bar as f64);
         println!();
     }
