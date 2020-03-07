@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::Clap;
 use futures::prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use std::io::Read;
 use url::Url;
 
 mod monitor;
@@ -47,6 +48,10 @@ struct Opts {
     timeout: Option<ParseDuration>,
     #[clap(help = "HTTP Accept Header.", short = "A")]
     accept_header: Option<String>,
+    #[clap(help = "HTTP request body.", short = "d")]
+    body_string: Option<String>,
+    #[clap(help = "HTTP request body from file.", short = "D")]
+    body_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +68,9 @@ impl RequestResult {
     }
 }
 
+// TODO: Remove this static variable. Help me
+static mut BODY: Option<Vec<u8>> = None;
+
 #[derive(Clone)]
 struct Request {
     client: reqwest::Client,
@@ -71,6 +79,7 @@ struct Request {
     url: Url,
     headers: HeaderMap,
     timeout: Option<std::time::Duration>,
+    body: Option<&'static [u8]>,
 }
 
 impl Request {
@@ -85,6 +94,9 @@ impl Request {
         }
         if let Some(accept) = self.accept {
             req = req.header(reqwest::header::ACCEPT, accept);
+        }
+        if let Some(body) = self.body {
+            req = req.body(body);
         }
         let resp = req.send().await?;
         let status = resp.status();
@@ -115,6 +127,18 @@ async fn main() -> anyhow::Result<()> {
             Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
         })
         .collect::<anyhow::Result<HeaderMap>>()?;
+
+    if let Some(body) = opts.body_string {
+        unsafe {
+            BODY = Some(body.as_bytes().to_vec());
+        }
+    } else if let Some(path) = opts.body_path {
+        let mut buf = Vec::new();
+        std::fs::File::open(path)?.read_to_end(&mut buf)?;
+        unsafe {
+            BODY = Some(buf);
+        }
+    }
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -186,6 +210,7 @@ async fn main() -> anyhow::Result<()> {
             Some(h) => Some(HeaderValue::from_bytes(h.as_bytes())?),
             None => None,
         },
+        body: unsafe { BODY.as_ref().map(|b| b.as_slice()) },
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
