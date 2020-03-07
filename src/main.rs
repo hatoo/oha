@@ -56,6 +56,8 @@ struct Opts {
     content_type: Option<String>,
     #[clap(help = "Basic authentication, username:password", short = "a")]
     basic_auth: Option<String>,
+    #[clap(help = "HTTP proxy", short = "x")]
+    proxy: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -127,7 +129,11 @@ impl Request {
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
     let url = Url::parse(opts.url.as_str())?;
-    let client = reqwest::Client::new();
+    let mut client_builder = reqwest::ClientBuilder::new();
+    if let Some(proxy) = opts.proxy {
+        client_builder = client_builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
+    }
+    let client = client_builder.build()?;
     let headers: HeaderMap = opts
         .headers
         .into_iter()
