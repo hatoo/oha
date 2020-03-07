@@ -58,6 +58,8 @@ struct Opts {
     basic_auth: Option<String>,
     #[clap(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
+    #[clap(help = "Only HTTP2", short = "h2")]
+    only_http2: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +134,9 @@ async fn main() -> anyhow::Result<()> {
     let mut client_builder = reqwest::ClientBuilder::new();
     if let Some(proxy) = opts.proxy {
         client_builder = client_builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
+    }
+    if opts.only_http2 {
+        client_builder = client_builder.http2_prior_knowledge();
     }
     let client = client_builder.build()?;
     let headers: HeaderMap = opts
