@@ -127,7 +127,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
                         .iter()
                         .rev()
                         .filter_map(|r| r.as_ref().ok())
-                        .take_while(|r| (now - r.start).as_secs_f64() <= 1.0)
+                        .take_while(|r| (now - r.end).as_secs_f64() <= 1.0)
                         .collect::<Vec<_>>();
                     let statics_text = [
                         Text::raw(format!("Query per second: {}\n", last_1_sec.len())),
