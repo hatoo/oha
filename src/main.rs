@@ -54,6 +54,8 @@ struct Opts {
     body_path: Option<std::path::PathBuf>,
     #[clap(help = "Content-Type.", short = "T")]
     content_type: Option<String>,
+    #[clap(help = "Basic authentication, username:password", short = "a")]
+    basic_auth: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +85,7 @@ struct Request {
     timeout: Option<std::time::Duration>,
     body: Option<&'static [u8]>,
     content_type: Option<HeaderValue>,
+    basic_auth: Option<(String, Option<String>)>,
 }
 
 impl Request {
@@ -103,6 +106,9 @@ impl Request {
         }
         if let Some(content_type) = self.content_type {
             req = req.header(reqwest::header::CONTENT_TYPE, content_type);
+        }
+        if let Some((user, pass)) = self.basic_auth {
+            req = req.basic_auth(user, pass);
         }
         let resp = req.send().await?;
         let status = resp.status();
@@ -145,6 +151,21 @@ async fn main() -> anyhow::Result<()> {
             BODY = Some(buf);
         }
     }
+
+    let basic_auth = if let Some(auth) = opts.basic_auth {
+        let u_p = auth.splitn(2, ":").collect::<Vec<_>>();
+        anyhow::ensure!(u_p.len() == 2, anyhow::anyhow!("Parse auth"));
+        Some((
+            u_p[0].to_string(),
+            if u_p[1].is_empty() {
+                None
+            } else {
+                Some(u_p[1].to_string())
+            },
+        ))
+    } else {
+        None
+    };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -212,15 +233,18 @@ async fn main() -> anyhow::Result<()> {
         client: client.clone(),
         headers,
         timeout: opts.timeout.map(|t| t.0),
-        accept: match opts.accept_header {
-            Some(h) => Some(HeaderValue::from_bytes(h.as_bytes())?),
-            None => None,
+        accept: if let Some(h) = opts.accept_header {
+            Some(HeaderValue::from_bytes(h.as_bytes())?)
+        } else {
+            None
         },
         body: unsafe { BODY.as_ref().map(|b| b.as_slice()) },
-        content_type: match opts.content_type {
-            Some(h) => Some(HeaderValue::from_bytes(h.as_bytes())?),
-            None => None,
+        content_type: if let Some(h) = opts.content_type {
+            Some(HeaderValue::from_bytes(h.as_bytes())?)
+        } else {
+            None
         },
+        basic_auth,
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
