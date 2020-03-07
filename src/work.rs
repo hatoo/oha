@@ -57,7 +57,7 @@ pub async fn work_duration<T, F: std::future::Future<Output = T>>(
     let start = std::time::Instant::now();
     futures::future::join_all((0..n_workers).map(|_| async {
         let mut ret = Vec::new();
-        while (std::time::Instant::now() - start) < duration {
+        while (start.elapsed()) < duration {
             ret.push(task_generator().await);
         }
         ret
@@ -76,7 +76,7 @@ pub async fn work_duration_with_qps<T, F: std::future::Future<Output = T>>(
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
-            if std::time::Instant::now() - start > duration {
+            if start.elapsed() > duration {
                 break;
             }
             if tx.send(()).is_err() {
