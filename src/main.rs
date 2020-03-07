@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
         );
     }
     if opts.disable_compression {
-        client_builder = client_builder.no_gzip();
+        client_builder = client_builder.no_gzip().no_brotli();
     }
 
     let client = client_builder.default_headers(headers).build()?;
