@@ -3,6 +3,7 @@
 ```bash
 oha 0.1.0
 hatoo <hato2000@gmail.com>
+HTTP load generator, inspired by rakyll/hey with tui animation
 
 USAGE:
     oha [FLAGS] [OPTIONS] <url>
@@ -19,7 +20,10 @@ OPTIONS:
     -z <duration>                Duration.
                                  Examples: -z 10s -z 3m.
         --fps <fps>              Frame per second for tui. [default: 16]
+    -H <headers>...              HTTP header
+    -m, --method <method>        HTTP method [default: GET]
     -n <n-requests>              Number of requests. [default: 200]
     -c <n-workers>               Number of workers. [default: 50]
     -q <query-per-second>        Query per second limit.
+    -t <timeout>                 Timeout for each request. Default to infinite.
 ```
