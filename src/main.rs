@@ -58,7 +58,7 @@ struct Opts {
     basic_auth: Option<String>,
     #[clap(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
-    #[clap(help = "Only HTTP2", short = "h2")]
+    #[clap(help = "Only HTTP2", long = "http2")]
     only_http2: bool,
 }
 
@@ -83,33 +83,21 @@ static mut BODY: Option<Vec<u8>> = None;
 struct Request {
     client: reqwest::Client,
     method: reqwest::Method,
-    accept: Option<HeaderValue>,
     url: Url,
-    headers: HeaderMap,
     timeout: Option<std::time::Duration>,
     body: Option<&'static [u8]>,
-    content_type: Option<HeaderValue>,
     basic_auth: Option<(String, Option<String>)>,
 }
 
 impl Request {
     async fn request(self) -> anyhow::Result<RequestResult> {
         let start = std::time::Instant::now();
-        let mut req = self
-            .client
-            .request(self.method, self.url)
-            .headers(self.headers);
+        let mut req = self.client.request(self.method, self.url);
         if let Some(timeout) = self.timeout {
             req = req.timeout(timeout);
         }
-        if let Some(accept) = self.accept {
-            req = req.header(reqwest::header::ACCEPT, accept);
-        }
         if let Some(body) = self.body {
             req = req.body(body);
-        }
-        if let Some(content_type) = self.content_type {
-            req = req.header(reqwest::header::CONTENT_TYPE, content_type);
         }
         if let Some((user, pass)) = self.basic_auth {
             req = req.basic_auth(user, pass);
@@ -138,8 +126,7 @@ async fn main() -> anyhow::Result<()> {
     if opts.only_http2 {
         client_builder = client_builder.http2_prior_knowledge();
     }
-    let client = client_builder.build()?;
-    let headers: HeaderMap = opts
+    let mut headers: HeaderMap = opts
         .headers
         .into_iter()
         .map(|s| {
@@ -150,6 +137,21 @@ async fn main() -> anyhow::Result<()> {
             Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
         })
         .collect::<anyhow::Result<HeaderMap>>()?;
+
+    if let Some(h) = opts.accept_header {
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_bytes(h.as_bytes())?,
+        );
+    }
+    if let Some(h) = opts.content_type {
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_bytes(h.as_bytes())?,
+        );
+    }
+
+    let client = client_builder.default_headers(headers).build()?;
 
     if let Some(body) = opts.body_string {
         unsafe {
@@ -242,19 +244,8 @@ async fn main() -> anyhow::Result<()> {
         method: opts.method,
         url,
         client: client.clone(),
-        headers,
         timeout: opts.timeout.map(|t| t.0),
-        accept: if let Some(h) = opts.accept_header {
-            Some(HeaderValue::from_bytes(h.as_bytes())?)
-        } else {
-            None
-        },
         body: unsafe { BODY.as_ref().map(|b| b.as_slice()) },
-        content_type: if let Some(h) = opts.content_type {
-            Some(HeaderValue::from_bytes(h.as_bytes())?)
-        } else {
-            None
-        },
         basic_auth,
     };
 
