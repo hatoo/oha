@@ -84,7 +84,6 @@ struct Request {
     client: reqwest::Client,
     method: reqwest::Method,
     url: Url,
-    timeout: Option<std::time::Duration>,
     body: Option<&'static [u8]>,
     basic_auth: Option<(String, Option<String>)>,
 }
@@ -93,9 +92,6 @@ impl Request {
     async fn request(self) -> anyhow::Result<RequestResult> {
         let start = std::time::Instant::now();
         let mut req = self.client.request(self.method, self.url);
-        if let Some(timeout) = self.timeout {
-            req = req.timeout(timeout);
-        }
         if let Some(body) = self.body {
             req = req.body(body);
         }
@@ -125,6 +121,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if opts.only_http2 {
         client_builder = client_builder.http2_prior_knowledge();
+    }
+    if let Some(ParseDuration(d)) = opts.timeout {
+        client_builder = client_builder.timeout(d);
     }
     let mut headers: HeaderMap = opts
         .headers
@@ -244,7 +243,6 @@ async fn main() -> anyhow::Result<()> {
         method: opts.method,
         url,
         client: client.clone(),
-        timeout: opts.timeout.map(|t| t.0),
         body: unsafe { BODY.as_ref().map(|b| b.as_slice()) },
         basic_auth,
     };
