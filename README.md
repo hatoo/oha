@@ -1,11 +1,21 @@
 
-# oha
+# oha (おはよう)
 
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
 
 This program is wirtten in Rust and powered by tokio.
 
 ![demo](demo.gif)
+
+# Installation
+
+This program is built on stable Rust.
+
+```bash
+$ cargo install oha
+```
+
+# Usage
 
 ```bash
 oha 0.1.0
@@ -44,3 +54,20 @@ OPTIONS:
         --redirect <redirect>    Limit for number of Redirect. Set 0 for no redirection. [default: 10]
     -t <timeout>                 Timeout for each request. Default to infinite.
 ```
+
+# Contribution
+
+Feel free to help us!
+
+Here are some issues to improving.
+
+- Improve tui design.
+  - Show more information?
+  - There are no color in realtime tui now. I want help from someone who has some color sense.
+- Improve speed
+  - I'm new to tokio. I think there are some space to optimize query scheduling.
+- Mesasure DNS lookup time and dialup time.
+- Add an option to disable keep-alive connection.
+- Output like CSV or JSON format.
+- Improve histogram in summary output
+  - It use very simple algorithm now.
