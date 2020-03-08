@@ -1,9 +1,10 @@
 use byte_unit::Byte;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::ExecutableCommand;
 use std::collections::HashMap;
 use std::io;
-use termion::event::{Event, Key};
-use termion::input::TermRead;
 use tokio::sync::mpsc::error::TryRecvError;
+use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
 use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
@@ -19,8 +20,7 @@ pub enum EndLine {
     NumQuery(usize),
 }
 
-pub struct Monitor<B: tui::backend::Backend> {
-    pub terminal: Terminal<B>,
+pub struct Monitor {
     pub end_line: EndLine,
     /// All workers sends each result to this channel
     pub report_receiver: tokio::sync::mpsc::UnboundedReceiver<anyhow::Result<RequestResult>>,
@@ -28,22 +28,17 @@ pub struct Monitor<B: tui::backend::Backend> {
     pub fps: usize,
 }
 
-impl<B: tui::backend::Backend> Monitor<B> {
-    pub async fn monitor(mut self) -> Vec<anyhow::Result<RequestResult>> {
-        let stdin = io::stdin();
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+impl Monitor {
+    pub async fn monitor(
+        mut self,
+    ) -> Result<Vec<anyhow::Result<RequestResult>>, crossterm::ErrorKind> {
+        crossterm::terminal::enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
 
-        // If tokio::spawn is used, application requires additional input to exit when interrupted
-        // I don't know why.
-        std::thread::spawn(move || {
-            for c in stdin.events() {
-                if let Ok(evt) = c {
-                    if event_tx.send(evt).is_err() {
-                        break;
-                    }
-                }
-            }
-        });
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.hide_cursor()?;
 
         // Return this when ends to application print summary
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
@@ -103,7 +98,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
             let bar_num_req_str: Vec<(&str, u64)> =
                 bar_num_req.iter().map(|(a, b)| (a.as_str(), *b)).collect();
 
-            self.terminal
+            terminal
                 .draw(|mut f| {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
@@ -215,11 +210,19 @@ impl<B: tui::backend::Backend> Monitor<B> {
                     f.render(&mut barchart, chunks[2]);
                 })
                 .unwrap();
-            while let Ok(event) = event_rx.try_recv() {
-                match event {
-                    Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) => {
-                        // Leave raw mode
-                        std::mem::drop(self.terminal);
+            while crossterm::event::poll(std::time::Duration::from_secs(0))? {
+                match crossterm::event::read()? {
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('q'),
+                        ..
+                    })
+                    | Event::Key(KeyEvent {
+                        code: KeyCode::Char('c'),
+                        modifiers: KeyModifiers::CONTROL,
+                    }) => {
+                        std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
+                        crossterm::terminal::disable_raw_mode()?;
+                        terminal.show_cursor()?;
                         crate::printer::print(&all, now - self.start);
                         std::process::exit(0);
                     }
@@ -230,6 +233,9 @@ impl<B: tui::backend::Backend> Monitor<B> {
             tokio::time::delay_for(std::time::Duration::from_secs(1) / self.fps as u32).await;
         }
 
-        all
+        std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
+        crossterm::terminal::disable_raw_mode()?;
+        terminal.show_cursor()?;
+        Ok(all)
     }
 }

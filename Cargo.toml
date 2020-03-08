@@ -25,5 +25,5 @@ parse_duration = "2"
 average = "0.10.4"
 float-ord = "0.2.0"
 byte-unit = "3.0.3"
-tui = "0.8.0"
-termion = "1.5.5"
+tui = { version = "0.8.0", default-features = false, features = ["crossterm"] }
+crossterm = "0.14.0"

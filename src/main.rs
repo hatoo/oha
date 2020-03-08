@@ -1,4 +1,3 @@
-use anyhow::Context;
 use futures::prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::io::Read;
@@ -226,49 +225,33 @@ async fn main() -> anyhow::Result<()> {
 
     let data_collector = if opts.no_tui {
         // When `--no-tui` is enabled, just collect all data.
-        tokio::spawn(async move {
-            let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
-            loop {
-                tokio::select! {
-                    report = rx.recv() => {
-                        if let Some(report) = report {
-                            all.push(report);
-                        } else {
-                            break;
+        tokio::spawn(
+            async move {
+                let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
+                loop {
+                    tokio::select! {
+                        report = rx.recv() => {
+                            if let Some(report) = report {
+                                all.push(report);
+                            } else {
+                                break;
+                            }
+                        }
+                        Ok(()) = tokio::signal::ctrl_c() => {
+                            // User pressed ctrl-c.
+                            printer::print(&all, start.elapsed());
+                            std::process::exit(0);
                         }
                     }
-                    Ok(()) = tokio::signal::ctrl_c() => {
-                        // User pressed ctrl-c.
-                        printer::print(&all, start.elapsed());
-                        std::process::exit(0);
-                    }
                 }
+                all
             }
-            all
-        })
+            .map(Ok),
+        )
         .boxed()
     } else {
-        // TUI
-        use std::io;
-
-        use termion::input::MouseTerminal;
-        use termion::raw::IntoRawMode;
-        use termion::screen::AlternateScreen;
-        use tui::backend::TermionBackend;
-        use tui::Terminal;
-
-        let stdout = io::stdout().into_raw_mode().context(
-            "Failed to make STDOUT into raw mode. You can use `--no-tui` to disable realtime tui.",
-        )?;
-        let stdout = MouseTerminal::from(stdout);
-        let stdout = AlternateScreen::from(stdout);
-        let backend = TermionBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-        terminal.hide_cursor()?;
-
         tokio::spawn(
             monitor::Monitor {
-                terminal,
                 end_line: opts
                     .duration
                     .as_ref()
@@ -309,7 +292,7 @@ async fn main() -> anyhow::Result<()> {
     let duration = start.elapsed();
     std::mem::drop(tx);
 
-    let res: Vec<anyhow::Result<RequestResult>> = data_collector.await?;
+    let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 
     printer::print(&res, duration);
 

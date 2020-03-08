@@ -18,6 +18,12 @@ This program is built on stable Rust.
 $ cargo install oha
 ```
 
+# Platform
+
+- Linux - Tested on Ubuntu 18.04 gnome-terminal
+- Windows 10 - Tested on Windows Powershell
+- MacOS - Tested on iTerm2
+
 # Usage
 
 ```bash
