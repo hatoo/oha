@@ -1,3 +1,10 @@
+
+# oha
+
+oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
+
+This program is wirtten in Rust and powered by tokio.
+
 ![demo](demo.gif)
 
 ```bash
