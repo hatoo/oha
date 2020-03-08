@@ -84,10 +84,8 @@ pub async fn work_until_with_qps<T, F: std::future::Future<Output = T>>(
             if std::time::Instant::now() > dead_line {
                 break;
             }
-            if !tx.is_full() {
-                if tx.send(()).is_err() {
-                    break;
-                }
+            if !tx.is_full() && tx.send(()).is_err() {
+                break;
             }
             tokio::time::delay_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
