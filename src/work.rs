@@ -1,3 +1,6 @@
+/// Run n tasks by m workers
+/// Currently We use Fn() -> F as "task generator".
+/// Any replacement?
 pub async fn work<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
     n_tasks: usize,
@@ -19,6 +22,7 @@ pub async fn work<T, F: std::future::Future<Output = T>>(
     .await
 }
 
+/// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
     qps: usize,
@@ -49,6 +53,7 @@ pub async fn work_with_qps<T, F: std::future::Future<Output = T>>(
     .await
 }
 
+/// Run until dead_line by n workers
 pub async fn work_until<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
     dead_line: std::time::Instant,
@@ -64,6 +69,7 @@ pub async fn work_until<T, F: std::future::Future<Output = T>>(
     .await
 }
 
+/// Run until dead_line by n workers limit to qps works in a second
 pub async fn work_until_with_qps<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
     qps: usize,
