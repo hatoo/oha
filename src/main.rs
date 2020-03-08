@@ -1,8 +1,8 @@
 use anyhow::Context;
-use clap::Clap;
 use futures::prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::io::Read;
+use structopt::StructOpt;
 use url::Url;
 
 mod monitor;
@@ -18,65 +18,65 @@ impl std::str::FromStr for ParseDuration {
     }
 }
 
-#[derive(Clap)]
-#[clap(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
+#[derive(StructOpt)]
+#[structopt(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
 struct Opts {
-    #[clap(help = "Target URL.")]
+    #[structopt(help = "Target URL.")]
     url: String,
-    #[clap(
+    #[structopt(
         help = "Number of requests to run.",
         short = "n",
         default_value = "200"
     )]
     n_requests: usize,
-    #[clap(
+    #[structopt(
         help = "Number of workers to run concurrently.",
         short = "c",
         default_value = "50"
     )]
     n_workers: usize,
-    #[clap(
+    #[structopt(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
 Examples: -z 10s -z 3m.",
         short = "z"
     )]
     duration: Option<ParseDuration>,
-    #[clap(help = "Rate limit, in queries per second (QPS)", short = "q")]
+    #[structopt(help = "Rate limit, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
-    #[clap(help = "No realtime tui", long = "no-tui")]
+    #[structopt(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
-    #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
+    #[structopt(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
-    #[clap(
+    #[structopt(
         help = "HTTP method",
         short = "m",
         long = "method",
         default_value = "GET"
     )]
     method: reqwest::Method,
-    #[clap(help = "Custom HTTP header.", short = "H")]
+    #[structopt(help = "Custom HTTP header.", short = "H")]
     headers: Vec<String>,
-    #[clap(help = "Timeout for each request. Default to infinite.", short = "t")]
+    #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
     timeout: Option<ParseDuration>,
-    #[clap(help = "HTTP Accept Header.", short = "A")]
+    #[structopt(help = "HTTP Accept Header.", short = "A")]
     accept_header: Option<String>,
-    #[clap(help = "HTTP request body.", short = "d")]
+    #[structopt(help = "HTTP request body.", short = "d")]
     body_string: Option<String>,
-    #[clap(help = "HTTP request body from file.", short = "D")]
+    #[structopt(help = "HTTP request body from file.", short = "D")]
     body_path: Option<std::path::PathBuf>,
-    #[clap(help = "Content-Type.", short = "T")]
+    #[structopt(help = "Content-Type.", short = "T")]
     content_type: Option<String>,
-    #[clap(help = "Basic authentication, username:password", short = "a")]
+    #[structopt(help = "Basic authentication, username:password", short = "a")]
     basic_auth: Option<String>,
-    #[clap(help = "HTTP proxy", short = "x")]
+    #[structopt(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
-    #[clap(help = "Only HTTP2", long = "http2")]
+    #[structopt(help = "Only HTTP2", long = "http2")]
     only_http2: bool,
-    #[clap(help = "HTTP Host header", long = "host")]
+    #[structopt(help = "HTTP Host header", long = "host")]
     host: Option<String>,
-    #[clap(help = "Disable compression.", long = "disable-compression")]
+    #[structopt(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
-    #[clap(
+    #[structopt(
         help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
         long = "redirect"
@@ -139,7 +139,7 @@ impl Request {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts: Opts = Opts::parse();
+    let mut opts: Opts = Opts::from_args();
     let url = Url::parse(opts.url.as_str())?;
     let mut client_builder = reqwest::ClientBuilder::new();
     if let Some(proxy) = opts.proxy {
