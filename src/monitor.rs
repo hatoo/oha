@@ -32,6 +32,7 @@ impl Monitor {
     pub async fn monitor(
         mut self,
     ) -> Result<Vec<anyhow::Result<RequestResult>>, crossterm::ErrorKind> {
+        crossterm::terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
         stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
 

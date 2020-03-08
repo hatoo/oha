@@ -1,4 +1,3 @@
-use anyhow::Context;
 use futures::prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::io::Read;
@@ -251,11 +250,6 @@ async fn main() -> anyhow::Result<()> {
         )
         .boxed()
     } else {
-        // We want to detect this error (typically this is caused by piping) here.
-        crossterm::terminal::enable_raw_mode().context(
-            "Failed to make STDOUT into raw mode. You can use `--no-tui` to disable realtime tui.",
-        )?;
-
         tokio::spawn(
             monitor::Monitor {
                 end_line: opts
