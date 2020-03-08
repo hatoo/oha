@@ -222,6 +222,7 @@ impl Monitor {
                     }) => {
                         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
+                        terminal.show_cursor()?;
                         crate::printer::print(&all, now - self.start);
                         std::process::exit(0);
                     }
@@ -234,6 +235,7 @@ impl Monitor {
 
         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
         crossterm::terminal::disable_raw_mode()?;
+        terminal.show_cursor()?;
         Ok(all)
     }
 }
