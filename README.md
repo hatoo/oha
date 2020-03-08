@@ -1,6 +1,9 @@
 
 # oha (おはよう)
 
+[![GitHub Actions](https://github.com/hatoo/oha/workflows/CI/badge.svg)](https://github.com/hatoo/oha/actions?query=workflow%3ACI)
+[![Crates.io](https://img.shields.io/crates/v/oha.svg)](https://crates.io/crates/oha)
+
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
 
 This program is wirtten in Rust and powered by [tokio](https://github.com/tokio-rs/tokio) and beautiful tui by [tui-rs](https://github.com/fdehau/tui-rs).
