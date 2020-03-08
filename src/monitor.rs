@@ -11,14 +11,18 @@ use tui::Terminal;
 
 use crate::RequestResult;
 
+/// When the monitor ends
 pub enum EndLine {
+    /// After a duration
     Duration(std::time::Duration),
+    /// After n query done
     NumQuery(usize),
 }
 
 pub struct Monitor<B: tui::backend::Backend> {
     pub terminal: Terminal<B>,
     pub end_line: EndLine,
+    /// All workers sends each result to this channel
     pub report_receiver: tokio::sync::mpsc::UnboundedReceiver<anyhow::Result<RequestResult>>,
     pub start: std::time::Instant,
     pub fps: usize,
@@ -29,6 +33,8 @@ impl<B: tui::backend::Backend> Monitor<B> {
         let stdin = io::stdin();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
 
+        // If tokio::spawn is used, application requires additional input to exit when interrupted
+        // I don't know why.
         std::thread::spawn(move || {
             for c in stdin.events() {
                 if let Ok(evt) = c {
@@ -39,6 +45,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
             }
         });
 
+        // Return this when ends to application print summary
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
         let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
         'outer: loop {
@@ -219,7 +226,6 @@ impl<B: tui::backend::Backend> Monitor<B> {
                 }
             }
 
-            // 60fps
             tokio::time::delay_for(std::time::Duration::from_secs(1) / self.fps as u32).await;
         }
 
