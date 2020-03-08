@@ -4,11 +4,11 @@ use crossterm::ExecutableCommand;
 use std::collections::HashMap;
 use std::io;
 use tokio::sync::mpsc::error::TryRecvError;
+use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
 use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
 use tui::Terminal;
-        use tui::backend::CrosstermBackend;
 
 use crate::RequestResult;
 
