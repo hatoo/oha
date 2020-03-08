@@ -3,7 +3,7 @@
 
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
 
-This program is wirtten in Rust and powered by tokio.
+This program is wirtten in Rust and powered by [tokio](https://github.com/tokio-rs/tokio) and beautiful tui by [tui-rs](https://github.com/fdehau/tui-rs).
 
 ![demo](demo.gif)
 
@@ -70,4 +70,4 @@ Here are some issues to improving.
 - Add an option to disable keep-alive connection.
 - Output like CSV or JSON format.
 - Improve histogram in summary output
-  - It use very simple algorithm now.
+  - It uses very simple algorithm now.
