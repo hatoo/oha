@@ -3,6 +3,7 @@ use byte_unit::Byte;
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Print all summary to stdout
 pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     println!("Summary:");
     println!(
@@ -100,7 +101,11 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     }
 }
 
+/// Print histogram of series of f64 data.
+/// This is used to print histogram of response time.
 fn print_histogram(values: &[f64]) {
+    // TODO: Use better algorithm.
+    // Is there any common and good algorithm?
     if values.is_empty() {
         return;
     }
@@ -130,6 +135,7 @@ fn print_histogram(values: &[f64]) {
     }
 }
 
+// Print Bar like ■■■■■■■■■
 fn bar(ratio: f64) {
     // TODO: Use more block element code to show more precise bar
     let width = 32;
@@ -138,6 +144,7 @@ fn bar(ratio: f64) {
     }
 }
 
+/// Print distribution of collection of f64
 fn print_distribution(values: &[f64]) {
     let mut buf = values.to_vec();
     float_ord::sort(&mut buf);
