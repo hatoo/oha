@@ -19,7 +19,7 @@ impl std::str::FromStr for ParseDuration {
 }
 
 #[derive(Clap)]
-#[clap(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.")]
+#[clap(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
 struct Opts {
     #[clap(help = "Target URL.")]
     url: String,
