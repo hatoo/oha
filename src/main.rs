@@ -23,13 +23,25 @@ impl std::str::FromStr for ParseDuration {
 struct Opts {
     #[clap(help = "Target URL.")]
     url: String,
-    #[clap(help = "Number of requests.", short = "n", default_value = "200")]
+    #[clap(
+        help = "Number of requests to run.",
+        short = "n",
+        default_value = "200"
+    )]
     n_requests: usize,
-    #[clap(help = "Number of workers.", short = "c", default_value = "50")]
+    #[clap(
+        help = "Number of workers to run concurrently.",
+        short = "c",
+        default_value = "50"
+    )]
     n_workers: usize,
-    #[clap(help = "Duration.\nExamples: -z 10s -z 3m.", short = "z")]
+    #[clap(
+        help = "Duration of application to send requests. If duration is specified, n is ignored.
+Examples: -z 10s -z 3m.",
+        short = "z"
+    )]
     duration: Option<ParseDuration>,
-    #[clap(help = "Query per second limit.", short = "q")]
+    #[clap(help = "Rate limit, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
     #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
@@ -42,7 +54,7 @@ struct Opts {
         default_value = "GET"
     )]
     method: reqwest::Method,
-    #[clap(help = "HTTP header", short = "H")]
+    #[clap(help = "Custom HTTP header.", short = "H")]
     headers: Vec<String>,
     #[clap(help = "Timeout for each request. Default to infinite.", short = "t")]
     timeout: Option<ParseDuration>,
@@ -65,7 +77,7 @@ struct Opts {
     #[clap(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
     #[clap(
-        help = "Limit for number of Redirect.",
+        help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
         long = "redirect"
     )]
