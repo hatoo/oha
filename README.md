@@ -61,6 +61,7 @@ Feel free to help us!
 
 Here are some issues to improving.
 
+- Write tests
 - Improve tui design.
   - Show more information?
   - There are no color in realtime tui now. I want help from someone who has some color sense.
