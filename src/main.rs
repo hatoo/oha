@@ -86,9 +86,13 @@ Examples: -z 10s -z 3m.",
 
 #[derive(Debug, Clone)]
 pub struct RequestResult {
+    /// When the query started
     start: std::time::Instant,
+    /// When the query ends
     end: std::time::Instant,
+    /// HTTP status
     status: reqwest::StatusCode,
+    /// Length of body
     len_bytes: usize,
 }
 
@@ -221,6 +225,7 @@ async fn main() -> anyhow::Result<()> {
     let start = std::time::Instant::now();
 
     let data_collector = if opts.no_tui {
+        // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(async move {
             let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
             loop {
@@ -233,6 +238,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     Ok(()) = tokio::signal::ctrl_c() => {
+                        // User pressed ctrl-c.
                         printer::print(&all, start.elapsed());
                         std::process::exit(0);
                     }
@@ -242,6 +248,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .boxed()
     } else {
+        // TUI
         use std::io;
 
         use termion::input::MouseTerminal;
@@ -302,7 +309,7 @@ async fn main() -> anyhow::Result<()> {
     let duration = start.elapsed();
     std::mem::drop(tx);
 
-    let res: Vec<_> = data_collector.await?;
+    let res: Vec<anyhow::Result<RequestResult>> = data_collector.await?;
 
     printer::print(&res, duration);
 

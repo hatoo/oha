@@ -218,6 +218,7 @@ impl<B: tui::backend::Backend> Monitor<B> {
             while let Ok(event) = event_rx.try_recv() {
                 match event {
                     Event::Key(Key::Ctrl('c')) | Event::Key(Key::Char('q')) => {
+                        // Leave raw mode
                         std::mem::drop(self.terminal);
                         crate::printer::print(&all, now - self.start);
                         std::process::exit(0);
