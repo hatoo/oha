@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// Print all summary to stdout
-pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
+pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     println!("Summary:");
     println!(
         "  Success rate:\t{:.4}",
@@ -98,6 +98,22 @@ pub fn print<E>(res: &[Result<RequestResult, E>], total_duration: Duration) {
     println!("Status code distribution:");
     for (status, count) in status_v {
         println!("  [{}] {} responses", status.as_str(), count);
+    }
+
+    let mut error_dist: HashMap<String, usize> = HashMap::new();
+    for e in res.iter().filter_map(|r| r.as_ref().err()) {
+        *error_dist.entry(e.to_string()).or_default() += 1;
+    }
+
+    let mut error_v: Vec<(String, usize)> = error_dist.into_iter().collect();
+    error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
+
+    if !error_v.is_empty() {
+        println!();
+        println!("Error distribution:");
+        for (error, count) in error_v {
+            println!("  [{}] {}", count, error);
+        }
     }
 }
 
