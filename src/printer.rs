@@ -54,12 +54,10 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
         "  Size/request:\t{}",
         (res.iter()
             .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes)
-            .sum::<usize>()
-            .checked_div(res.iter().filter(|r| r.is_ok()).count()))
-        .map(|n| Byte::from_bytes(n as u128)
-            .get_appropriate_unit(true)
-            .to_string())
+            .map(|r| r.len_bytes as u128)
+            .sum::<u128>()
+            .checked_div(res.iter().filter(|r| r.is_ok()).count() as u128))
+        .map(|n| Byte::from_bytes(n).get_appropriate_unit(true).to_string())
         .unwrap_or("NaN".to_string())
     );
     println!(
