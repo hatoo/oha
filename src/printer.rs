@@ -58,7 +58,7 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
             .sum::<u128>()
             .checked_div(res.iter().filter(|r| r.is_ok()).count() as u128))
         .map(|n| Byte::from_bytes(n).get_appropriate_unit(true).to_string())
-        .unwrap_or("NaN".to_string())
+        .unwrap_or_else(|| "NaN".to_string())
     );
     println!(
         "  Size/sec:\t{}",

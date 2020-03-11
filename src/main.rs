@@ -200,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let basic_auth = if let Some(auth) = opts.basic_auth {
-        let u_p = auth.splitn(2, ":").collect::<Vec<_>>();
+        let u_p = auth.splitn(2, ':').collect::<Vec<_>>();
         anyhow::ensure!(u_p.len() == 2, anyhow::anyhow!("Parse auth"));
         Some((
             u_p[0].to_string(),
@@ -277,12 +277,10 @@ async fn main() -> anyhow::Result<()> {
         } else {
             work::work_until(task_generator, start + duration, opts.n_workers).await
         }
+    } else if let Some(qps) = opts.query_per_second.take() {
+        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
     } else {
-        if let Some(qps) = opts.query_per_second.take() {
-            work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
-        } else {
-            work::work(task_generator, opts.n_requests, opts.n_workers).await
-        }
+        work::work(task_generator, opts.n_requests, opts.n_workers).await
     };
     let duration = start.elapsed();
     std::mem::drop(tx);
