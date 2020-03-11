@@ -101,9 +101,6 @@ impl RequestResult {
     }
 }
 
-// TODO: Remove this static variable. Help me
-static mut BODY: Option<Vec<u8>> = None;
-
 #[derive(Clone)]
 struct Request {
     client: reqwest::Client,
@@ -192,17 +189,15 @@ async fn main() -> anyhow::Result<()> {
 
     let client = client_builder.default_headers(headers).build()?;
 
-    if let Some(body) = opts.body_string {
-        unsafe {
-            BODY = Some(body.as_bytes().to_vec());
+    let body: Option<&'static _> = match (opts.body_string, opts.body_path) {
+        (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
+        (_, Some(path)) => {
+            let mut buf = Vec::new();
+            std::fs::File::open(path)?.read_to_end(&mut buf)?;
+            Some(Box::leak(buf.into_boxed_slice()))
         }
-    } else if let Some(path) = opts.body_path {
-        let mut buf = Vec::new();
-        std::fs::File::open(path)?.read_to_end(&mut buf)?;
-        unsafe {
-            BODY = Some(buf);
-        }
-    }
+        _ => None,
+    };
 
     let basic_auth = if let Some(auth) = opts.basic_auth {
         let u_p = auth.splitn(2, ":").collect::<Vec<_>>();
@@ -270,7 +265,7 @@ async fn main() -> anyhow::Result<()> {
         method: opts.method,
         url,
         client: client.clone(),
-        body: unsafe { BODY.as_ref().map(|b| b.as_slice()) },
+        body,
         basic_auth,
     };
 
