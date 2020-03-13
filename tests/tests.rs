@@ -92,3 +92,10 @@ async fn test_setting_basic_auth() {
         "Basic aGF0b286cGFzcw=="
     );
 }
+
+#[tokio::main]
+#[test]
+async fn test_setting_host() {
+    let header = get_header_body(&["--host", "hatoo.io"]).await.0;
+    assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
+}
