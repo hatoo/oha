@@ -6,15 +6,15 @@ lazy_static::lazy_static! {
     static ref PORT_LOCK: Mutex<()> = Mutex::new(());
 }
 
-async fn get_header(args: &[&str]) -> HeaderMap {
+async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let report_headers =
-        warp::any()
-            .and(warp::header::headers_cloned())
-            .map(move |headers: HeaderMap| {
-                tx.send(headers).unwrap();
-                "Hello World"
-            });
+    let report_headers = warp::any()
+        .and(warp::header::headers_cloned())
+        .and(warp::filters::body::bytes())
+        .map(move |headers: HeaderMap, body: bytes::Bytes| {
+            tx.send((headers, body)).unwrap();
+            "Hello World"
+        });
 
     let _guard = PORT_LOCK.lock().unwrap();
     let port = get_port::get_port().unwrap();
@@ -36,7 +36,7 @@ async fn get_header(args: &[&str]) -> HeaderMap {
 #[tokio::main]
 #[test]
 async fn test_enable_compression_default() {
-    let header = get_header(&[]).await;
+    let header = get_header_body(&[]).await.0;
     let accept_encoding: Vec<&str> = header
         .get("accept-encoding")
         .unwrap()
@@ -52,13 +52,23 @@ async fn test_enable_compression_default() {
 #[tokio::main]
 #[test]
 async fn test_setting_custom_header() {
-    let header = get_header(&["-H", "foo: bar", "--"]).await;
+    let header = get_header_body(&["-H", "foo: bar", "--"]).await.0;
     assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
 #[tokio::main]
 #[test]
 async fn test_setting_accept_header() {
-    let header = get_header(&["-A", "text/html"]).await;
+    let header = get_header_body(&["-A", "text/html"]).await.0;
     assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
+}
+
+#[tokio::main]
+#[test]
+async fn test_setting_body() {
+    let body = get_header_body(&["-d", "hello body"]).await.1;
+    assert_eq!(
+        body.as_ref(),
+        &b"hello body"[..] /* This looks dirty... Any suggestion? */
+    );
 }

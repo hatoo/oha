@@ -1153,6 +1153,7 @@ dependencies = [
  "assert_cmd",
  "average",
  "byte-unit",
+ "bytes",
  "clap",
  "crossbeam",
  "crossterm",
