@@ -82,3 +82,13 @@ async fn test_setting_content_type_header() {
         "text/html"
     );
 }
+
+#[tokio::main]
+#[test]
+async fn test_setting_basic_auth() {
+    let header = get_header_body(&["-a", "hatoo:pass"]).await.0;
+    assert_eq!(
+        header.get("authorization").unwrap().to_str().unwrap(),
+        "Basic aGF0b286cGFzcw=="
+    );
+}
