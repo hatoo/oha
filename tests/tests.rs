@@ -15,8 +15,8 @@ async fn get_header(args: &[&str]) -> HeaderMap {
 
     Command::cargo_bin("oha")
         .unwrap()
-        .args(args)
         .args(&["-n", "1", "--no-tui"])
+        .args(args)
         .arg(format!("http://127.0.0.1:{}", port))
         .assert()
         .success();
@@ -38,4 +38,11 @@ async fn test_enable_compression_default() {
 
     assert!(accept_encoding.contains(&"gzip"));
     assert!(accept_encoding.contains(&"br"));
+}
+
+#[tokio::main]
+#[test]
+async fn test_setting_custom_header() {
+    let header = get_header(&["-H", "foo: bar", "--"]).await;
+    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
 }
