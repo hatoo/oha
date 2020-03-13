@@ -72,3 +72,13 @@ async fn test_setting_body() {
         &b"hello body"[..] /* This looks dirty... Any suggestion? */
     );
 }
+
+#[tokio::main]
+#[test]
+async fn test_setting_content_type_header() {
+    let header = get_header_body(&["-T", "text/html"]).await.0;
+    assert_eq!(
+        header.get("content-type").unwrap().to_str().unwrap(),
+        "text/html"
+    );
+}
