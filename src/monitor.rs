@@ -100,7 +100,7 @@ impl Monitor {
 
             terminal
                 .draw(|mut f| {
-                    let chunks = Layout::default()
+                    let top_mid_bot = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints(
                             [
@@ -112,18 +112,18 @@ impl Monitor {
                         )
                         .split(f.size());
 
-                    let chunks2 = Layout::default()
+                    let mid = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
                             [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
                         )
-                        .split(chunks[1]);
+                        .split(top_mid_bot[1]);
 
                     let mut gauge = Gauge::default()
                         .block(Block::default().title("Progress").borders(Borders::ALL))
                         .style(Style::default().fg(Color::White))
                         .ratio(progress);
-                    f.render(&mut gauge, chunks[0]);
+                    f.render(&mut gauge, top_mid_bot[0]);
 
                     let last_1_sec = all
                         .iter()
@@ -173,7 +173,7 @@ impl Monitor {
                             .title("statics for last 1 second")
                             .borders(Borders::ALL),
                     );
-                    f.render(&mut statics, chunks2[0]);
+                    f.render(&mut statics, mid[0]);
 
                     let mut status_v: Vec<(reqwest::StatusCode, usize)> =
                         status_dist.clone().into_iter().collect();
@@ -190,7 +190,7 @@ impl Monitor {
                             .title("Status code distribution")
                             .borders(Borders::ALL),
                     );
-                    f.render(&mut statics2, chunks2[1]);
+                    f.render(&mut statics2, mid[1]);
 
                     let mut barchart = BarChart::default()
                         .block(
@@ -207,7 +207,7 @@ impl Monitor {
                                 .map(|w| w + 2)
                                 .unwrap_or(1) as u16,
                         );
-                    f.render(&mut barchart, chunks[2]);
+                    f.render(&mut barchart, top_mid_bot[2]);
                 })
                 .unwrap();
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
