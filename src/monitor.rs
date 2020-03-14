@@ -43,12 +43,14 @@ impl Monitor {
         // Return this when ends to application print summary
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
         let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
+        let mut error_dist: HashMap<String, usize> = HashMap::new();
         'outer: loop {
             loop {
                 match self.report_receiver.try_recv() {
                     Ok(report) => {
-                        if let Ok(report) = report.as_ref() {
-                            *status_dist.entry(report.status).or_default() += 1;
+                        match report.as_ref() {
+                            Ok(report) => *status_dist.entry(report.status).or_default() += 1,
+                            Err(e) => *error_dist.entry(e.to_string()).or_default() += 1,
                         }
                         all.push(report);
                     }
@@ -115,7 +117,12 @@ impl Monitor {
                     let mid = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
-                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
+                            [
+                                Constraint::Percentage(34),
+                                Constraint::Percentage(33),
+                                Constraint::Percentage(33),
+                            ]
+                            .as_ref(),
                         )
                         .split(top_mid_bot[1]);
 
@@ -182,7 +189,7 @@ impl Monitor {
                     let mut statics2_string = String::new();
                     for (status, count) in status_v {
                         statics2_string +=
-                            format!("[{}] {} responses", status.as_str(), count).as_str();
+                            format!("[{}] {} responses\n", status.as_str(), count).as_str();
                     }
                     let statics2_text = [Text::raw(statics2_string)];
                     let mut statics2 = Paragraph::new(statics2_text.iter()).block(
@@ -191,6 +198,21 @@ impl Monitor {
                             .borders(Borders::ALL),
                     );
                     f.render(&mut statics2, mid[1]);
+
+                    let mut error_v: Vec<(String, usize)> =
+                        error_dist.clone().into_iter().collect();
+                    error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
+                    let mut errors_string = String::new();
+                    for (e, count) in error_v {
+                        errors_string += format!("[{}] {}\n", count, e).as_str();
+                    }
+                    let errors_text = [Text::raw(errors_string)];
+                    let mut errors = Paragraph::new(errors_text.iter()).block(
+                        Block::default()
+                            .title("Error distribution")
+                            .borders(Borders::ALL),
+                    );
+                    f.render(&mut errors, mid[2]);
 
                     let mut barchart = BarChart::default()
                         .block(
