@@ -102,12 +102,13 @@ impl Monitor {
 
             terminal
                 .draw(|mut f| {
-                    let top_mid_bot = Layout::default()
+                    let top_mid2_bot = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints(
                             [
                                 Constraint::Length(3),
                                 Constraint::Length(7),
+                                Constraint::Length(error_dist.len() as u16 + 2),
                                 Constraint::Percentage(40),
                             ]
                             .as_ref(),
@@ -117,20 +118,15 @@ impl Monitor {
                     let mid = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
-                            [
-                                Constraint::Percentage(34),
-                                Constraint::Percentage(33),
-                                Constraint::Percentage(33),
-                            ]
-                            .as_ref(),
+                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
                         )
-                        .split(top_mid_bot[1]);
+                        .split(top_mid2_bot[1]);
 
                     let mut gauge = Gauge::default()
                         .block(Block::default().title("Progress").borders(Borders::ALL))
                         .style(Style::default().fg(Color::White))
                         .ratio(progress);
-                    f.render(&mut gauge, top_mid_bot[0]);
+                    f.render(&mut gauge, top_mid2_bot[0]);
 
                     let last_1_sec = all
                         .iter()
@@ -212,7 +208,7 @@ impl Monitor {
                             .title("Error distribution")
                             .borders(Borders::ALL),
                     );
-                    f.render(&mut errors, mid[2]);
+                    f.render(&mut errors, top_mid2_bot[2]);
 
                     let mut barchart = BarChart::default()
                         .block(
@@ -229,7 +225,7 @@ impl Monitor {
                                 .map(|w| w + 2)
                                 .unwrap_or(1) as u16,
                         );
-                    f.render(&mut barchart, top_mid_bot[2]);
+                    f.render(&mut barchart, top_mid2_bot[3]);
                 })
                 .unwrap();
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
