@@ -43,12 +43,14 @@ impl Monitor {
         // Return this when ends to application print summary
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
         let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
+        let mut error_dist: HashMap<String, usize> = HashMap::new();
         'outer: loop {
             loop {
                 match self.report_receiver.try_recv() {
                     Ok(report) => {
-                        if let Ok(report) = report.as_ref() {
-                            *status_dist.entry(report.status).or_default() += 1;
+                        match report.as_ref() {
+                            Ok(report) => *status_dist.entry(report.status).or_default() += 1,
+                            Err(e) => *error_dist.entry(e.to_string()).or_default() += 1,
                         }
                         all.push(report);
                     }
@@ -100,30 +102,31 @@ impl Monitor {
 
             terminal
                 .draw(|mut f| {
-                    let chunks = Layout::default()
+                    let top_mid2_bot = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints(
                             [
                                 Constraint::Length(3),
                                 Constraint::Length(7),
+                                Constraint::Length(error_dist.len() as u16 + 2),
                                 Constraint::Percentage(40),
                             ]
                             .as_ref(),
                         )
                         .split(f.size());
 
-                    let chunks2 = Layout::default()
+                    let mid = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
                             [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
                         )
-                        .split(chunks[1]);
+                        .split(top_mid2_bot[1]);
 
                     let mut gauge = Gauge::default()
                         .block(Block::default().title("Progress").borders(Borders::ALL))
                         .style(Style::default().fg(Color::White))
                         .ratio(progress);
-                    f.render(&mut gauge, chunks[0]);
+                    f.render(&mut gauge, top_mid2_bot[0]);
 
                     let last_1_sec = all
                         .iter()
@@ -173,7 +176,7 @@ impl Monitor {
                             .title("statics for last 1 second")
                             .borders(Borders::ALL),
                     );
-                    f.render(&mut statics, chunks2[0]);
+                    f.render(&mut statics, mid[0]);
 
                     let mut status_v: Vec<(reqwest::StatusCode, usize)> =
                         status_dist.clone().into_iter().collect();
@@ -182,7 +185,7 @@ impl Monitor {
                     let mut statics2_string = String::new();
                     for (status, count) in status_v {
                         statics2_string +=
-                            format!("[{}] {} responses", status.as_str(), count).as_str();
+                            format!("[{}] {} responses\n", status.as_str(), count).as_str();
                     }
                     let statics2_text = [Text::raw(statics2_string)];
                     let mut statics2 = Paragraph::new(statics2_text.iter()).block(
@@ -190,7 +193,22 @@ impl Monitor {
                             .title("Status code distribution")
                             .borders(Borders::ALL),
                     );
-                    f.render(&mut statics2, chunks2[1]);
+                    f.render(&mut statics2, mid[1]);
+
+                    let mut error_v: Vec<(String, usize)> =
+                        error_dist.clone().into_iter().collect();
+                    error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
+                    let mut errors_string = String::new();
+                    for (e, count) in error_v {
+                        errors_string += format!("[{}] {}\n", count, e).as_str();
+                    }
+                    let errors_text = [Text::raw(errors_string)];
+                    let mut errors = Paragraph::new(errors_text.iter()).block(
+                        Block::default()
+                            .title("Error distribution")
+                            .borders(Borders::ALL),
+                    );
+                    f.render(&mut errors, top_mid2_bot[2]);
 
                     let mut barchart = BarChart::default()
                         .block(
@@ -207,7 +225,7 @@ impl Monitor {
                                 .map(|w| w + 2)
                                 .unwrap_or(1) as u16,
                         );
-                    f.render(&mut barchart, chunks[2]);
+                    f.render(&mut barchart, top_mid2_bot[3]);
                 })
                 .unwrap();
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
