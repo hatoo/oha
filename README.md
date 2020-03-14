@@ -26,6 +26,8 @@ $ cargo install oha
 
 # Usage
 
+`-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
+
 ```bash
 oha 0.1.0
 hatoo <hato2000@gmail.com>
