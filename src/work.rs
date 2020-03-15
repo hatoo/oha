@@ -21,7 +21,7 @@ pub async fn work_with_qps<T, F: std::future::Future<Output = T>>(
     qps: usize,
     n_tasks: usize,
     n_workers: usize,
-) -> Vec<Vec<T>> {
+) -> Vec<T> {
     let (tx, rx) = crossbeam::channel::unbounded();
 
     tokio::spawn(async move {
@@ -33,17 +33,16 @@ pub async fn work_with_qps<T, F: std::future::Future<Output = T>>(
             )
             .await;
         }
-        // tx gone
     });
 
-    futures::future::join_all((0..n_workers).map(|_| async {
-        let mut ret = Vec::new();
-        while let Ok(()) = rx.recv() {
-            ret.push(task_generator().await)
-        }
-        ret
-    }))
-    .await
+    futures::stream::iter(0..n_tasks)
+        .map(|_| async {
+            rx.recv().unwrap();
+            task_generator().await
+        })
+        .buffer_unordered(n_workers)
+        .collect()
+        .await
 }
 
 /// Run until dead_line by n workers
