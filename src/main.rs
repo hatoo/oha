@@ -234,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Ok(()) = tokio::signal::ctrl_c() => {
                             // User pressed ctrl-c.
-                            printer::print(&all, start.elapsed());
+                            let _ = printer::print(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(0);
                         }
                     }
@@ -287,7 +287,7 @@ async fn main() -> anyhow::Result<()> {
 
     let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 
-    printer::print(&res, duration);
+    let _ = printer::print(&mut std::io::stdout(), &res, duration);
 
     Ok(())
 }

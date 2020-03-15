@@ -241,7 +241,8 @@ impl Monitor {
                         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
                         terminal.show_cursor()?;
-                        crate::printer::print(&all, now - self.start);
+                        let _ =
+                            crate::printer::print(&mut std::io::stdout(), &all, now - self.start);
                         std::process::exit(0);
                     }
                     _ => (),
