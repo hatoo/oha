@@ -1,46 +1,57 @@
 use super::RequestResult;
 use byte_unit::Byte;
 use std::collections::HashMap;
+use std::io::Write;
 use std::time::Duration;
 
 /// Print all summary to stdout
-pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_duration: Duration) {
-    println!("Summary:");
-    println!(
+pub fn print<W: Write, E: std::fmt::Display>(
+    w: &mut W,
+    res: &[Result<RequestResult, E>],
+    total_duration: Duration,
+) -> std::io::Result<()> {
+    writeln!(w, "Summary:")?;
+    writeln!(
+        w,
         "  Success rate:\t{:.4}",
         res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64
-    );
-    println!("  Total:\t{:.4} secs", total_duration.as_secs_f64());
-    println!(
+    )?;
+    writeln!(w, "  Total:\t{:.4} secs", total_duration.as_secs_f64())?;
+    writeln!(
+        w,
         "  Slowest:\t{:.4} secs",
         res.iter()
             .filter_map(|r| r.as_ref().ok())
             .map(|r| r.duration().as_secs_f64())
             .collect::<average::Max>()
             .max()
-    );
-    println!(
+    )?;
+    writeln!(
+        w,
         "  Fastest:\t{:.4} secs",
         res.iter()
             .filter_map(|r| r.as_ref().ok())
             .map(|r| r.duration().as_secs_f64())
             .collect::<average::Min>()
             .min()
-    );
-    println!(
+    )?;
+    writeln!(
+        w,
         "  Average:\t{:.4} secs",
         res.iter()
             .filter_map(|r| r.as_ref().ok())
             .map(|r| r.duration().as_secs_f64())
             .collect::<average::Mean>()
             .mean()
-    );
-    println!(
+    )?;
+    writeln!(
+        w,
         "  Requests/sec:\t{:.4}",
         res.len() as f64 / total_duration.as_secs_f64()
-    );
-    println!();
-    println!(
+    )?;
+    writeln!(w)?;
+    writeln!(
+        w,
         "  Total data:\t{}",
         Byte::from_bytes(
             res.iter()
@@ -49,8 +60,9 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
                 .sum::<u128>()
         )
         .get_appropriate_unit(true)
-    );
-    println!(
+    )?;
+    writeln!(
+        w,
         "  Size/request:\t{}",
         (res.iter()
             .filter_map(|r| r.as_ref().ok())
@@ -59,8 +71,9 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
             .checked_div(res.iter().filter(|r| r.is_ok()).count() as u128))
         .map(|n| Byte::from_bytes(n).get_appropriate_unit(true).to_string())
         .unwrap_or_else(|| "NaN".to_string())
-    );
-    println!(
+    )?;
+    writeln!(
+        w,
         "  Size/sec:\t{}",
         Byte::from_bytes(
             (res.iter()
@@ -70,20 +83,20 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
                 / total_duration.as_secs_f64()) as u128
         )
         .get_appropriate_unit(true)
-    );
-    println!();
+    )?;
+    writeln!(w)?;
     let durations = res
         .iter()
         .filter_map(|r| r.as_ref().ok())
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
 
-    println!("Response time histogram:");
-    print_histogram(&durations);
-    println!();
-    println!("Latency distribution:");
-    print_distribution(&durations);
-    println!();
+    writeln!(w, "Response time histogram:")?;
+    print_histogram(w, &durations)?;
+    writeln!(w)?;
+    writeln!(w, "Latency distribution:")?;
+    print_distribution(w, &durations)?;
+    writeln!(w)?;
 
     let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
 
@@ -94,9 +107,9 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
     let mut status_v: Vec<(reqwest::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-    println!("Status code distribution:");
+    writeln!(w, "Status code distribution:")?;
     for (status, count) in status_v {
-        println!("  [{}] {} responses", status.as_str(), count);
+        writeln!(w, "  [{}] {} responses", status.as_str(), count)?;
     }
 
     let mut error_dist: HashMap<String, usize> = HashMap::new();
@@ -108,21 +121,23 @@ pub fn print<E: std::fmt::Display>(res: &[Result<RequestResult, E>], total_durat
     error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
     if !error_v.is_empty() {
-        println!();
-        println!("Error distribution:");
+        writeln!(w)?;
+        writeln!(w, "Error distribution:")?;
         for (error, count) in error_v {
-            println!("  [{}] {}", count, error);
+            writeln!(w, "  [{}] {}", count, error)?;
         }
     }
+
+    Ok(())
 }
 
 /// Print histogram of series of f64 data.
 /// This is used to print histogram of response time.
-fn print_histogram(values: &[f64]) {
+fn print_histogram<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
     // TODO: Use better algorithm.
     // Is there any common and good algorithm?
     if values.is_empty() {
-        return;
+        return Ok(());
     }
     let lines = 11;
     let mut bucket: Vec<u64> = vec![0; lines];
@@ -144,32 +159,37 @@ fn print_histogram(values: &[f64]) {
 
     for (i, &b) in bucket.iter().enumerate() {
         let t = min + i as f64 * step;
-        print!("  {:.3} [{}]\t|", t, b);
-        bar(b as f64 / max_bar as f64);
-        println!();
+        write!(w, "  {:.3} [{}]\t|", t, b)?;
+        bar(w, b as f64 / max_bar as f64)?;
+        writeln!(w)?;
     }
+    Ok(())
 }
 
 // Print Bar like ■■■■■■■■■
-fn bar(ratio: f64) {
+fn bar<W: Write>(w: &mut W, ratio: f64) -> std::io::Result<()> {
     // TODO: Use more block element code to show more precise bar
     let width = 32;
     for _ in 0..(width as f64 * ratio) as usize {
-        print!("■");
+        write!(w, "■")?;
     }
+    Ok(())
 }
 
 /// Print distribution of collection of f64
-fn print_distribution(values: &[f64]) {
+fn print_distribution<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
     let mut buf = values.to_vec();
     float_ord::sort(&mut buf);
 
     for &p in &[10, 25, 50, 75, 90, 95, 99] {
         let i = (f64::from(p) / 100.0 * buf.len() as f64) as usize;
-        println!(
+        writeln!(
+            w,
             "  {}% in {:.4} secs",
             p,
             buf.get(i).unwrap_or(&std::f64::NAN)
-        );
+        )?;
     }
+
+    Ok(())
 }
