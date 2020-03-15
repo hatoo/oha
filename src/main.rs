@@ -273,14 +273,14 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_until_with_qps(task_generator, qps, start, start + duration, opts.n_workers)
-                .await
+                .await;
         } else {
-            work::work_until(task_generator, start + duration, opts.n_workers).await
+            work::work_until(task_generator, start + duration, opts.n_workers).await;
         }
     } else if let Some(qps) = opts.query_per_second.take() {
-        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
+        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await;
     } else {
-        work::work(task_generator, opts.n_requests, opts.n_workers).await
+        work::work(task_generator, opts.n_requests, opts.n_workers).await;
     };
     let duration = start.elapsed();
     std::mem::drop(tx);

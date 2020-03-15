@@ -1,3 +1,5 @@
+use futures::prelude::*;
+
 /// Run n tasks by m workers
 /// Currently We use Fn() -> F as "task generator".
 /// Any replacement?
@@ -5,21 +7,12 @@ pub async fn work<T, F: std::future::Future<Output = T>>(
     task_generator: impl Fn() -> F,
     n_tasks: usize,
     n_workers: usize,
-) -> Vec<Vec<T>> {
-    let injector = crossbeam::deque::Injector::new();
-
-    for _ in 0..n_tasks {
-        injector.push(());
-    }
-
-    futures::future::join_all((0..n_workers).map(|_| async {
-        let mut ret = Vec::new();
-        while let crossbeam::deque::Steal::Success(()) = injector.steal() {
-            ret.push(task_generator().await);
-        }
-        ret
-    }))
-    .await
+) -> Vec<T> {
+    futures::stream::iter(0..n_tasks)
+        .map(|_| async { task_generator().await })
+        .buffer_unordered(n_workers)
+        .collect()
+        .await
 }
 
 /// n tasks by m workers limit to qps works in a second
