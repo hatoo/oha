@@ -289,5 +289,11 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = printer::print(&mut std::io::stdout(), &res, duration);
 
-    Ok(())
+    if cfg!(target_os = "macos") {
+        // On macos, it takes too long time in end of execution for many `-c`.
+        // So call exit to quit immediately.
+        std::process::exit(0);
+    } else {
+        Ok(())
+    }
 }
