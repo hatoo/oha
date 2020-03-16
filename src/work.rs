@@ -66,11 +66,14 @@ pub async fn work_until_with_qps<T, F: std::future::Future<Output = T>>(
     start: std::time::Instant,
     dead_line: std::time::Instant,
     n_workers: usize,
-) -> Vec<T> {
+) -> Vec<Vec<T>> {
     let (tx, rx) = crossbeam::channel::bounded(qps);
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
+            if std::time::Instant::now() > dead_line {
+                break;
+            }
             if tx.send(()).is_err() {
                 break;
             }
@@ -79,19 +82,20 @@ pub async fn work_until_with_qps<T, F: std::future::Future<Output = T>>(
             )
             .await;
         }
+        // tx gone
     });
 
-    let ret = futures::stream::repeat(())
-        .map(|_| async {
-            rx.recv().unwrap();
-            task_generator().await
-        })
-        .take_while(|_| async { std::time::Instant::now() < dead_line })
-        .buffer_unordered(n_workers)
-        .collect()
-        .await;
-
-    std::mem::drop(rx);
+    let ret = futures::future::join_all((0..n_workers).map(|_| async {
+        let mut ret = Vec::new();
+        while let Ok(()) = rx.recv() {
+            if std::time::Instant::now() > dead_line {
+                break;
+            }
+            ret.push(task_generator().await)
+        }
+        ret
+    }))
+    .await;
 
     let _ = gen.await;
     ret
