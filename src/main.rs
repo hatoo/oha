@@ -123,10 +123,10 @@ impl Request {
             static ref NOFILE: std::io::Result<(rlimit::rlim, rlimit::rlim)> = rlimit::getrlimit(rlimit::Resource::NOFILE);
         }
         if self.limit_nofile {
-            let no_file = NOFILE.as_ref().map(|t| t.0)?;
+            let no_file = NOFILE.as_ref().unwrap().0;
             let n = std::fs::read_dir("/dev/fd")?.count();
             if n as u64 + 16 > no_file {
-                anyhow::bail!("User Error: (almost) Too many open files")
+                anyhow::bail!("Application Error: (almost) Too many open files")
             } else {
                 Ok(())
             }
