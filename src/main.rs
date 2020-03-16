@@ -112,6 +112,23 @@ struct Request {
 
 impl Request {
     async fn request(self) -> anyhow::Result<RequestResult> {
+        lazy_static::lazy_static! {
+            static ref NOFILE: std::io::Result<(rlimit::rlim, rlimit::rlim)> = rlimit::getrlimit(rlimit::Resource::NOFILE);
+        }
+
+        if let Ok(no_file) = NOFILE.as_ref().map(|t| t.0) {
+            if let Ok(n) = std::fs::read_dir("/dev/fd").map(|i| i.count()) {
+                if n as u64 + 16 > no_file {
+                    anyhow::bail!("User Error: (almost) Too many open files")
+                } else {
+                    Ok(())
+                }
+            } else {
+                Ok(())
+            }
+        } else {
+            Ok::<(), anyhow::Error>(())
+        }?;
         let start = std::time::Instant::now();
         let mut req = self.client.request(self.method, self.url);
         if let Some(body) = self.body {
