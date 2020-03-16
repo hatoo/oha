@@ -81,6 +81,11 @@ Examples: -z 10s -z 3m.",
         long = "redirect"
     )]
     redirect: usize,
+    #[structopt(
+        help = "Limit number of open files. This may causes low performance. This flag has no effect on Windows.",
+        long = "limit-nofile"
+    )]
+    limit_nofile: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -108,27 +113,31 @@ struct Request {
     url: Url,
     body: Option<&'static [u8]>,
     basic_auth: Option<(String, Option<String>)>,
+    limit_nofile: bool,
 }
 
 impl Request {
-    async fn request(self) -> anyhow::Result<RequestResult> {
+    #[cfg(unix)]
+    fn check_limit(&self) -> anyhow::Result<()> {
         lazy_static::lazy_static! {
             static ref NOFILE: std::io::Result<(rlimit::rlim, rlimit::rlim)> = rlimit::getrlimit(rlimit::Resource::NOFILE);
         }
-
-        if let Ok(no_file) = NOFILE.as_ref().map(|t| t.0) {
-            if let Ok(n) = std::fs::read_dir("/dev/fd").map(|i| i.count()) {
-                if n as u64 + 16 > no_file {
-                    anyhow::bail!("User Error: (almost) Too many open files")
-                } else {
-                    Ok(())
-                }
+        if self.limit_nofile {
+            let no_file = NOFILE.as_ref().map(|t| t.0)?;
+            let n = std::fs::read_dir("/dev/fd")?.count();
+            if n as u64 + 16 > no_file {
+                anyhow::bail!("User Error: (almost) Too many open files")
             } else {
                 Ok(())
             }
         } else {
-            Ok::<(), anyhow::Error>(())
-        }?;
+            Ok(())
+        }
+    }
+
+    async fn request(self) -> anyhow::Result<RequestResult> {
+        #[cfg(unix)]
+        self.check_limit()?;
         let start = std::time::Instant::now();
         let mut req = self.client.request(self.method, self.url);
         if let Some(body) = self.body {
@@ -284,6 +293,7 @@ async fn main() -> anyhow::Result<()> {
         client: client.clone(),
         body,
         basic_auth,
+        limit_nofile: opts.limit_nofile,
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
