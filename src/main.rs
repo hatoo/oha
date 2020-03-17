@@ -115,22 +115,18 @@ struct Request {
     body: Option<&'static [u8]>,
     basic_auth: Option<(String, Option<String>)>,
     limit_nofile: bool,
+    nofile: Option<tokio::sync::watch::Receiver<usize>>,
 }
 
 impl Request {
     #[cfg(unix)]
-    async fn check_limit(&self) -> anyhow::Result<()> {
+    async fn check_limit(&mut self) -> anyhow::Result<()> {
         lazy_static::lazy_static! {
             static ref NOFILE: std::io::Result<(rlimit::rlim, rlimit::rlim)> = rlimit::getrlimit(rlimit::Resource::NOFILE);
         }
         if self.limit_nofile {
             let no_file = NOFILE.as_ref().unwrap().0;
-            let n = tokio::stream::StreamExt::fold(
-                tokio::fs::read_dir("/dev/fd").await?,
-                0usize,
-                |a, _| a + 1,
-            )
-            .await;
+            let n = self.nofile.as_mut().unwrap().recv().await.unwrap();
             if n as u64 + 16 > no_file {
                 anyhow::bail!("Application Error: (almost) Too many open files")
             } else {
@@ -141,7 +137,7 @@ impl Request {
         }
     }
 
-    async fn request(self) -> anyhow::Result<RequestResult> {
+    async fn request(mut self) -> anyhow::Result<RequestResult> {
         #[cfg(unix)]
         self.check_limit().await?;
         let start = std::time::Instant::now();
@@ -300,6 +296,10 @@ async fn main() -> anyhow::Result<()> {
         body,
         basic_auth,
         limit_nofile: opts.limit_nofile,
+        #[cfg(unix)]
+        nofile: Some(nofile::watch_nofile()),
+        #[cfg(not(unix))]
+        nofile: None,
     };
 
     let task_generator = || async { tx.send(req.clone().request().await) };
