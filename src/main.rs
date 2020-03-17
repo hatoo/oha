@@ -5,6 +5,7 @@ use structopt::StructOpt;
 use url::Url;
 
 mod monitor;
+mod nofile;
 mod printer;
 mod work;
 
@@ -118,13 +119,18 @@ struct Request {
 
 impl Request {
     #[cfg(unix)]
-    fn check_limit(&self) -> anyhow::Result<()> {
+    async fn check_limit(&self) -> anyhow::Result<()> {
         lazy_static::lazy_static! {
             static ref NOFILE: std::io::Result<(rlimit::rlim, rlimit::rlim)> = rlimit::getrlimit(rlimit::Resource::NOFILE);
         }
         if self.limit_nofile {
             let no_file = NOFILE.as_ref().unwrap().0;
-            let n = std::fs::read_dir("/dev/fd")?.count();
+            let n = tokio::stream::StreamExt::fold(
+                tokio::fs::read_dir("/dev/fd").await?,
+                0usize,
+                |a, _| a + 1,
+            )
+            .await;
             if n as u64 + 16 > no_file {
                 anyhow::bail!("Application Error: (almost) Too many open files")
             } else {
@@ -137,7 +143,7 @@ impl Request {
 
     async fn request(self) -> anyhow::Result<RequestResult> {
         #[cfg(unix)]
-        self.check_limit()?;
+        self.check_limit().await?;
         let start = std::time::Instant::now();
         let mut req = self.client.request(self.method, self.url);
         if let Some(body) = self.body {
