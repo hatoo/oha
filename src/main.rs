@@ -235,7 +235,7 @@ async fn main() -> anyhow::Result<()> {
                         Ok(()) = tokio::signal::ctrl_c() => {
                             // User pressed ctrl-c.
                             let _ = printer::print(&mut std::io::stdout(),&all, start.elapsed());
-                            std::process::exit(0);
+                            std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
                 }
@@ -275,7 +275,7 @@ async fn main() -> anyhow::Result<()> {
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = std::io::stdout().execute(crossterm::cursor::Show);
         eprintln!("{}", info);
-        std::process::exit(1);
+        std::process::exit(libc::EXIT_FAILURE);
     }));
 
     let task_generator = || async { tx.send(req.clone().request().await) };
@@ -301,7 +301,7 @@ async fn main() -> anyhow::Result<()> {
     if cfg!(target_os = "macos") {
         // On macos, it takes too long time in end of execution for many `-c`.
         // So call exit to quit immediately.
-        std::process::exit(0);
+        std::process::exit(libc::EXIT_SUCCESS);
     } else {
         Ok(())
     }

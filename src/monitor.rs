@@ -243,7 +243,7 @@ impl Monitor {
                         std::io::stdout().execute(crossterm::cursor::Show)?;
                         let _ =
                             crate::printer::print(&mut std::io::stdout(), &all, now - self.start);
-                        std::process::exit(0);
+                        std::process::exit(libc::EXIT_SUCCESS);
                     }
                     _ => (),
                 }

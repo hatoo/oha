@@ -27,6 +27,7 @@ float-ord = "0.2.0"
 byte-unit = "3.0.3"
 tui = { version = "0.8.0", default-features = false, features = ["crossterm"] }
 crossterm = "0.14.0"
+libc = "0.2.67"
 
 [dev-dependencies]
 assert_cmd = "0.12.0"
