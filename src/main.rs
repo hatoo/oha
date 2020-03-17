@@ -269,6 +269,15 @@ async fn main() -> anyhow::Result<()> {
         basic_auth,
     };
 
+    std::panic::set_hook(Box::new(|info| {
+        use crossterm::ExecutableCommand;
+        let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = std::io::stdout().execute(crossterm::cursor::Show);
+        eprintln!("{}", info);
+        std::process::exit(1);
+    }));
+
     let task_generator = || async { tx.send(req.clone().request().await) };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {

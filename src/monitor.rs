@@ -35,10 +35,10 @@ impl Monitor {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
         stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
+        stdout.execute(crossterm::cursor::Hide)?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
-        terminal.hide_cursor()?;
 
         // Return this when ends to application print summary
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
@@ -240,7 +240,7 @@ impl Monitor {
                     }) => {
                         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
-                        terminal.show_cursor()?;
+                        std::io::stdout().execute(crossterm::cursor::Show)?;
                         let _ =
                             crate::printer::print(&mut std::io::stdout(), &all, now - self.start);
                         std::process::exit(0);
@@ -254,7 +254,7 @@ impl Monitor {
 
         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
         crossterm::terminal::disable_raw_mode()?;
-        terminal.show_cursor()?;
+        std::io::stdout().execute(crossterm::cursor::Show)?;
         Ok(all)
     }
 }
