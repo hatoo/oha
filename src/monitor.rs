@@ -45,6 +45,7 @@ impl Monitor {
         let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
         let mut error_dist: HashMap<String, usize> = HashMap::new();
         'outer: loop {
+            let frame_start = std::time::Instant::now();
             loop {
                 match self.report_receiver.try_recv() {
                     Ok(report) => {
@@ -107,7 +108,7 @@ impl Monitor {
                         .constraints(
                             [
                                 Constraint::Length(3),
-                                Constraint::Length(7),
+                                Constraint::Length(8),
                                 Constraint::Length(error_dist.len() as u16 + 2),
                                 Constraint::Percentage(40),
                             ]
@@ -170,6 +171,13 @@ impl Monitor {
                             )
                             .get_appropriate_unit(true)
                         )),
+                        #[cfg(unix)]
+                        Text::raw(format!("Number of Open files: {}", {
+                            std::fs::read_dir("/dev/fd")
+                                .map(|dir| dir.count())
+                                .map(|c| c.to_string())
+                                .unwrap_or("Error".to_string())
+                        })),
                     ];
                     let mut statics = Paragraph::new(statics_text.iter()).block(
                         Block::default()
@@ -249,7 +257,11 @@ impl Monitor {
                 }
             }
 
-            tokio::time::delay_for(std::time::Duration::from_secs(1) / self.fps as u32).await;
+            let per_frame = std::time::Duration::from_secs(1) / self.fps as u32;
+            let elapsed = frame_start.elapsed();
+            if per_frame > elapsed {
+                tokio::time::delay_for(per_frame - elapsed).await;
+            }
         }
 
         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
