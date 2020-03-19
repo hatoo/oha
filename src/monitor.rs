@@ -185,7 +185,7 @@ impl Monitor {
                         )),
                         #[cfg(unix)]
                         Text::raw(format!(
-                            "Number of Open files: {} / {}",
+                            "Number of open files: {} / {}",
                             nofile.map(|c| c.to_string()).unwrap_or("Error".to_string()),
                             nofile_limit
                                 .as_ref()
