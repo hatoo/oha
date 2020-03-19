@@ -44,6 +44,10 @@ impl Monitor {
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
         let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
         let mut error_dist: HashMap<String, usize> = HashMap::new();
+
+        #[cfg(unix)]
+        let nofile_limit = rlimit::getrlimit(rlimit::Resource::NOFILE);
+
         'outer: loop {
             let frame_start = std::time::Instant::now();
             loop {
@@ -172,12 +176,17 @@ impl Monitor {
                             .get_appropriate_unit(true)
                         )),
                         #[cfg(unix)]
-                        Text::raw(format!("Number of Open files: {}", {
+                        Text::raw(format!(
+                            "Number of Open files: {} / {}",
                             std::fs::read_dir("/dev/fd")
                                 .map(|dir| dir.count())
                                 .map(|c| c.to_string())
-                                .unwrap_or("Error".to_string())
-                        })),
+                                .unwrap_or("Error".to_string()),
+                            nofile_limit
+                                .as_ref()
+                                .map(|(s, _h)| s.to_string())
+                                .unwrap_or("Unknown".to_string())
+                        )),
                     ];
                     let mut statics = Paragraph::new(statics_text.iter()).block(
                         Block::default()
