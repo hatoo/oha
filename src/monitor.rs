@@ -3,6 +3,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
 use std::collections::HashMap;
 use std::io;
+use tokio::stream::StreamExt;
 use tokio::sync::mpsc::error::TryRecvError;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -105,6 +106,12 @@ impl Monitor {
             let bar_num_req_str: Vec<(&str, u64)> =
                 bar_num_req.iter().map(|(a, b)| (a.as_str(), *b)).collect();
 
+            #[cfg(unix)]
+            let nofile = match tokio::fs::read_dir("/dev/fd").await {
+                Ok(dir) => Ok(dir.fold(0, |c, _| c + 1).await),
+                Err(e) => Err(e),
+            };
+
             terminal
                 .draw(|mut f| {
                     let top_mid2_bot = Layout::default()
@@ -178,10 +185,7 @@ impl Monitor {
                         #[cfg(unix)]
                         Text::raw(format!(
                             "Number of Open files: {} / {}",
-                            std::fs::read_dir("/dev/fd")
-                                .map(|dir| dir.count())
-                                .map(|c| c.to_string())
-                                .unwrap_or("Error".to_string()),
+                            nofile.map(|c| c.to_string()).unwrap_or("Error".to_string()),
                             nofile_limit
                                 .as_ref()
                                 .map(|(s, _h)| s.to_string())
