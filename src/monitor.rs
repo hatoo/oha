@@ -3,6 +3,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
 use std::collections::HashMap;
 use std::io;
+#[cfg(unix)]
 use tokio::stream::StreamExt;
 use tokio::sync::mpsc::error::TryRecvError;
 use tui::backend::CrosstermBackend;
