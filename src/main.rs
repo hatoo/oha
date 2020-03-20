@@ -29,7 +29,7 @@ struct Opts {
     )]
     n_requests: usize,
     #[structopt(
-        help = "Number of workers to run concurrently.",
+        help = "Number of workers to run concurrently. You may should increase limit to number of open files for larger `-c`.",
         short = "c",
         default_value = "50"
     )]
@@ -40,7 +40,7 @@ Examples: -z 10s -z 3m.",
         short = "z"
     )]
     duration: Option<ParseDuration>,
-    #[structopt(help = "Rate limit, in queries per second (QPS)", short = "q")]
+    #[structopt(help = "Rate limit for all, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
     #[structopt(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
@@ -53,7 +53,7 @@ Examples: -z 10s -z 3m.",
         default_value = "GET"
     )]
     method: reqwest::Method,
-    #[structopt(help = "Custom HTTP header.", short = "H")]
+    #[structopt(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = "H")]
     headers: Vec<String>,
     #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
     timeout: Option<ParseDuration>,
@@ -97,6 +97,7 @@ pub struct RequestResult {
 }
 
 impl RequestResult {
+    /// Dusration the request takes.
     pub fn duration(&self) -> std::time::Duration {
         self.end - self.start
     }
