@@ -29,7 +29,7 @@ struct Opts {
     )]
     n_requests: usize,
     #[structopt(
-        help = "Number of workers to run concurrently.",
+        help = "Number of workers to run concurrently. You may should increase limit to number of open files for larger `-c`.",
         short = "c",
         default_value = "50"
     )]
@@ -40,7 +40,7 @@ Examples: -z 10s -z 3m.",
         short = "z"
     )]
     duration: Option<ParseDuration>,
-    #[structopt(help = "Rate limit, in queries per second (QPS)", short = "q")]
+    #[structopt(help = "Rate limit for all, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
     #[structopt(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
@@ -53,7 +53,7 @@ Examples: -z 10s -z 3m.",
         default_value = "GET"
     )]
     method: reqwest::Method,
-    #[structopt(help = "Custom HTTP header.", short = "H")]
+    #[structopt(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = "H")]
     headers: Vec<String>,
     #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
     timeout: Option<ParseDuration>,
@@ -84,6 +84,7 @@ Examples: -z 10s -z 3m.",
 }
 
 #[derive(Debug, Clone)]
+/// a result for a request
 pub struct RequestResult {
     /// When the query started
     start: std::time::Instant,
@@ -96,17 +97,24 @@ pub struct RequestResult {
 }
 
 impl RequestResult {
+    /// Dusration the request takes.
     pub fn duration(&self) -> std::time::Duration {
         self.end - self.start
     }
 }
 
 #[derive(Clone)]
+/// All data to send a request
 struct Request {
+    /// reqwest client. We can clone this freely.
     client: reqwest::Client,
+    /// HTTP method
     method: reqwest::Method,
+    /// Target URL
     url: Url,
+    /// Custom body to send
     body: Option<&'static [u8]>,
+    /// Basic auth info. (username, password)
     basic_auth: Option<(String, Option<String>)>,
 }
 
@@ -137,57 +145,60 @@ impl Request {
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::from_args();
     let url = Url::parse(opts.url.as_str())?;
-    let mut client_builder = reqwest::ClientBuilder::new();
-    if let Some(proxy) = opts.proxy {
-        client_builder = client_builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
-    }
-    if opts.only_http2 {
-        client_builder = client_builder.http2_prior_knowledge();
-    }
-    if let Some(ParseDuration(d)) = opts.timeout {
-        client_builder = client_builder.timeout(d);
-    }
-    let mut headers: HeaderMap = opts
-        .headers
-        .into_iter()
-        .map(|s| {
-            let header = s.splitn(2, ": ").collect::<Vec<_>>();
-            anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-            let name = HeaderName::from_bytes(header[0].as_bytes())?;
-            let value = HeaderValue::from_str(header[1])?;
-            Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
-        })
-        .collect::<anyhow::Result<HeaderMap>>()?;
+    let client = {
+        // Various settings for client here.
+        let mut client_builder = reqwest::ClientBuilder::new();
+        if let Some(proxy) = opts.proxy {
+            client_builder = client_builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
+        }
+        if opts.only_http2 {
+            client_builder = client_builder.http2_prior_knowledge();
+        }
+        if let Some(ParseDuration(d)) = opts.timeout {
+            client_builder = client_builder.timeout(d);
+        }
+        let mut headers: HeaderMap = opts
+            .headers
+            .into_iter()
+            .map(|s| {
+                let header = s.splitn(2, ": ").collect::<Vec<_>>();
+                anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+                let name = HeaderName::from_bytes(header[0].as_bytes())?;
+                let value = HeaderValue::from_str(header[1])?;
+                Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
+            })
+            .collect::<anyhow::Result<HeaderMap>>()?;
 
-    if let Some(h) = opts.accept_header {
-        headers.insert(
-            reqwest::header::ACCEPT,
-            HeaderValue::from_bytes(h.as_bytes())?,
-        );
-    }
-    if let Some(h) = opts.content_type {
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            HeaderValue::from_bytes(h.as_bytes())?,
-        );
-    }
-    if let Some(h) = opts.host {
-        headers.insert(
-            reqwest::header::HOST,
-            HeaderValue::from_bytes(h.as_bytes())?,
-        );
-    }
-    if opts.disable_compression {
-        client_builder = client_builder.no_gzip().no_brotli();
-    }
+        if let Some(h) = opts.accept_header {
+            headers.insert(
+                reqwest::header::ACCEPT,
+                HeaderValue::from_bytes(h.as_bytes())?,
+            );
+        }
+        if let Some(h) = opts.content_type {
+            headers.insert(
+                reqwest::header::CONTENT_TYPE,
+                HeaderValue::from_bytes(h.as_bytes())?,
+            );
+        }
+        if let Some(h) = opts.host {
+            headers.insert(
+                reqwest::header::HOST,
+                HeaderValue::from_bytes(h.as_bytes())?,
+            );
+        }
+        if opts.disable_compression {
+            client_builder = client_builder.no_gzip().no_brotli();
+        }
 
-    client_builder = client_builder.redirect(if opts.redirect == 0 {
-        reqwest::redirect::Policy::none()
-    } else {
-        reqwest::redirect::Policy::limited(opts.redirect)
-    });
+        client_builder = client_builder.redirect(if opts.redirect == 0 {
+            reqwest::redirect::Policy::none()
+        } else {
+            reqwest::redirect::Policy::limited(opts.redirect)
+        });
 
-    let client = client_builder.default_headers(headers).build()?;
+        client_builder.default_headers(headers).build()?
+    };
 
     let body: Option<&'static _> = match (opts.body_string, opts.body_path) {
         (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
@@ -214,7 +225,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (result_tx, mut result_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let start = std::time::Instant::now();
 
@@ -225,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
                 let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
                 loop {
                     tokio::select! {
-                        report = rx.recv() => {
+                        report = result_rx.recv() => {
                             if let Some(report) = report {
                                 all.push(report);
                             } else {
@@ -234,7 +245,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Ok(()) = tokio::signal::ctrl_c() => {
                             // User pressed ctrl-c.
-                            let _ = printer::print(&mut std::io::stdout(),&all, start.elapsed());
+                            let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
@@ -252,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
                     .as_ref()
                     .map(|d| monitor::EndLine::Duration(d.0))
                     .unwrap_or(monitor::EndLine::NumQuery(opts.n_requests)),
-                report_receiver: rx,
+                report_receiver: result_rx,
                 start,
                 fps: opts.fps,
             }
@@ -269,6 +280,8 @@ async fn main() -> anyhow::Result<()> {
         basic_auth,
     };
 
+    // On mac, tokio runtime crashes when too many files are opend.
+    // Then reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(|info| {
         use crossterm::ExecutableCommand;
         let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
@@ -278,7 +291,9 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
-    let task_generator = || async { tx.send(req.clone().request().await) };
+    let task_generator = || async { result_tx.send(req.clone().request().await) };
+
+    // Start sending requests here
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_until_with_qps(task_generator, qps, start, start + duration, opts.n_workers)
@@ -291,12 +306,13 @@ async fn main() -> anyhow::Result<()> {
     } else {
         work::work(task_generator, opts.n_requests, opts.n_workers).await
     };
+
     let duration = start.elapsed();
-    std::mem::drop(tx);
+    std::mem::drop(result_tx);
 
     let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 
-    let _ = printer::print(&mut std::io::stdout(), &res, duration);
+    printer::print_summary(&mut std::io::stdout(), &res, duration)?;
 
     if cfg!(target_os = "macos") {
         // On macos, it takes too long time in end of execution for many `-c`.
