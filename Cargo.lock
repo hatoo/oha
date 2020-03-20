@@ -1155,6 +1155,7 @@ dependencies = [
  "libc",
  "parse_duration",
  "reqwest",
+ "rlimit",
  "structopt",
  "tokio",
  "tui",
@@ -1641,6 +1642,16 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "winreg",
+]
+
+[[package]]
+name = "rlimit"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d26e65e82a1e2628c5f209ec12f4508fa50e644bd2f264138e60129d61eae8"
+dependencies = [
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
