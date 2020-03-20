@@ -245,7 +245,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Ok(()) = tokio::signal::ctrl_c() => {
                             // User pressed ctrl-c.
-                            let _ = printer::print(&mut std::io::stdout(),&all, start.elapsed());
+                            let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
@@ -312,7 +312,7 @@ async fn main() -> anyhow::Result<()> {
 
     let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 
-    printer::print(&mut std::io::stdout(), &res, duration)?;
+    printer::print_summary(&mut std::io::stdout(), &res, duration)?;
 
     if cfg!(target_os = "macos") {
         // On macos, it takes too long time in end of execution for many `-c`.

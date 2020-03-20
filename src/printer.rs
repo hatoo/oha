@@ -5,7 +5,7 @@ use std::io::Write;
 use std::time::Duration;
 
 /// Print all summary
-pub fn print<W: Write, E: std::fmt::Display>(
+pub fn print_summary<W: Write, E: std::fmt::Display>(
     w: &mut W,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,

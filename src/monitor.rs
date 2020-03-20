@@ -273,8 +273,11 @@ impl Monitor {
                         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
                         std::io::stdout().execute(crossterm::cursor::Show)?;
-                        let _ =
-                            crate::printer::print(&mut std::io::stdout(), &all, now - self.start);
+                        let _ = crate::printer::print_summary(
+                            &mut std::io::stdout(),
+                            &all,
+                            now - self.start,
+                        );
                         std::process::exit(libc::EXIT_SUCCESS);
                     }
                     _ => (),
