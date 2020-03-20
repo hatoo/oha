@@ -1,10 +1,10 @@
 use super::RequestResult;
 use byte_unit::Byte;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::Duration;
 
-/// Print all summary to stdout
+/// Print all summary
 pub fn print<W: Write, E: std::fmt::Display>(
     w: &mut W,
     res: &[Result<RequestResult, E>],
@@ -98,7 +98,7 @@ pub fn print<W: Write, E: std::fmt::Display>(
     print_distribution(w, &durations)?;
     writeln!(w)?;
 
-    let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
+    let mut status_dist: BTreeMap<reqwest::StatusCode, usize> = Default::default();
 
     for s in res.iter().filter_map(|r| r.as_ref().ok()).map(|r| r.status) {
         *status_dist.entry(s).or_default() += 1;
@@ -112,7 +112,7 @@ pub fn print<W: Write, E: std::fmt::Display>(
         writeln!(w, "  [{}] {} responses", status.as_str(), count)?;
     }
 
-    let mut error_dist: HashMap<String, usize> = HashMap::new();
+    let mut error_dist: BTreeMap<String, usize> = Default::default();
     for e in res.iter().filter_map(|r| r.as_ref().err()) {
         *error_dist.entry(e.to_string()).or_default() += 1;
     }
