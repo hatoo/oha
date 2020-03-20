@@ -1,7 +1,7 @@
 use byte_unit::Byte;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io;
 #[cfg(unix)]
 use tokio::stream::StreamExt;
@@ -26,7 +26,9 @@ pub struct Monitor {
     pub end_line: EndLine,
     /// All workers sends each result to this channel
     pub report_receiver: tokio::sync::mpsc::UnboundedReceiver<anyhow::Result<RequestResult>>,
+    // When started
     pub start: std::time::Instant,
+    // Frame per scond of TUI
     pub fps: usize,
 }
 
@@ -35,19 +37,24 @@ impl Monitor {
         mut self,
     ) -> Result<Vec<anyhow::Result<RequestResult>>, crossterm::ErrorKind> {
         crossterm::terminal::enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        stdout.execute(crossterm::terminal::EnterAlternateScreen)?;
-        stdout.execute(crossterm::cursor::Hide)?;
+        io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
+        io::stdout().execute(crossterm::cursor::Hide)?;
 
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        let mut terminal = {
+            let backend = CrosstermBackend::new(io::stdout());
+            Terminal::new(backend)?
+        };
 
         // Return this when ends to application print summary
+        // We must not read all data from this due to computational cost.
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
-        let mut status_dist: HashMap<reqwest::StatusCode, usize> = HashMap::new();
-        let mut error_dist: HashMap<String, usize> = HashMap::new();
+        // statics for HTTP status
+        let mut status_dist: BTreeMap<reqwest::StatusCode, usize> = Default::default();
+        // statics for Error
+        let mut error_dist: BTreeMap<String, usize> = Default::default();
 
         #[cfg(unix)]
+        // Limit for number open files. eg. ulimit -n
         let nofile_limit = rlimit::getrlimit(rlimit::Resource::NOFILE);
 
         'outer: loop {
@@ -65,6 +72,7 @@ impl Monitor {
                         break;
                     }
                     Err(TryRecvError::Closed) => {
+                        // Application ends.
                         break 'outer;
                     }
                 }
@@ -184,6 +192,7 @@ impl Monitor {
                             .get_appropriate_unit(true)
                         )),
                         #[cfg(unix)]
+                        // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
                         Text::raw(format!(
                             "Number of open files: {} / {}",
                             nofile.map(|c| c.to_string()).unwrap_or("Error".to_string()),
@@ -252,6 +261,7 @@ impl Monitor {
                 .unwrap();
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
                 match crossterm::event::read()? {
+                    // User pressed q or ctrl-c
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('q'),
                         ..
