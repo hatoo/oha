@@ -156,10 +156,16 @@ fn print_histogram<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
     }
 
     let max_bar = *bucket.iter().max().unwrap();
+    let str_len_max = bucket
+        .iter()
+        .map(|x| x.to_string().len())
+        .max()
+        .unwrap_or(0);
 
     for (i, &b) in bucket.iter().enumerate() {
         let t = min + i as f64 * step;
-        write!(w, "  {:.3} [{}]\t|", t, b)?;
+        let indent = str_len_max - b.to_string().len();
+        write!(w, "  {:.3} [{}]{} |", t, b, " ".repeat(indent))?;
         bar(w, b as f64 / max_bar as f64)?;
         writeln!(w)?;
     }
