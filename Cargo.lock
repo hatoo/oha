@@ -1151,6 +1151,7 @@ dependencies = [
  "float-ord",
  "futures",
  "get-port",
+ "http",
  "lazy_static",
  "libc",
  "parse_duration",
