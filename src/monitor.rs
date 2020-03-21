@@ -121,146 +121,141 @@ impl Monitor {
                 Err(e) => Err(e),
             };
 
-            terminal
-                .draw(|mut f| {
-                    let top_mid2_bot = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints(
-                            [
-                                Constraint::Length(3),
-                                Constraint::Length(8),
-                                Constraint::Length(error_dist.len() as u16 + 2),
-                                Constraint::Percentage(40),
-                            ]
-                            .as_ref(),
+            terminal.draw(|mut f| {
+                let top_mid2_bot = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints(
+                        [
+                            Constraint::Length(3),
+                            Constraint::Length(8),
+                            Constraint::Length(error_dist.len() as u16 + 2),
+                            Constraint::Percentage(40),
+                        ]
+                        .as_ref(),
+                    )
+                    .split(f.size());
+
+                let mid = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(top_mid2_bot[1]);
+
+                let mut gauge = Gauge::default()
+                    .block(Block::default().title("Progress").borders(Borders::ALL))
+                    .style(Style::default().fg(Color::White))
+                    .ratio(progress);
+                f.render(&mut gauge, top_mid2_bot[0]);
+
+                let last_1_sec = all
+                    .iter()
+                    .rev()
+                    .filter_map(|r| r.as_ref().ok())
+                    .take_while(|r| (now - r.end).as_secs_f64() <= 1.0)
+                    .collect::<Vec<_>>();
+                let statics_text = [
+                    Text::raw(format!("Query per second: {}\n", last_1_sec.len())),
+                    Text::raw(format!(
+                        "Slowest: {:.4} secs\n",
+                        last_1_sec
+                            .iter()
+                            .map(|r| r.duration())
+                            .max()
+                            .map(|d| d.as_secs_f64())
+                            .unwrap_or(std::f64::NAN)
+                    )),
+                    Text::raw(format!(
+                        "Fastest: {:.4} secs\n",
+                        last_1_sec
+                            .iter()
+                            .map(|r| r.duration())
+                            .min()
+                            .map(|d| d.as_secs_f64())
+                            .unwrap_or(std::f64::NAN)
+                    )),
+                    Text::raw(format!(
+                        "Average: {:.4} secs\n",
+                        last_1_sec
+                            .iter()
+                            .map(|r| r.duration())
+                            .sum::<std::time::Duration>()
+                            .as_secs_f64()
+                            / last_1_sec.len() as f64
+                    )),
+                    Text::raw(format!(
+                        "Data: {}\n",
+                        Byte::from_bytes(
+                            last_1_sec.iter().map(|r| r.len_bytes as u128).sum::<u128>()
                         )
-                        .split(f.size());
+                        .get_appropriate_unit(true)
+                    )),
+                    #[cfg(unix)]
+                    // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
+                    Text::raw(format!(
+                        "Number of open files: {} / {}",
+                        nofile
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|_| "Error".to_string()),
+                        nofile_limit
+                            .as_ref()
+                            .map(|(s, _h)| s.to_string())
+                            .unwrap_or_else(|_| "Unknown".to_string())
+                    )),
+                ];
+                let mut statics = Paragraph::new(statics_text.iter()).block(
+                    Block::default()
+                        .title("statics for last 1 second")
+                        .borders(Borders::ALL),
+                );
+                f.render(&mut statics, mid[0]);
 
-                    let mid = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints(
-                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
-                        )
-                        .split(top_mid2_bot[1]);
+                let mut status_v: Vec<(reqwest::StatusCode, usize)> =
+                    status_dist.clone().into_iter().collect();
+                status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-                    let mut gauge = Gauge::default()
-                        .block(Block::default().title("Progress").borders(Borders::ALL))
-                        .style(Style::default().fg(Color::White))
-                        .ratio(progress);
-                    f.render(&mut gauge, top_mid2_bot[0]);
+                let mut statics2_string = String::new();
+                for (status, count) in status_v {
+                    statics2_string +=
+                        format!("[{}] {} responses\n", status.as_str(), count).as_str();
+                }
+                let statics2_text = [Text::raw(statics2_string)];
+                let mut statics2 = Paragraph::new(statics2_text.iter()).block(
+                    Block::default()
+                        .title("Status code distribution")
+                        .borders(Borders::ALL),
+                );
+                f.render(&mut statics2, mid[1]);
 
-                    let last_1_sec = all
-                        .iter()
-                        .rev()
-                        .filter_map(|r| r.as_ref().ok())
-                        .take_while(|r| (now - r.end).as_secs_f64() <= 1.0)
-                        .collect::<Vec<_>>();
-                    let statics_text = [
-                        Text::raw(format!("Query per second: {}\n", last_1_sec.len())),
-                        Text::raw(format!(
-                            "Slowest: {:.4} secs\n",
-                            last_1_sec
-                                .iter()
-                                .map(|r| r.duration())
-                                .max()
-                                .map(|d| d.as_secs_f64())
-                                .unwrap_or(std::f64::NAN)
-                        )),
-                        Text::raw(format!(
-                            "Fastest: {:.4} secs\n",
-                            last_1_sec
-                                .iter()
-                                .map(|r| r.duration())
-                                .min()
-                                .map(|d| d.as_secs_f64())
-                                .unwrap_or(std::f64::NAN)
-                        )),
-                        Text::raw(format!(
-                            "Average: {:.4} secs\n",
-                            last_1_sec
-                                .iter()
-                                .map(|r| r.duration())
-                                .sum::<std::time::Duration>()
-                                .as_secs_f64()
-                                / last_1_sec.len() as f64
-                        )),
-                        Text::raw(format!(
-                            "Data: {}\n",
-                            Byte::from_bytes(
-                                last_1_sec.iter().map(|r| r.len_bytes as u128).sum::<u128>()
-                            )
-                            .get_appropriate_unit(true)
-                        )),
-                        #[cfg(unix)]
-                        // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
-                        Text::raw(format!(
-                            "Number of open files: {} / {}",
-                            nofile
-                                .map(|c| c.to_string())
-                                .unwrap_or_else(|_| "Error".to_string()),
-                            nofile_limit
-                                .as_ref()
-                                .map(|(s, _h)| s.to_string())
-                                .unwrap_or_else(|_| "Unknown".to_string())
-                        )),
-                    ];
-                    let mut statics = Paragraph::new(statics_text.iter()).block(
+                let mut error_v: Vec<(String, usize)> = error_dist.clone().into_iter().collect();
+                error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
+                let mut errors_string = String::new();
+                for (e, count) in error_v {
+                    errors_string += format!("[{}] {}\n", count, e).as_str();
+                }
+                let errors_text = [Text::raw(errors_string)];
+                let mut errors = Paragraph::new(errors_text.iter()).block(
+                    Block::default()
+                        .title("Error distribution")
+                        .borders(Borders::ALL),
+                );
+                f.render(&mut errors, top_mid2_bot[2]);
+
+                let mut barchart = BarChart::default()
+                    .block(
                         Block::default()
-                            .title("statics for last 1 second")
+                            .title("Requests - number of requests / past seconds")
                             .borders(Borders::ALL),
+                    )
+                    .data(bar_num_req_str.as_slice())
+                    .bar_width(
+                        bar_num_req
+                            .iter()
+                            .map(|(s, _)| s.chars().count())
+                            .max()
+                            .map(|w| w + 2)
+                            .unwrap_or(1) as u16,
                     );
-                    f.render(&mut statics, mid[0]);
-
-                    let mut status_v: Vec<(reqwest::StatusCode, usize)> =
-                        status_dist.clone().into_iter().collect();
-                    status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
-
-                    let mut statics2_string = String::new();
-                    for (status, count) in status_v {
-                        statics2_string +=
-                            format!("[{}] {} responses\n", status.as_str(), count).as_str();
-                    }
-                    let statics2_text = [Text::raw(statics2_string)];
-                    let mut statics2 = Paragraph::new(statics2_text.iter()).block(
-                        Block::default()
-                            .title("Status code distribution")
-                            .borders(Borders::ALL),
-                    );
-                    f.render(&mut statics2, mid[1]);
-
-                    let mut error_v: Vec<(String, usize)> =
-                        error_dist.clone().into_iter().collect();
-                    error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
-                    let mut errors_string = String::new();
-                    for (e, count) in error_v {
-                        errors_string += format!("[{}] {}\n", count, e).as_str();
-                    }
-                    let errors_text = [Text::raw(errors_string)];
-                    let mut errors = Paragraph::new(errors_text.iter()).block(
-                        Block::default()
-                            .title("Error distribution")
-                            .borders(Borders::ALL),
-                    );
-                    f.render(&mut errors, top_mid2_bot[2]);
-
-                    let mut barchart = BarChart::default()
-                        .block(
-                            Block::default()
-                                .title("Requests - number of requests / past seconds")
-                                .borders(Borders::ALL),
-                        )
-                        .data(bar_num_req_str.as_slice())
-                        .bar_width(
-                            bar_num_req
-                                .iter()
-                                .map(|(s, _)| s.chars().count())
-                                .max()
-                                .map(|w| w + 2)
-                                .unwrap_or(1) as u16,
-                        );
-                    f.render(&mut barchart, top_mid2_bot[3]);
-                })
-                .unwrap();
+                f.render(&mut barchart, top_mid2_bot[3]);
+            })?;
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
                 match crossterm::event::read()? {
                     // User pressed q or ctrl-c
