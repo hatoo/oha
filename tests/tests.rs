@@ -33,6 +33,32 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
     rx.try_recv().unwrap()
 }
 
+async fn get_method(args: &[&str]) -> http::method::Method {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let report_headers = warp::any().and(warp::filters::method::method()).map(
+        move |method: http::method::Method| {
+            tx.send(method).unwrap();
+            "Hello World"
+        },
+    );
+
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    Command::cargo_bin("oha")
+        .unwrap()
+        .args(&["-n", "1", "--no-tui"])
+        .args(args)
+        .arg(format!("http://127.0.0.1:{}", port))
+        .assert()
+        .success();
+
+    rx.try_recv().unwrap()
+}
+
 #[tokio::main]
 #[test]
 async fn test_enable_compression_default() {
@@ -98,4 +124,40 @@ async fn test_setting_basic_auth() {
 async fn test_setting_host() {
     let header = get_header_body(&["--host", "hatoo.io"]).await.0;
     assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
+}
+
+#[tokio::main]
+#[test]
+async fn test_setting_method() {
+    assert_eq!(get_method(&[]).await, http::method::Method::GET);
+    assert_eq!(get_method(&["-m", "GET"]).await, http::method::Method::GET);
+    assert_eq!(
+        get_method(&["-m", "POST"]).await,
+        http::method::Method::POST
+    );
+    assert_eq!(
+        get_method(&["-m", "CONNECT"]).await,
+        http::method::Method::CONNECT
+    );
+    assert_eq!(
+        get_method(&["-m", "DELETE"]).await,
+        http::method::Method::DELETE
+    );
+    assert_eq!(
+        get_method(&["-m", "HEAD"]).await,
+        http::method::Method::HEAD
+    );
+    assert_eq!(
+        get_method(&["-m", "OPTIONS"]).await,
+        http::method::Method::OPTIONS
+    );
+    assert_eq!(
+        get_method(&["-m", "PATCH"]).await,
+        http::method::Method::PATCH
+    );
+    assert_eq!(get_method(&["-m", "PUT"]).await, http::method::Method::PUT);
+    assert_eq!(
+        get_method(&["-m", "TRACE"]).await,
+        http::method::Method::TRACE
+    );
 }
