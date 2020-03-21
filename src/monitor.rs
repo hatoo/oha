@@ -195,11 +195,13 @@ impl Monitor {
                         // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
                         Text::raw(format!(
                             "Number of open files: {} / {}",
-                            nofile.map(|c| c.to_string()).unwrap_or("Error".to_string()),
+                            nofile
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|_| "Error".to_string()),
                             nofile_limit
                                 .as_ref()
                                 .map(|(s, _h)| s.to_string())
-                                .unwrap_or("Unknown".to_string())
+                                .unwrap_or_else(|_| "Unknown".to_string())
                         )),
                     ];
                     let mut statics = Paragraph::new(statics_text.iter()).block(
