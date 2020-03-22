@@ -81,6 +81,8 @@ Examples: -z 10s -z 3m.",
         long = "redirect"
     )]
     redirect: usize,
+    #[structopt(help = "Set that all scokets have TCP_NODELAY", long = "tcp-nodelay")]
+    tcp_nodelay: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -196,6 +198,10 @@ async fn main() -> anyhow::Result<()> {
         } else {
             reqwest::redirect::Policy::limited(opts.redirect)
         });
+
+        if opts.tcp_nodelay {
+            client_builder = client_builder.tcp_nodelay();
+        }
 
         client_builder.default_headers(headers).build()?
     };
