@@ -1,11 +1,11 @@
 use byte_unit::Byte;
+use crossbeam::channel::TryRecvError;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
 use std::collections::BTreeMap;
 use std::io;
 #[cfg(unix)]
 use tokio::stream::StreamExt;
-use tokio::sync::mpsc::error::TryRecvError;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
@@ -25,7 +25,7 @@ pub enum EndLine {
 pub struct Monitor {
     pub end_line: EndLine,
     /// All workers sends each result to this channel
-    pub report_receiver: tokio::sync::mpsc::UnboundedReceiver<anyhow::Result<RequestResult>>,
+    pub report_receiver: crossbeam::channel::Receiver<anyhow::Result<RequestResult>>,
     // When started
     pub start: std::time::Instant,
     // Frame per scond of TUI
@@ -33,9 +33,7 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub async fn monitor(
-        mut self,
-    ) -> Result<Vec<anyhow::Result<RequestResult>>, crossterm::ErrorKind> {
+    pub async fn monitor(self) -> Result<Vec<anyhow::Result<RequestResult>>, crossterm::ErrorKind> {
         crossterm::terminal::enable_raw_mode()?;
         io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
         io::stdout().execute(crossterm::cursor::Hide)?;
@@ -71,7 +69,7 @@ impl Monitor {
                     Err(TryRecvError::Empty) => {
                         break;
                     }
-                    Err(TryRecvError::Closed) => {
+                    Err(TryRecvError::Disconnected) => {
                         // Application ends.
                         break 'outer;
                     }
