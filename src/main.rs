@@ -231,7 +231,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let (result_tx, result_rx) = crossbeam::channel::unbounded();
+    let (result_tx, result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
 
