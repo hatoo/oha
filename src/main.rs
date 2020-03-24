@@ -262,7 +262,6 @@ async fn main() -> anyhow::Result<()> {
                             let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
-                        _ = tokio::task::yield_now() => {}
                     }
                 }
                 all
