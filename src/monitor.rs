@@ -1,7 +1,7 @@
 use byte_unit::Byte;
-use crossbeam::channel::TryRecvError;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
+use flume::TryRecvError;
 use std::collections::BTreeMap;
 use std::io;
 #[cfg(unix)]
@@ -25,7 +25,7 @@ pub enum EndLine {
 pub struct Monitor {
     pub end_line: EndLine,
     /// All workers sends each result to this channel
-    pub report_receiver: crossbeam::channel::Receiver<anyhow::Result<RequestResult>>,
+    pub report_receiver: flume::Receiver<anyhow::Result<RequestResult>>,
     // When started
     pub start: std::time::Instant,
     // Frame per scond of TUI

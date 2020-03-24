@@ -231,7 +231,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let (result_tx, result_rx) = crossbeam::channel::unbounded();
+    let (result_tx, mut result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
 
@@ -239,21 +239,11 @@ async fn main() -> anyhow::Result<()> {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(
             async move {
-                let (proxy_tx, mut proxy_rx) = tokio::sync::mpsc::unbounded_channel();
-
-                tokio::spawn(async move {
-                    while let Ok(v) = result_rx.recv() {
-                        proxy_tx.send(v).unwrap();
-                    }
-                    ()
-                });
-
-
                 let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
                 loop {
                     tokio::select! {
-                        report = proxy_rx.recv() => {
-                            if let Some(report) = report {
+                        report = result_rx.recv_async() => {
+                            if let Ok(report) = report {
                                 all.push(report);
                             } else {
                                 break;
