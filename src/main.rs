@@ -239,6 +239,14 @@ async fn main() -> anyhow::Result<()> {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(
             async move {
+                let (ctrl_c_tx, mut ctrl_c_rx) = flume::unbounded();
+
+                tokio::spawn(async move {
+                    if let Ok(())  = tokio::signal::ctrl_c().await {
+                        let _ = ctrl_c_tx.send(());
+                    }
+                });
+
                 let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
                 loop {
                     tokio::select! {
@@ -249,7 +257,7 @@ async fn main() -> anyhow::Result<()> {
                                 break;
                             }
                         }
-                        Ok(()) = tokio::signal::ctrl_c() => {
+                        _ = ctrl_c_rx.recv_async() => {
                             // User pressed ctrl-c.
                             let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
