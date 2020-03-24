@@ -235,6 +235,8 @@ async fn main() -> anyhow::Result<()> {
 
     let start = std::time::Instant::now();
 
+    let (mut ctrl_c_tx, mut ctrl_c_rx) = tokio::sync::mpsc::channel(1);
+
     let data_collector = if opts.no_tui {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(
@@ -259,7 +261,7 @@ async fn main() -> anyhow::Result<()> {
                                 break;
                             }
                         }
-                        Ok(()) = tokio::signal::ctrl_c() => {
+                        Some(()) = ctrl_c_rx.recv() => {
                             // User pressed ctrl-c.
                             let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
@@ -310,18 +312,25 @@ async fn main() -> anyhow::Result<()> {
     let task_generator = || async { result_tx.send(req.clone().request().await) };
 
     // Start sending requests here
-    if let Some(ParseDuration(duration)) = opts.duration.take() {
+    let worker = if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second.take() {
             work::work_until_with_qps(task_generator, qps, start, start + duration, opts.n_workers)
-                .await
+                .boxed()
         } else {
-            work::work_until(task_generator, start + duration, opts.n_workers).await
+            work::work_until(task_generator, start + duration, opts.n_workers).boxed()
         }
     } else if let Some(qps) = opts.query_per_second.take() {
-        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
+        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).boxed()
     } else {
-        work::work(task_generator, opts.n_requests, opts.n_workers).await
+        work::work(task_generator, opts.n_requests, opts.n_workers).boxed()
     };
+
+    tokio::select! {
+        _ = worker => {},
+        _ = tokio::signal::ctrl_c() => {
+            let _ = ctrl_c_tx.send(());
+        }
+    }
 
     let duration = start.elapsed();
     std::mem::drop(result_tx);
