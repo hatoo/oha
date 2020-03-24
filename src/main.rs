@@ -240,6 +240,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(
             async move {
                 let (proxy_tx, mut proxy_rx) = tokio::sync::mpsc::unbounded_channel();
+                let (mut ctrl_c_tx, mut ctrl_c_rx) = tokio::sync::mpsc::unbounded_channel();
 
                 tokio::spawn(async move {
                     while let Ok(v) = result_rx.recv() {
@@ -248,22 +249,31 @@ async fn main() -> anyhow::Result<()> {
                     ()
                 });
 
+                tokio::spawn(async move {
+                    if let Ok(())  = tokio::signal::ctrl_c().await {
+                        println!("ctrl-c");
+                        dbg!(ctrl_c_tx.send(()));
+                    }
+                });
 
                 let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
                 loop {
+                    println!("loop");
                     tokio::select! {
                         report = proxy_rx.recv() => {
+                            println!("proxy");
                             if let Some(report) = report {
                                 all.push(report);
                             } else {
                                 break;
                             }
                         }
-                        Ok(()) = tokio::signal::ctrl_c() => {
+                        _ = ctrl_c_rx.recv() => {
                             // User pressed ctrl-c.
                             let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
+                        _ = tokio::time::delay_for(std::time::Duration::from_millis(1)) => {}
                     }
                 }
                 all
