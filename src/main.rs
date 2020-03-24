@@ -251,17 +251,14 @@ async fn main() -> anyhow::Result<()> {
 
                 tokio::spawn(async move {
                     if let Ok(())  = tokio::signal::ctrl_c().await {
-                        println!("ctrl-c");
-                        dbg!(ctrl_c_tx.send(()));
+                        let _ = ctrl_c_tx.send(());
                     }
                 });
 
                 let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
                 loop {
-                    println!("loop");
                     tokio::select! {
                         report = proxy_rx.recv() => {
-                            println!("proxy");
                             if let Some(report) = report {
                                 all.push(report);
                             } else {
@@ -273,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
                             let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
-                        _ = tokio::time::delay_for(std::time::Duration::from_millis(1)) => {}
+                        _ = tokio::task::yield_now() => {}
                     }
                 }
                 all
