@@ -22,13 +22,18 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
 
-    Command::cargo_bin("oha")
-        .unwrap()
-        .args(&["-n", "1", "--no-tui"])
-        .args(args)
-        .arg(format!("http://127.0.0.1:{}", port))
-        .assert()
-        .success();
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .args(args)
+            .arg(format!("http://127.0.0.1:{}", port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
 
     rx.try_recv().unwrap()
 }
@@ -48,19 +53,23 @@ async fn get_method(args: &[&str]) -> http::method::Method {
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
 
-    Command::cargo_bin("oha")
-        .unwrap()
-        .args(&["-n", "1", "--no-tui"])
-        .args(args)
-        .arg(format!("http://127.0.0.1:{}", port))
-        .assert()
-        .success();
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .args(args)
+            .arg(format!("http://127.0.0.1:{}", port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
 
     rx.try_recv().unwrap()
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_enable_compression_default() {
     let header = get_header_body(&[]).await.0;
     let accept_encoding: Vec<&str> = header
@@ -75,22 +84,19 @@ async fn test_enable_compression_default() {
     assert!(accept_encoding.contains(&"br"));
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_custom_header() {
     let header = get_header_body(&["-H", "foo: bar", "--"]).await.0;
     assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_accept_header() {
     let header = get_header_body(&["-A", "text/html"]).await.0;
     assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_body() {
     let body = get_header_body(&["-d", "hello body"]).await.1;
     assert_eq!(
@@ -99,8 +105,7 @@ async fn test_setting_body() {
     );
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_content_type_header() {
     let header = get_header_body(&["-T", "text/html"]).await.0;
     assert_eq!(
@@ -109,8 +114,7 @@ async fn test_setting_content_type_header() {
     );
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_basic_auth() {
     let header = get_header_body(&["-a", "hatoo:pass"]).await.0;
     assert_eq!(
@@ -119,15 +123,13 @@ async fn test_setting_basic_auth() {
     );
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_host() {
     let header = get_header_body(&["--host", "hatoo.io"]).await.0;
     assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
 }
 
-#[tokio::main]
-#[test]
+#[tokio::test]
 async fn test_setting_method() {
     assert_eq!(get_method(&[]).await, http::method::Method::GET);
     assert_eq!(get_method(&["-m", "GET"]).await, http::method::Method::GET);
