@@ -29,6 +29,9 @@ tui = { version = "0.8.0", default-features = false, features = ["crossterm"] }
 crossterm = "0.14.0"
 libc = "0.2.67"
 flume = "0.7.0"
+hyper = "0.13.4"
+http = "0.2"
+futures-util = "0.3.4"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.3.0"
