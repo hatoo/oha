@@ -21,7 +21,7 @@ impl std::str::FromStr for ParseDuration {
 #[structopt(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
 struct Opts {
     #[structopt(help = "Target URL.")]
-    url: String,
+    url: Url,
     #[structopt(
         help = "Number of requests to run.",
         short = "n",
@@ -146,7 +146,6 @@ impl Request {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::from_args();
-    let url = Url::parse(opts.url.as_str())?;
     let client = {
         // Various settings for client here.
         let mut client_builder = reqwest::ClientBuilder::new();
@@ -288,7 +287,7 @@ async fn main() -> anyhow::Result<()> {
 
     let req = Request {
         method: opts.method,
-        url,
+        url: opts.url,
         client: client.clone(),
         body,
         basic_auth,
