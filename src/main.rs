@@ -327,7 +327,11 @@ async fn main() -> anyhow::Result<()> {
     };
     */
     let client_builder = client::ClientBuilder { url: opts.url };
-    client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await;
+    if let Some(ParseDuration(duration)) = opts.duration.take() {
+        client::work_until(client_builder, result_tx, start + duration, opts.n_workers).await;
+    } else {
+        client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await;
+    }
 
     let duration = start.elapsed();
     // std::mem::drop(result_tx);

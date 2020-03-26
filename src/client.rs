@@ -153,3 +153,19 @@ pub async fn work(
     }))
     .await;
 }
+
+/// Run until dead_line by n workers
+pub async fn work_until(
+    client_builder: ClientBuilder,
+    report_tx: flume::Sender<anyhow::Result<crate::RequestResult>>,
+    dead_line: std::time::Instant,
+    n_workers: usize,
+) {
+    futures::future::join_all((0..n_workers).map(|_| async {
+        let mut w = client_builder.build();
+        while std::time::Instant::now() < dead_line {
+            report_tx.send(w.work().await).unwrap();
+        }
+    }))
+    .await;
+}
