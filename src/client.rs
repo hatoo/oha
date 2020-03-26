@@ -14,7 +14,12 @@ pub struct ClientBuilder {
 
 impl ClientBuilder {
     pub fn build(&self) -> Client {
-        todo!()
+        Client {
+            url: self.url.clone(),
+            rng: rand::thread_rng(),
+            resolver: None,
+            send_request: None,
+        }
     }
 }
 
@@ -101,11 +106,15 @@ impl Client {
         }
         let end = std::time::Instant::now();
 
-        Ok(crate::RequestResult {
+        let result = crate::RequestResult {
             start,
             end,
             status,
             len_bytes: len_sum,
-        })
+        };
+
+        self.send_request = Some(send_request);
+
+        Ok(result)
     }
 }
