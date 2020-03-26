@@ -18,3 +18,9 @@ pub struct Client {
     >,
     conn: Option<hyper::client::conn::SendRequest<hyper::Body>>,
 }
+
+impl Client {
+    pub fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
+        todo!()
+    }
+}
