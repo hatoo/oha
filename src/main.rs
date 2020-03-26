@@ -68,8 +68,8 @@ Examples: -z 10s -z 3m.",
     #[structopt(help = "Content-Type.", short = "T")]
     content_type: Option<String>,
     #[structopt(help = "Basic authentication, username:password", short = "a")]
-    /*
     basic_auth: Option<String>,
+    /*
     #[structopt(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
     #[structopt(help = "Only HTTP2", long = "http2")]
@@ -169,6 +169,34 @@ async fn main() -> anyhow::Result<()> {
         if let Some(h) = opts.host {
             headers.insert(http::header::HOST, HeaderValue::from_bytes(h.as_bytes())?);
         }
+
+        if let Some(auth) = opts.basic_auth {
+            let u_p = auth.splitn(2, ':').collect::<Vec<_>>();
+            anyhow::ensure!(u_p.len() == 2, anyhow::anyhow!("Parse auth"));
+            let mut header_value = b"Basic ".to_vec();
+            {
+                use std::io::Write;
+                let username = u_p[0];
+                let password = if u_p[1].is_empty() {
+                    None
+                } else {
+                    Some(u_p[1])
+                };
+                let mut encoder =
+                    base64::write::EncoderWriter::new(&mut header_value, base64::STANDARD);
+                // The unwraps here are fine because Vec::write* is infallible.
+                write!(encoder, "{}:", username).unwrap();
+                if let Some(password) = password {
+                    write!(encoder, "{}", password).unwrap();
+                }
+            }
+
+            headers.insert(
+                http::header::AUTHORIZATION,
+                HeaderValue::from_bytes(&header_value)?,
+            );
+        }
+
         headers
     };
 
