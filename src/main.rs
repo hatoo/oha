@@ -400,6 +400,7 @@ async fn main() -> anyhow::Result<()> {
         headers,
         body,
         tcp_nodelay: opts.tcp_nodelay,
+        timeout: opts.timeout.map(|d| d.0),
     };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {

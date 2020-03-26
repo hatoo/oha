@@ -1,12 +1,10 @@
 use anyhow::Context;
+use futures_util::future::FutureExt;
 use rand::seq::SliceRandom;
 use std::str::FromStr;
 use tokio::prelude::*;
 use tokio::stream::StreamExt;
 use url::Url;
-
-trait AsyncRW: AsyncRead + AsyncWrite {}
-impl<T: AsyncRead + AsyncWrite> AsyncRW for T {}
 
 pub struct ClientBuilder {
     pub url: Url,
@@ -14,6 +12,7 @@ pub struct ClientBuilder {
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
     pub tcp_nodelay: bool,
+    pub timeout: Option<std::time::Duration>,
 }
 
 impl ClientBuilder {
@@ -27,6 +26,7 @@ impl ClientBuilder {
             resolver: None,
             send_request: None,
             tcp_nodelay: self.tcp_nodelay,
+            timeout: self.timeout,
         }
     }
 }
@@ -47,6 +47,7 @@ pub struct Client {
     >,
     send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     tcp_nodelay: bool,
+    timeout: Option<std::time::Duration>,
 }
 
 impl Client {
@@ -112,7 +113,7 @@ impl Client {
     }
 
     pub async fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
-        let start = std::time::Instant::now();
+        let mut start = std::time::Instant::now();
         let mut send_request = if let Some(send_request) = self.send_request.take() {
             send_request
         } else {
@@ -124,43 +125,56 @@ impl Client {
         };
 
         let mut num_retry = 0;
-        let res = loop {
+        loop {
             let request = self.request()?;
-            match send_request.send_request(request).await {
-                Ok(res) => break res,
-                Err(e) => {
-                    if num_retry > 1 {
-                        return Err(e.into());
+            let timeout = if let Some(timeout) = self.timeout.clone() {
+                tokio::time::delay_for(timeout).boxed()
+            } else {
+                futures::future::pending().boxed()
+            };
+            tokio::select! {
+                res = send_request.send_request(request) => {
+                    match res {
+                        Ok(res) => {
+                            let status = res.status();
+                            let mut len_sum = 0;
+
+                            let mut stream = res.into_body();
+                            while let Some(chunk) = stream.next().await {
+                                len_sum += chunk?.len();
+                            }
+                            let end = std::time::Instant::now();
+
+                            let result = crate::RequestResult {
+                                start,
+                                end,
+                                status,
+                                len_bytes: len_sum,
+                            };
+
+                            self.send_request = Some(send_request);
+
+                            return Ok(result);
+                        }
+                        Err(e) => {
+                            if num_retry > 1 {
+                                return Err(e.into());
+                            }
+                            start = std::time::Instant::now();
+                            let addr = (
+                                self.lookup_ip().await?,
+                                self.url.port_or_known_default().context("get port")?,
+                            );
+                            send_request = self.send_request(addr).await?;
+                            num_retry += 1;
+                        }
                     }
-                    let addr = (
-                        self.lookup_ip().await?,
-                        self.url.port_or_known_default().context("get port")?,
-                    );
-                    send_request = self.send_request(addr).await?;
-                    num_retry += 1;
+                }
+                _ = timeout => {
+                    anyhow::bail!("timeout");
                 }
             }
-        };
-
-        let status = res.status();
-        let mut len_sum = 0;
-
-        let mut stream = res.into_body();
-        while let Some(chunk) = stream.next().await {
-            len_sum += chunk?.len();
         }
-        let end = std::time::Instant::now();
-
-        let result = crate::RequestResult {
-            start,
-            end,
-            status,
-            len_bytes: len_sum,
-        };
-
-        self.send_request = Some(send_request);
-
-        Ok(result)
     }
 }
 
