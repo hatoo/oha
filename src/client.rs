@@ -11,6 +11,7 @@ impl<T: AsyncRead + AsyncWrite> AsyncRW for T {}
 pub struct ClientBuilder {
     pub url: Url,
     pub method: http::Method,
+    pub headers: http::header::HeaderMap,
 }
 
 impl ClientBuilder {
@@ -21,6 +22,7 @@ impl ClientBuilder {
             rng: rand::thread_rng(),
             resolver: None,
             send_request: None,
+            headers: self.headers.clone(),
         }
     }
 }
@@ -28,6 +30,7 @@ impl ClientBuilder {
 pub struct Client {
     url: Url,
     method: http::Method,
+    headers: http::header::HeaderMap,
     rng: rand::rngs::ThreadRng,
     resolver: Option<
         trust_dns_resolver::AsyncResolver<
@@ -83,6 +86,19 @@ impl Client {
         }
     }
 
+    fn request(&self) -> anyhow::Result<http::Request<hyper::Body>> {
+        let mut builder = http::Request::builder()
+            .uri(http::uri::Uri::from_str(self.url.path())?)
+            .method(self.method.clone());
+
+        builder
+            .headers_mut()
+            .context("get header")?
+            .extend(self.headers.iter().map(|(k, v)| (k.clone(), v.clone())));
+
+        Ok(builder.body(hyper::Body::empty())?)
+    }
+
     pub async fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
         let start = std::time::Instant::now();
         let mut send_request = if let Some(send_request) = self.send_request.take() {
@@ -97,10 +113,7 @@ impl Client {
 
         let mut num_retry = 0;
         let res = loop {
-            let request = http::Request::builder()
-                .uri(http::uri::Uri::from_str(&self.url.path())?)
-                .method(self.method.clone())
-                .body(hyper::Body::empty())?;
+            let request = self.request()?;
             match send_request.send_request(request).await {
                 Ok(res) => break res,
                 Err(e) => {

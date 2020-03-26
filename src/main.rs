@@ -232,6 +232,17 @@ async fn main() -> anyhow::Result<()> {
         None
     };
     */
+    let mut headers: http::header::HeaderMap = opts
+        .headers
+        .into_iter()
+        .map(|s| {
+            let header = s.splitn(2, ": ").collect::<Vec<_>>();
+            anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+            let name = HeaderName::from_bytes(header[0].as_bytes())?;
+            let value = HeaderValue::from_str(header[1])?;
+            Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
+        })
+        .collect::<anyhow::Result<HeaderMap>>()?;
 
     let (result_tx, mut result_rx) = flume::unbounded();
 
@@ -329,6 +340,7 @@ async fn main() -> anyhow::Result<()> {
     let client_builder = client::ClientBuilder {
         url: opts.url,
         method: opts.method,
+        headers,
     };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {
