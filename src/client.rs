@@ -118,3 +118,28 @@ impl Client {
         Ok(result)
     }
 }
+
+/// Run n tasks by m workers
+/// Currently We use Fn() -> F as "task generator".
+/// Any replacement?
+pub async fn work<T, F: std::future::Future<Output = T>, B: Fn() -> W, W: FnMut() -> F>(
+    builder: B,
+    n_tasks: usize,
+    n_workers: usize,
+) -> Vec<Vec<T>> {
+    let injector = crossbeam::deque::Injector::new();
+
+    for _ in 0..n_tasks {
+        injector.push(());
+    }
+
+    futures::future::join_all((0..n_workers).map(|_| async {
+        let mut w = builder();
+        let mut ret = Vec::new();
+        while let crossbeam::deque::Steal::Success(()) = injector.steal() {
+            ret.push(w().await);
+        }
+        ret
+    }))
+    .await
+}
