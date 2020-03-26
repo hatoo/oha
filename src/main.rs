@@ -8,7 +8,7 @@ use url::Url;
 mod client;
 mod monitor;
 mod printer;
-mod work;
+// mod work;
 
 struct ParseDuration(std::time::Duration);
 
@@ -68,21 +68,25 @@ Examples: -z 10s -z 3m.",
     #[structopt(help = "Content-Type.", short = "T")]
     content_type: Option<String>,
     #[structopt(help = "Basic authentication, username:password", short = "a")]
+    /*
     basic_auth: Option<String>,
     #[structopt(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
     #[structopt(help = "Only HTTP2", long = "http2")]
     only_http2: bool,
+    */
     #[structopt(help = "HTTP Host header", long = "host")]
     host: Option<String>,
     #[structopt(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
+    /*
     #[structopt(
         help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
         long = "redirect"
     )]
     redirect: usize,
+    */
     #[structopt(help = "Set that all scokets have TCP_NODELAY", long = "tcp-nodelay")]
     tcp_nodelay: bool,
 }
@@ -107,132 +111,9 @@ impl RequestResult {
     }
 }
 
-#[derive(Clone)]
-/// All data to send a request
-struct Request {
-    /// reqwest client. We can clone this freely.
-    client: reqwest::Client,
-    /// HTTP method
-    method: reqwest::Method,
-    /// Target URL
-    url: Url,
-    /// Custom body to send
-    body: Option<&'static [u8]>,
-    /// Basic auth info. (username, password)
-    basic_auth: Option<(String, Option<String>)>,
-}
-
-impl Request {
-    async fn request(self) -> anyhow::Result<RequestResult> {
-        let start = std::time::Instant::now();
-        let mut req = self.client.request(self.method, self.url);
-        if let Some(body) = self.body {
-            req = req.body(body);
-        }
-        if let Some((user, pass)) = self.basic_auth {
-            req = req.basic_auth(user, pass);
-        }
-        let resp = req.send().await?;
-        let status = resp.status();
-        let len_bytes = resp.bytes().await?.len();
-        let end = std::time::Instant::now();
-        Ok::<_, anyhow::Error>(RequestResult {
-            start,
-            end,
-            status,
-            len_bytes,
-        })
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::from_args();
-    /*
-    let client = {
-        // Various settings for client here.
-        let mut client_builder = reqwest::ClientBuilder::new();
-        if let Some(proxy) = opts.proxy {
-            client_builder = client_builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
-        }
-        if opts.only_http2 {
-            client_builder = client_builder.http2_prior_knowledge();
-        }
-        if let Some(ParseDuration(d)) = opts.timeout {
-            client_builder = client_builder.timeout(d);
-        }
-        let mut headers: HeaderMap = opts
-            .headers
-            .into_iter()
-            .map(|s| {
-                let header = s.splitn(2, ": ").collect::<Vec<_>>();
-                anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-                let name = HeaderName::from_bytes(header[0].as_bytes())?;
-                let value = HeaderValue::from_str(header[1])?;
-                Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
-            })
-            .collect::<anyhow::Result<HeaderMap>>()?;
-
-        if let Some(h) = opts.accept_header {
-            headers.insert(
-                reqwest::header::ACCEPT,
-                HeaderValue::from_bytes(h.as_bytes())?,
-            );
-        }
-        if let Some(h) = opts.content_type {
-            headers.insert(
-                reqwest::header::CONTENT_TYPE,
-                HeaderValue::from_bytes(h.as_bytes())?,
-            );
-        }
-        if let Some(h) = opts.host {
-            headers.insert(
-                reqwest::header::HOST,
-                HeaderValue::from_bytes(h.as_bytes())?,
-            );
-        }
-        if opts.disable_compression {
-            client_builder = client_builder.no_gzip().no_brotli();
-        }
-
-        client_builder = client_builder.redirect(if opts.redirect == 0 {
-            reqwest::redirect::Policy::none()
-        } else {
-            reqwest::redirect::Policy::limited(opts.redirect)
-        });
-
-        if opts.tcp_nodelay {
-            client_builder = client_builder.tcp_nodelay();
-        }
-
-        client_builder.default_headers(headers).build()?
-    };
-
-    let body: Option<&'static _> = match (opts.body_string, opts.body_path) {
-        (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
-        (_, Some(path)) => {
-            let mut buf = Vec::new();
-            std::fs::File::open(path)?.read_to_end(&mut buf)?;
-            Some(Box::leak(buf.into_boxed_slice()))
-        }
-        _ => None,
-    };
-
-    let basic_auth = if let Some(auth) = opts.basic_auth {
-        let u_p = auth.splitn(2, ':').collect::<Vec<_>>();
-        anyhow::ensure!(u_p.len() == 2, anyhow::anyhow!("Parse auth"));
-        Some((
-            u_p[0].to_string(),
-            if u_p[1].is_empty() {
-                None
-            } else {
-                Some(u_p[1].to_string())
-            },
-        ))
-    } else {
-        None
-    };
-    */
 
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
@@ -356,16 +237,6 @@ async fn main() -> anyhow::Result<()> {
         .boxed()
     };
 
-    /*
-    let req = Request {
-        method: opts.method,
-        url: opts.url,
-        client: client.clone(),
-        body,
-        basic_auth,
-    };
-    */
-
     // On mac, tokio runtime crashes when too many files are opend.
     // Then reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(|info| {
@@ -377,23 +248,6 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
-    /*
-    let task_generator = || async { result_tx.send(req.clone().request().await) };
-
-    // Start sending requests here
-    if let Some(ParseDuration(duration)) = opts.duration.take() {
-        if let Some(qps) = opts.query_per_second.take() {
-            work::work_until_with_qps(task_generator, qps, start, start + duration, opts.n_workers)
-                .await
-        } else {
-            work::work_until(task_generator, start + duration, opts.n_workers).await
-        }
-    } else if let Some(qps) = opts.query_per_second.take() {
-        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
-    } else {
-        work::work(task_generator, opts.n_requests, opts.n_workers).await
-    };
-    */
     let client_builder = client::ClientBuilder {
         url: opts.url,
         method: opts.method,
@@ -430,7 +284,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let duration = start.elapsed();
-    // std::mem::drop(result_tx);
 
     let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 
