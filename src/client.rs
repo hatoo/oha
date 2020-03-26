@@ -78,7 +78,7 @@ impl Client {
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
-            tokio::spawn(conn);
+            tokio::spawn(conn.without_shutdown());
             Ok(send)
         }
     }
@@ -91,11 +91,23 @@ impl Client {
             self.send_request().await?
         };
 
-        let request = http::Request::builder()
-            .version(http::Version::HTTP_11)
-            .uri(http::uri::Uri::from_str(&self.url.to_string())?)
-            .body(hyper::Body::empty())?;
-        let res = send_request.send_request(request).await?;
+        let mut num_retry = 0;
+        let res = loop {
+            let request = http::Request::builder()
+                .version(http::Version::HTTP_11)
+                .uri(http::uri::Uri::from_str(&self.url.to_string())?)
+                .body(hyper::Body::empty())?;
+            match send_request.send_request(request).await {
+                Ok(res) => break res,
+                Err(e) => {
+                    if num_retry > 1 {
+                        Err(e)?;
+                    }
+                    send_request = self.send_request().await?;
+                    num_retry += 1;
+                }
+            }
+        };
 
         let status = res.status();
         let mut len_sum = 0;
