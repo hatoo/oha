@@ -289,6 +289,16 @@ async fn main() -> anyhow::Result<()> {
         headers
     };
 
+    let body: Option<&'static _> = match (opts.body_string, opts.body_path) {
+        (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
+        (_, Some(path)) => {
+            let mut buf = Vec::new();
+            std::fs::File::open(path)?.read_to_end(&mut buf)?;
+            Some(Box::leak(buf.into_boxed_slice()))
+        }
+        _ => None,
+    };
+
     let (result_tx, mut result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
@@ -386,6 +396,7 @@ async fn main() -> anyhow::Result<()> {
         url: opts.url,
         method: opts.method,
         headers,
+        body,
     };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {

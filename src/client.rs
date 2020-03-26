@@ -12,6 +12,7 @@ pub struct ClientBuilder {
     pub url: Url,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
+    pub body: Option<&'static [u8]>,
 }
 
 impl ClientBuilder {
@@ -19,10 +20,11 @@ impl ClientBuilder {
         Client {
             url: self.url.clone(),
             method: self.method.clone(),
+            headers: self.headers.clone(),
+            body: self.body,
             rng: rand::thread_rng(),
             resolver: None,
             send_request: None,
-            headers: self.headers.clone(),
         }
     }
 }
@@ -31,6 +33,7 @@ pub struct Client {
     url: Url,
     method: http::Method,
     headers: http::header::HeaderMap,
+    body: Option<&'static [u8]>,
     rng: rand::rngs::ThreadRng,
     resolver: Option<
         trust_dns_resolver::AsyncResolver<
@@ -96,7 +99,11 @@ impl Client {
             .context("get header")?
             .extend(self.headers.iter().map(|(k, v)| (k.clone(), v.clone())));
 
-        Ok(builder.body(hyper::Body::empty())?)
+        if let Some(body) = self.body {
+            Ok(builder.body(hyper::Body::from(body))?)
+        } else {
+            Ok(builder.body(hyper::Body::empty())?)
+        }
     }
 
     pub async fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
