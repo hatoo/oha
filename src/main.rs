@@ -147,6 +147,7 @@ impl Request {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::from_args();
+    /*
     let client = {
         // Various settings for client here.
         let mut client_builder = reqwest::ClientBuilder::new();
@@ -230,6 +231,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         None
     };
+    */
 
     let (result_tx, mut result_rx) = flume::unbounded();
 
@@ -286,6 +288,7 @@ async fn main() -> anyhow::Result<()> {
         .boxed()
     };
 
+    /*
     let req = Request {
         method: opts.method,
         url: opts.url,
@@ -293,6 +296,7 @@ async fn main() -> anyhow::Result<()> {
         body,
         basic_auth,
     };
+    */
 
     // On mac, tokio runtime crashes when too many files are opend.
     // Then reset terminal mode and exit immediately.
@@ -305,6 +309,7 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
+    /*
     let task_generator = || async { result_tx.send(req.clone().request().await) };
 
     // Start sending requests here
@@ -320,9 +325,12 @@ async fn main() -> anyhow::Result<()> {
     } else {
         work::work(task_generator, opts.n_requests, opts.n_workers).await
     };
+    */
+    let client_builder = client::ClientBuilder { url: opts.url };
+    client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await;
 
     let duration = start.elapsed();
-    std::mem::drop(result_tx);
+    // std::mem::drop(result_tx);
 
     let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 

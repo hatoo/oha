@@ -9,7 +9,7 @@ trait AsyncRW: AsyncRead + AsyncWrite {}
 impl<T: AsyncRead + AsyncWrite> AsyncRW for T {}
 
 pub struct ClientBuilder {
-    url: Url,
+    pub url: Url,
 }
 
 impl ClientBuilder {
@@ -63,7 +63,7 @@ impl Client {
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
         let addr = (
             self.lookup_ip().await?,
-            self.url.port().context("get port")?,
+            self.url.port_or_known_default().context("get port")?,
         );
         if self.url.scheme() == "https" {
             let stream = tokio::net::TcpStream::connect(addr).await?;
@@ -122,11 +122,12 @@ impl Client {
 /// Run n tasks by m workers
 /// Currently We use Fn() -> F as "task generator".
 /// Any replacement?
-pub async fn work<T, F: std::future::Future<Output = T>, B: Fn() -> W, W: FnMut() -> F>(
-    builder: B,
+pub async fn work(
+    client_builder: ClientBuilder,
+    report_tx: flume::Sender<anyhow::Result<crate::RequestResult>>,
     n_tasks: usize,
     n_workers: usize,
-) -> Vec<Vec<T>> {
+) {
     let injector = crossbeam::deque::Injector::new();
 
     for _ in 0..n_tasks {
@@ -134,12 +135,10 @@ pub async fn work<T, F: std::future::Future<Output = T>, B: Fn() -> W, W: FnMut(
     }
 
     futures::future::join_all((0..n_workers).map(|_| async {
-        let mut w = builder();
-        let mut ret = Vec::new();
+        let mut w = client_builder.build();
         while let crossbeam::deque::Steal::Success(()) = injector.steal() {
-            ret.push(w().await);
+            report_tx.send(w.work().await).unwrap();
         }
-        ret
     }))
-    .await
+    .await;
 }
