@@ -1,3 +1,4 @@
+use anyhow::Context;
 use futures::prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::io::Read;
@@ -232,17 +233,37 @@ async fn main() -> anyhow::Result<()> {
         None
     };
     */
-    let mut headers: http::header::HeaderMap = opts
-        .headers
-        .into_iter()
-        .map(|s| {
-            let header = s.splitn(2, ": ").collect::<Vec<_>>();
-            anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-            let name = HeaderName::from_bytes(header[0].as_bytes())?;
-            let value = HeaderValue::from_str(header[1])?;
-            Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
-        })
-        .collect::<anyhow::Result<HeaderMap>>()?;
+
+    let mut headers: http::header::HeaderMap = Default::default();
+
+    // default headers
+    headers.insert("accept", http::header::HeaderValue::from_static("*/*"));
+    headers.insert(
+        "accept-encoding",
+        http::header::HeaderValue::from_static("gzip, br"),
+    );
+
+    let host = if let Some(port) = opts.url.port() {
+        format!("{}:{}", opts.url.host_str().context("get host")?, port)
+    } else {
+        opts.url.host_str().context("get host")?.to_string()
+    };
+
+    headers.insert("host", http::header::HeaderValue::from_str(host.as_str())?);
+
+    headers.extend(
+        opts.headers
+            .into_iter()
+            .map(|s| {
+                let header = s.splitn(2, ": ").collect::<Vec<_>>();
+                anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+                let name = HeaderName::from_bytes(header[0].as_bytes())?;
+                let value = HeaderValue::from_str(header[1])?;
+                Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
+            .into_iter(),
+    );
 
     let (result_tx, mut result_rx) = flume::unbounded();
 
