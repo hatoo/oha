@@ -234,57 +234,60 @@ async fn main() -> anyhow::Result<()> {
     };
     */
 
-    let mut headers: http::header::HeaderMap = Default::default();
+    let headers = {
+        let mut headers: http::header::HeaderMap = Default::default();
 
-    // default headers
-    headers.insert("accept", http::header::HeaderValue::from_static("*/*"));
-    headers.insert(
-        "accept-encoding",
-        http::header::HeaderValue::from_static("gzip, br"),
-    );
+        // default headers
+        headers.insert("accept", http::header::HeaderValue::from_static("*/*"));
+        headers.insert(
+            "accept-encoding",
+            http::header::HeaderValue::from_static("gzip, br"),
+        );
 
-    let host = if let Some(port) = opts.url.port() {
-        format!("{}:{}", opts.url.host_str().context("get host")?, port)
-    } else {
-        opts.url.host_str().context("get host")?.to_string()
+        let host = if let Some(port) = opts.url.port() {
+            format!("{}:{}", opts.url.host_str().context("get host")?, port)
+        } else {
+            opts.url.host_str().context("get host")?.to_string()
+        };
+
+        headers.insert("host", http::header::HeaderValue::from_str(host.as_str())?);
+
+        headers.extend(
+            opts.headers
+                .into_iter()
+                .map(|s| {
+                    let header = s.splitn(2, ": ").collect::<Vec<_>>();
+                    anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+                    let name = HeaderName::from_bytes(header[0].as_bytes())?;
+                    let value = HeaderValue::from_str(header[1])?;
+                    Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?
+                .into_iter(),
+        );
+
+        if let Some(h) = opts.accept_header {
+            headers.insert(
+                reqwest::header::ACCEPT,
+                HeaderValue::from_bytes(h.as_bytes())?,
+            );
+        }
+
+        if let Some(h) = opts.content_type {
+            headers.insert(
+                reqwest::header::CONTENT_TYPE,
+                HeaderValue::from_bytes(h.as_bytes())?,
+            );
+        }
+
+        if let Some(h) = opts.host {
+            headers.insert(
+                reqwest::header::HOST,
+                HeaderValue::from_bytes(h.as_bytes())?,
+            );
+        }
+        headers
     };
-
-    headers.insert("host", http::header::HeaderValue::from_str(host.as_str())?);
-
-    headers.extend(
-        opts.headers
-            .into_iter()
-            .map(|s| {
-                let header = s.splitn(2, ": ").collect::<Vec<_>>();
-                anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-                let name = HeaderName::from_bytes(header[0].as_bytes())?;
-                let value = HeaderValue::from_str(header[1])?;
-                Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?
-            .into_iter(),
-    );
-
-    if let Some(h) = opts.accept_header {
-        headers.insert(
-            reqwest::header::ACCEPT,
-            HeaderValue::from_bytes(h.as_bytes())?,
-        );
-    }
-
-    if let Some(h) = opts.content_type {
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            HeaderValue::from_bytes(h.as_bytes())?,
-        );
-    }
-
-    if let Some(h) = opts.host {
-        headers.insert(
-            reqwest::header::HOST,
-            HeaderValue::from_bytes(h.as_bytes())?,
-        );
-    }
 
     let (result_tx, mut result_rx) = flume::unbounded();
 
