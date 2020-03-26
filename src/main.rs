@@ -4,6 +4,7 @@ use std::io::Read;
 use structopt::StructOpt;
 use url::Url;
 
+mod client;
 mod monitor;
 mod printer;
 mod work;
