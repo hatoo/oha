@@ -94,14 +94,13 @@ impl Client {
         let mut num_retry = 0;
         let res = loop {
             let request = http::Request::builder()
-                .version(http::Version::HTTP_11)
                 .uri(http::uri::Uri::from_str(&self.url.to_string())?)
                 .body(hyper::Body::empty())?;
             match send_request.send_request(request).await {
                 Ok(res) => break res,
                 Err(e) => {
                     if num_retry > 1 {
-                        Err(e)?;
+                        return Err(e.into());
                     }
                     send_request = self.send_request().await?;
                     num_retry += 1;
