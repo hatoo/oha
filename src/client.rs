@@ -63,11 +63,8 @@ impl Client {
 
     async fn send_request(
         &mut self,
+        addr: (std::net::IpAddr, u16),
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
-        let addr = (
-            self.lookup_ip().await?,
-            self.url.port_or_known_default().context("get port")?,
-        );
         if self.url.scheme() == "https" {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             let connector = native_tls::TlsConnector::new()?;
@@ -91,7 +88,11 @@ impl Client {
         let mut send_request = if let Some(send_request) = self.send_request.take() {
             send_request
         } else {
-            self.send_request().await?
+            let addr = (
+                self.lookup_ip().await?,
+                self.url.port_or_known_default().context("get port")?,
+            );
+            self.send_request(addr).await?
         };
 
         let mut num_retry = 0;
@@ -106,7 +107,11 @@ impl Client {
                     if num_retry > 1 {
                         return Err(e.into());
                     }
-                    send_request = self.send_request().await?;
+                    let addr = (
+                        self.lookup_ip().await?,
+                        self.url.port_or_known_default().context("get port")?,
+                    );
+                    send_request = self.send_request(addr).await?;
                     num_retry += 1;
                 }
             }
