@@ -265,6 +265,27 @@ async fn main() -> anyhow::Result<()> {
             .into_iter(),
     );
 
+    if let Some(h) = opts.accept_header {
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_bytes(h.as_bytes())?,
+        );
+    }
+
+    if let Some(h) = opts.content_type {
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_bytes(h.as_bytes())?,
+        );
+    }
+
+    if let Some(h) = opts.host {
+        headers.insert(
+            reqwest::header::HOST,
+            HeaderValue::from_bytes(h.as_bytes())?,
+        );
+    }
+
     let (result_tx, mut result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
