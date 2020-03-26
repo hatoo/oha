@@ -8,7 +8,6 @@ use url::Url;
 mod client;
 mod monitor;
 mod printer;
-mod work;
 
 struct ParseDuration(std::time::Duration);
 
