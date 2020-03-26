@@ -27,11 +27,11 @@ pub struct Client {
             >,
         >,
     >,
-    conn: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+    send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
 }
 
 impl Client {
-    pub async fn lookup_ip(&mut self) -> anyhow::Result<std::net::IpAddr> {
+    async fn lookup_ip(&mut self) -> anyhow::Result<std::net::IpAddr> {
         let resolver = if let Some(resolver) = self.resolver.take() {
             resolver
         } else {
@@ -49,6 +49,31 @@ impl Client {
         self.resolver = Some(resolver);
 
         Ok(addr)
+    }
+
+    async fn send_request(
+        &mut self,
+    ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
+        let addr = (
+            self.lookup_ip().await?,
+            self.url.port().context("get port")?,
+        );
+        if self.url.scheme() == "https" {
+            let stream = tokio::net::TcpStream::connect(addr).await?;
+            let connector = native_tls::TlsConnector::new()?;
+            let connector = tokio_tls::TlsConnector::from(connector);
+            let stream = connector
+                .connect(self.url.domain().context("get domain")?, stream)
+                .await?;
+            let (send, conn) = hyper::client::conn::handshake(stream).await?;
+            tokio::spawn(conn);
+            Ok(send)
+        } else {
+            let stream = tokio::net::TcpStream::connect(addr).await?;
+            let (send, conn) = hyper::client::conn::handshake(stream).await?;
+            tokio::spawn(conn);
+            Ok(send)
+        }
     }
 
     pub fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
