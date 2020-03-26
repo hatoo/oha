@@ -239,10 +239,12 @@ async fn main() -> anyhow::Result<()> {
 
         // default headers
         headers.insert("accept", http::header::HeaderValue::from_static("*/*"));
-        headers.insert(
-            "accept-encoding",
-            http::header::HeaderValue::from_static("gzip, br"),
-        );
+        if !opts.disable_compression {
+            headers.insert(
+                "accept-encoding",
+                http::header::HeaderValue::from_static("gzip, br"),
+            );
+        }
 
         let host = if let Some(port) = opts.url.port() {
             format!("{}:{}", opts.url.host_str().context("get host")?, port)
