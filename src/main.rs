@@ -1,6 +1,6 @@
 use anyhow::Context;
 use futures::prelude::*;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue};
 use std::io::Read;
 use structopt::StructOpt;
 use url::Url;

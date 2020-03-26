@@ -2,7 +2,6 @@ use anyhow::Context;
 use futures_util::future::FutureExt;
 use rand::seq::SliceRandom;
 use std::str::FromStr;
-use tokio::prelude::*;
 use tokio::stream::StreamExt;
 use url::Url;
 
@@ -276,7 +275,7 @@ pub async fn work_until_with_qps(
         // tx gone
     });
 
-    let ret = futures::future::join_all((0..n_workers).map(|_| async {
+    futures::future::join_all((0..n_workers).map(|_| async {
         let mut w = client_builder.build();
         while let Ok(()) = rx.recv() {
             if std::time::Instant::now() > dead_line {
