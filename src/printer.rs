@@ -98,13 +98,13 @@ pub fn print_summary<W: Write, E: std::fmt::Display>(
     print_distribution(w, &durations)?;
     writeln!(w)?;
 
-    let mut status_dist: BTreeMap<reqwest::StatusCode, usize> = Default::default();
+    let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
 
     for s in res.iter().filter_map(|r| r.as_ref().ok()).map(|r| r.status) {
         *status_dist.entry(s).or_default() += 1;
     }
 
-    let mut status_v: Vec<(reqwest::StatusCode, usize)> = status_dist.into_iter().collect();
+    let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
     writeln!(w, "Status code distribution:")?;

@@ -95,7 +95,7 @@ pub struct RequestResult {
     /// When the query ends
     end: std::time::Instant,
     /// HTTP status
-    status: reqwest::StatusCode,
+    status: http::StatusCode,
     /// Length of body
     len_bytes: usize,
 }
@@ -238,10 +238,13 @@ async fn main() -> anyhow::Result<()> {
         let mut headers: http::header::HeaderMap = Default::default();
 
         // default headers
-        headers.insert("accept", http::header::HeaderValue::from_static("*/*"));
+        headers.insert(
+            http::header::ACCEPT,
+            http::header::HeaderValue::from_static("*/*"),
+        );
         if !opts.disable_compression {
             headers.insert(
-                "accept-encoding",
+                http::header::ACCEPT_ENCODING,
                 http::header::HeaderValue::from_static("gzip, br"),
             );
         }
@@ -252,7 +255,10 @@ async fn main() -> anyhow::Result<()> {
             opts.url.host_str().context("get host")?.to_string()
         };
 
-        headers.insert("host", http::header::HeaderValue::from_str(host.as_str())?);
+        headers.insert(
+            http::header::HOST,
+            http::header::HeaderValue::from_str(host.as_str())?,
+        );
 
         headers.extend(
             opts.headers
@@ -269,24 +275,18 @@ async fn main() -> anyhow::Result<()> {
         );
 
         if let Some(h) = opts.accept_header {
-            headers.insert(
-                reqwest::header::ACCEPT,
-                HeaderValue::from_bytes(h.as_bytes())?,
-            );
+            headers.insert(http::header::ACCEPT, HeaderValue::from_bytes(h.as_bytes())?);
         }
 
         if let Some(h) = opts.content_type {
             headers.insert(
-                reqwest::header::CONTENT_TYPE,
+                http::header::CONTENT_TYPE,
                 HeaderValue::from_bytes(h.as_bytes())?,
             );
         }
 
         if let Some(h) = opts.host {
-            headers.insert(
-                reqwest::header::HOST,
-                HeaderValue::from_bytes(h.as_bytes())?,
-            );
+            headers.insert(http::header::HOST, HeaderValue::from_bytes(h.as_bytes())?);
         }
         headers
     };
