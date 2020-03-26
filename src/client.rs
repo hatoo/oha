@@ -1,6 +1,8 @@
 use anyhow::Context;
 use rand::seq::SliceRandom;
+use std::str::FromStr;
 use tokio::prelude::*;
+use tokio::stream::StreamExt;
 use url::Url;
 
 trait AsyncRW: AsyncRead + AsyncWrite {}
@@ -76,7 +78,34 @@ impl Client {
         }
     }
 
-    pub fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
-        todo!()
+    pub async fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
+        let start = std::time::Instant::now();
+        let mut send_request = if let Some(send_request) = self.send_request.take() {
+            send_request
+        } else {
+            self.send_request().await?
+        };
+
+        let request = http::Request::builder()
+            .version(http::Version::HTTP_11)
+            .uri(http::uri::Uri::from_str(&self.url.to_string())?)
+            .body(hyper::Body::empty())?;
+        let res = send_request.send_request(request).await?;
+
+        let status = res.status();
+        let mut len_sum = 0;
+
+        let mut stream = res.into_body();
+        while let Some(chunk) = stream.next().await {
+            len_sum += chunk?.len();
+        }
+        let end = std::time::Instant::now();
+
+        Ok(crate::RequestResult {
+            start,
+            end,
+            status,
+            len_bytes: len_sum,
+        })
     }
 }
