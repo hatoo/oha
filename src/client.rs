@@ -94,7 +94,7 @@ impl Client {
         let mut num_retry = 0;
         let res = loop {
             let request = http::Request::builder()
-                .uri(http::uri::Uri::from_str(&self.url.to_string())?)
+                .uri(http::uri::Uri::from_str(&self.url.path())?)
                 .body(hyper::Body::empty())?;
             match send_request.send_request(request).await {
                 Ok(res) => break res,
