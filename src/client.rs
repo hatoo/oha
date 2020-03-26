@@ -10,12 +10,14 @@ impl<T: AsyncRead + AsyncWrite> AsyncRW for T {}
 
 pub struct ClientBuilder {
     pub url: Url,
+    pub method: http::Method,
 }
 
 impl ClientBuilder {
     pub fn build(&self) -> Client {
         Client {
             url: self.url.clone(),
+            method: self.method.clone(),
             rng: rand::thread_rng(),
             resolver: None,
             send_request: None,
@@ -25,6 +27,7 @@ impl ClientBuilder {
 
 pub struct Client {
     url: Url,
+    method: http::Method,
     rng: rand::rngs::ThreadRng,
     resolver: Option<
         trust_dns_resolver::AsyncResolver<
@@ -95,6 +98,7 @@ impl Client {
         let res = loop {
             let request = http::Request::builder()
                 .uri(http::uri::Uri::from_str(&self.url.path())?)
+                .method(self.method.clone())
                 .body(hyper::Body::empty())?;
             match send_request.send_request(request).await {
                 Ok(res) => break res,

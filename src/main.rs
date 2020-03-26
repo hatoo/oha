@@ -53,7 +53,7 @@ Examples: -z 10s -z 3m.",
         long = "method",
         default_value = "GET"
     )]
-    method: reqwest::Method,
+    method: http::Method,
     #[structopt(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = "H")]
     headers: Vec<String>,
     #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
@@ -326,7 +326,10 @@ async fn main() -> anyhow::Result<()> {
         work::work(task_generator, opts.n_requests, opts.n_workers).await
     };
     */
-    let client_builder = client::ClientBuilder { url: opts.url };
+    let client_builder = client::ClientBuilder {
+        url: opts.url,
+        method: opts.method,
+    };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {
             client::work_until_with_qps(
