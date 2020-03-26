@@ -328,7 +328,28 @@ async fn main() -> anyhow::Result<()> {
     */
     let client_builder = client::ClientBuilder { url: opts.url };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
-        client::work_until(client_builder, result_tx, start + duration, opts.n_workers).await;
+        if let Some(qps) = opts.query_per_second {
+            client::work_until_with_qps(
+                client_builder,
+                result_tx,
+                qps,
+                start,
+                start + duration,
+                opts.n_workers,
+            )
+            .await;
+        } else {
+            client::work_until(client_builder, result_tx, start + duration, opts.n_workers).await;
+        }
+    } else if let Some(qps) = opts.query_per_second {
+        client::work_with_qps(
+            client_builder,
+            result_tx,
+            qps,
+            opts.n_requests,
+            opts.n_workers,
+        )
+        .await;
     } else {
         client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await;
     }
