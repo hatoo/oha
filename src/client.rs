@@ -13,6 +13,7 @@ pub struct ClientBuilder {
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
+    pub tcp_nodelay: bool,
 }
 
 impl ClientBuilder {
@@ -25,6 +26,7 @@ impl ClientBuilder {
             rng: rand::thread_rng(),
             resolver: None,
             send_request: None,
+            tcp_nodelay: self.tcp_nodelay,
         }
     }
 }
@@ -44,6 +46,7 @@ pub struct Client {
         >,
     >,
     send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+    tcp_nodelay: bool,
 }
 
 impl Client {
@@ -73,6 +76,7 @@ impl Client {
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
         if self.url.scheme() == "https" {
             let stream = tokio::net::TcpStream::connect(addr).await?;
+            stream.set_nodelay(self.tcp_nodelay)?;
             let connector = native_tls::TlsConnector::new()?;
             let connector = tokio_tls::TlsConnector::from(connector);
             let stream = connector
@@ -83,6 +87,7 @@ impl Client {
             Ok(send)
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
+            stream.set_nodelay(self.tcp_nodelay)?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
             Ok(send)
