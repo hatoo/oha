@@ -174,59 +174,64 @@ impl Client {
             send_request
         };
 
-        let mut num_retry = 0;
-        loop {
-            let request = self.request()?;
-            let timeout = if let Some(timeout) = self.timeout.clone() {
-                tokio::time::delay_for(timeout).boxed()
-            } else {
-                futures::future::pending().boxed()
-            };
-            tokio::select! {
-                res = send_request.send_request(request) => {
-                    match res {
-                        Ok(res) => {
-                            let (parts, mut stream) = res.into_parts();
+        let timeout = if let Some(timeout) = self.timeout.clone() {
+            tokio::time::delay_for(timeout).boxed()
+        } else {
+            futures::future::pending().boxed()
+        };
 
-                            let mut len_sum = 0;
-                            while let Some(chunk) = stream.next().await {
-                                len_sum += chunk?.len();
-                            }
+        let do_req = async {
+            let mut num_retry = 0;
+            loop {
+                let request = self.request()?;
+                match send_request.send_request(request).await {
+                    Ok(res) => {
+                        let (parts, mut stream) = res.into_parts();
 
-                            let end = std::time::Instant::now();
-
-                            let result = RequestResult {
-                                start,
-                                end,
-                                status: parts.status,
-                                len_bytes: len_sum,
-                                connection_time,
-                            };
-
-                            self.send_request = Some(send_request);
-
-                            return Ok(result);
+                        let mut len_sum = 0;
+                        while let Some(chunk) = stream.next().await {
+                            len_sum += chunk?.len();
                         }
-                        Err(e) => {
-                            if num_retry >= 1 {
-                                return Err(e.into());
-                            }
-                            start = std::time::Instant::now();
-                            let addr = (
-                                self.lookup_ip().await?,
-                                self.get_port().context("get port")?,
-                            );
-                            let dns_lookup = std::time::Instant::now();
-                            send_request = self.send_request(addr).await?;
-                            let dialup = std::time::Instant::now();
-                            connection_time = Some(ConnectionTime { dns_lookup, dialup });
-                            num_retry += 1;
+
+                        let end = std::time::Instant::now();
+
+                        let result = RequestResult {
+                            start,
+                            end,
+                            status: parts.status,
+                            len_bytes: len_sum,
+                            connection_time,
+                        };
+
+                        self.send_request = Some(send_request);
+
+                        return Ok::<_, anyhow::Error>(result);
+                    }
+                    Err(e) => {
+                        if num_retry >= 1 {
+                            return Err(e.into());
                         }
+                        start = std::time::Instant::now();
+                        let addr = (
+                            self.lookup_ip().await?,
+                            self.get_port().context("get port")?,
+                        );
+                        let dns_lookup = std::time::Instant::now();
+                        send_request = self.send_request(addr).await?;
+                        let dialup = std::time::Instant::now();
+                        connection_time = Some(ConnectionTime { dns_lookup, dialup });
+                        num_retry += 1;
                     }
                 }
-                _ = timeout => {
-                    anyhow::bail!("timeout");
-                }
+            }
+        };
+
+        tokio::select! {
+            res = do_req => {
+                res
+            }
+            _ = timeout => {
+                anyhow::bail!("timeout");
             }
         }
     }
