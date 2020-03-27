@@ -1,4 +1,4 @@
-use super::RequestResult;
+use crate::client::RequestResult;
 use byte_unit::Byte;
 use std::collections::BTreeMap;
 use std::io::Write;

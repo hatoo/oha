@@ -9,6 +9,8 @@ mod client;
 mod monitor;
 mod printer;
 
+use client::RequestResult;
+
 struct ParseDuration(std::time::Duration);
 
 impl std::str::FromStr for ParseDuration {
@@ -88,26 +90,6 @@ Examples: -z 10s -z 3m.",
     */
     #[structopt(help = "Set that all scokets have TCP_NODELAY", long = "tcp-nodelay")]
     tcp_nodelay: bool,
-}
-
-#[derive(Debug, Clone)]
-/// a result for a request
-pub struct RequestResult {
-    /// When the query started
-    start: std::time::Instant,
-    /// When the query ends
-    end: std::time::Instant,
-    /// HTTP status
-    status: http::StatusCode,
-    /// Length of body
-    len_bytes: usize,
-}
-
-impl RequestResult {
-    /// Dusration the request takes.
-    pub fn duration(&self) -> std::time::Duration {
-        self.end - self.start
-    }
 }
 
 #[tokio::main]

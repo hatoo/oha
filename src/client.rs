@@ -5,6 +5,26 @@ use std::str::FromStr;
 use tokio::stream::StreamExt;
 use url::Url;
 
+#[derive(Debug, Clone)]
+/// a result for a request
+pub struct RequestResult {
+    /// When the query started
+    pub start: std::time::Instant,
+    /// When the query ends
+    pub end: std::time::Instant,
+    /// HTTP status
+    pub status: http::StatusCode,
+    /// Length of body
+    pub len_bytes: usize,
+}
+
+impl RequestResult {
+    /// Dusration the request takes.
+    pub fn duration(&self) -> std::time::Duration {
+        self.end - self.start
+    }
+}
+
 pub struct ClientBuilder {
     pub url: Url,
     pub method: http::Method,
@@ -111,7 +131,7 @@ impl Client {
         }
     }
 
-    pub async fn work(&mut self) -> anyhow::Result<crate::RequestResult> {
+    pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
         let mut start = std::time::Instant::now();
         let mut send_request = if let Some(send_request) = self.send_request.take() {
             send_request
@@ -144,7 +164,7 @@ impl Client {
                             }
                             let end = std::time::Instant::now();
 
-                            let result = crate::RequestResult {
+                            let result = RequestResult {
                                 start,
                                 end,
                                 status,
@@ -182,7 +202,7 @@ impl Client {
 /// Any replacement?
 pub async fn work(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<crate::RequestResult>>,
+    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
     n_tasks: usize,
     n_workers: usize,
 ) {
@@ -204,7 +224,7 @@ pub async fn work(
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<crate::RequestResult>>,
+    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
     qps: usize,
     n_tasks: usize,
     n_workers: usize,
@@ -235,7 +255,7 @@ pub async fn work_with_qps(
 /// Run until dead_line by n workers
 pub async fn work_until(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<crate::RequestResult>>,
+    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
@@ -251,7 +271,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 pub async fn work_until_with_qps(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<crate::RequestResult>>,
+    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
     qps: usize,
     start: std::time::Instant,
     dead_line: std::time::Instant,

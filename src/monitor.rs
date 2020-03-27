@@ -12,7 +12,7 @@ use tui::style::{Color, Style};
 use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
 use tui::Terminal;
 
-use crate::RequestResult;
+use crate::client::RequestResult;
 
 /// When the monitor ends
 pub enum EndLine {
