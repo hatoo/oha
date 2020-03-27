@@ -124,8 +124,14 @@ impl Client {
     }
 
     fn request(&self) -> anyhow::Result<http::Request<hyper::Body>> {
+        let path = if let Some(q) = self.url.query() {
+            format!("{}?{}", self.url.path(), q)
+        } else {
+            self.url.path().to_string()
+        };
+
         let mut builder = http::Request::builder()
-            .uri(http::uri::Uri::from_str(self.url.path())?)
+            .uri(http::uri::Uri::from_str(&path)?)
             .method(self.method.clone());
 
         builder
