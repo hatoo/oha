@@ -32,9 +32,9 @@ checksum = "d663a8e9a99154b5fb793032533f6328da35e23aac63d5c152279aa8ba356825"
 
 [[package]]
 name = "assert_cmd"
-version = "0.12.2"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "936fcf2c692b37c696cd0002c57752b2d9478402450c9ca4a463f6afae16d6f5"
+checksum = "36101401a715c232f2c63a534a4b639415064b79d128d2a60d35678f8fb45204"
 dependencies = [
  "doc-comment",
  "escargot",
