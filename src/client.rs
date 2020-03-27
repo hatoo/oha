@@ -186,19 +186,19 @@ impl Client {
                 res = send_request.send_request(request) => {
                     match res {
                         Ok(res) => {
-                            let status = res.status();
-                            let mut len_sum = 0;
+                            let (parts, mut stream) = res.into_parts();
 
-                            let mut stream = res.into_body();
+                            let mut len_sum = 0;
                             while let Some(chunk) = stream.next().await {
                                 len_sum += chunk?.len();
                             }
+
                             let end = std::time::Instant::now();
 
                             let result = RequestResult {
                                 start,
                                 end,
-                                status,
+                                status: parts.status,
                                 len_bytes: len_sum,
                                 connection_time,
                             };
@@ -208,7 +208,7 @@ impl Client {
                             return Ok(result);
                         }
                         Err(e) => {
-                            if num_retry > 1 {
+                            if num_retry >= 1 {
                                 return Err(e.into());
                             }
                             start = std::time::Instant::now();
