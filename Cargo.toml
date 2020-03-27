@@ -15,7 +15,6 @@ license = "MIT"
 [dependencies]
 clap = "2"
 structopt = "0.3"
-# reqwest = { version = "0.10", features = ["gzip", "brotli"] }
 tokio = { version = "0.2", features = ["full"] }
 anyhow = "1"
 crossbeam = "0.7"
