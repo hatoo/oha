@@ -6,10 +6,19 @@ use tokio::stream::StreamExt;
 use url::Url;
 
 #[derive(Debug, Clone)]
+pub struct ConnectionTime {
+    pub dns_lookup: std::time::Instant,
+    pub dialup: std::time::Instant,
+}
+
+#[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
     /// When the query started
     pub start: std::time::Instant,
+    /// DNS + dialup
+    /// None if keep-alive
+    pub connection_time: Option<ConnectionTime>,
     /// When the query ends
     pub end: std::time::Instant,
     /// HTTP status
@@ -133,6 +142,8 @@ impl Client {
 
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
         let mut start = std::time::Instant::now();
+        let mut connection_time: Option<ConnectionTime> = None;
+
         let mut send_request = if let Some(send_request) = self.send_request.take() {
             send_request
         } else {
@@ -140,7 +151,12 @@ impl Client {
                 self.lookup_ip().await?,
                 self.url.port_or_known_default().context("get port")?,
             );
-            self.send_request(addr).await?
+            let dns_lookup = std::time::Instant::now();
+            let send_request = self.send_request(addr).await?;
+            let dialup = std::time::Instant::now();
+
+            connection_time = Some(ConnectionTime { dns_lookup, dialup });
+            send_request
         };
 
         let mut num_retry = 0;
@@ -169,6 +185,7 @@ impl Client {
                                 end,
                                 status,
                                 len_bytes: len_sum,
+                                connection_time,
                             };
 
                             self.send_request = Some(send_request);
@@ -184,7 +201,10 @@ impl Client {
                                 self.lookup_ip().await?,
                                 self.url.port_or_known_default().context("get port")?,
                             );
+                            let dns_lookup = std::time::Instant::now();
                             send_request = self.send_request(addr).await?;
+                            let dialup = std::time::Instant::now();
+                            connection_time = Some(ConnectionTime { dns_lookup, dialup });
                             num_retry += 1;
                         }
                     }
