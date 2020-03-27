@@ -18,7 +18,6 @@ structopt = "0.3"
 # reqwest = { version = "0.10", features = ["gzip", "brotli"] }
 tokio = { version = "0.2", features = ["full"] }
 anyhow = "1"
-url = "2"
 crossbeam = "0.7"
 futures = "0.3"
 parse_duration = "2"

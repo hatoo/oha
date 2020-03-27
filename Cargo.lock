@@ -1144,7 +1144,6 @@ dependencies = [
  "tokio-tls",
  "trust-dns-resolver",
  "tui",
- "url",
  "warp",
 ]
 

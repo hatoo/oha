@@ -3,7 +3,6 @@ use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
 use std::io::Read;
 use structopt::StructOpt;
-use url::Url;
 
 mod client;
 mod monitor;
@@ -24,7 +23,7 @@ impl std::str::FromStr for ParseDuration {
 #[structopt(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
 struct Opts {
     #[structopt(help = "Target URL.")]
-    url: Url,
+    url: http::Uri,
     #[structopt(
         help = "Number of requests to run.",
         short = "n",
@@ -112,9 +111,9 @@ async fn main() -> anyhow::Result<()> {
         }
 
         let host = if let Some(port) = opts.url.port() {
-            format!("{}:{}", opts.url.host_str().context("get host")?, port)
+            format!("{}:{}", opts.url.host().context("get host")?, port)
         } else {
-            opts.url.host_str().context("get host")?.to_string()
+            opts.url.host().context("get host")?.to_string()
         };
 
         headers.insert(

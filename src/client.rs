@@ -1,9 +1,7 @@
 use anyhow::Context;
 use futures_util::future::FutureExt;
 use rand::seq::SliceRandom;
-use std::str::FromStr;
 use tokio::stream::StreamExt;
-use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionTime {
@@ -35,7 +33,7 @@ impl RequestResult {
 }
 
 pub struct ClientBuilder {
-    pub url: Url,
+    pub url: http::Uri,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
@@ -60,7 +58,7 @@ impl ClientBuilder {
 }
 
 pub struct Client {
-    url: Url,
+    url: http::Uri,
     method: http::Method,
     headers: http::header::HeaderMap,
     body: Option<&'static [u8]>,
@@ -87,7 +85,7 @@ impl Client {
         };
 
         let addrs = resolver
-            .lookup_ip(self.url.host_str().context("get host")?)
+            .lookup_ip(self.url.host().context("get host")?)
             .await?
             .iter()
             .collect::<Vec<_>>();
@@ -103,13 +101,13 @@ impl Client {
         &mut self,
         addr: (std::net::IpAddr, u16),
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
-        if self.url.scheme() == "https" {
+        if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(self.tcp_nodelay)?;
             let connector = native_tls::TlsConnector::new()?;
             let connector = tokio_tls::TlsConnector::from(connector);
             let stream = connector
-                .connect(self.url.domain().context("get domain")?, stream)
+                .connect(self.url.host().context("get host")?, stream)
                 .await?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
@@ -124,14 +122,13 @@ impl Client {
     }
 
     fn request(&self) -> anyhow::Result<http::Request<hyper::Body>> {
-        let path = if let Some(q) = self.url.query() {
-            format!("{}?{}", self.url.path(), q)
-        } else {
-            self.url.path().to_string()
-        };
-
         let mut builder = http::Request::builder()
-            .uri(http::uri::Uri::from_str(&path)?)
+            .uri(
+                self.url
+                    .path_and_query()
+                    .context("get path and query")?
+                    .as_str(),
+            )
             .method(self.method.clone());
 
         builder
@@ -146,6 +143,18 @@ impl Client {
         }
     }
 
+    fn get_port(&self) -> Option<u16> {
+        self.url.port_u16().or_else(|| {
+            if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
+                Some(80)
+            } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+                Some(443)
+            } else {
+                None
+            }
+        })
+    }
+
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
         let mut start = std::time::Instant::now();
         let mut connection_time: Option<ConnectionTime> = None;
@@ -155,7 +164,7 @@ impl Client {
         } else {
             let addr = (
                 self.lookup_ip().await?,
-                self.url.port_or_known_default().context("get port")?,
+                self.get_port().context("get port")?,
             );
             let dns_lookup = std::time::Instant::now();
             let send_request = self.send_request(addr).await?;
@@ -205,7 +214,7 @@ impl Client {
                             start = std::time::Instant::now();
                             let addr = (
                                 self.lookup_ip().await?,
-                                self.url.port_or_known_default().context("get port")?,
+                                self.get_port().context("get port")?,
                             );
                             let dns_lookup = std::time::Instant::now();
                             send_request = self.send_request(addr).await?;
