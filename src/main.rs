@@ -110,15 +110,11 @@ async fn main() -> anyhow::Result<()> {
             );
         }
 
-        let host = if let Some(port) = opts.url.port() {
-            format!("{}:{}", opts.url.host().context("get host")?, port)
-        } else {
-            opts.url.host().context("get host")?.to_string()
-        };
-
         headers.insert(
             http::header::HOST,
-            http::header::HeaderValue::from_str(host.as_str())?,
+            http::header::HeaderValue::from_str(
+                opts.url.authority().context("get authority")?.as_str(),
+            )?,
         );
 
         headers.extend(
