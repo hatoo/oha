@@ -282,7 +282,11 @@ pub async fn work_until(
     futures::future::join_all((0..n_workers).map(|_| async {
         let mut w = client_builder.build();
         while std::time::Instant::now() < dead_line {
-            report_tx.send(w.work().await).unwrap();
+            if let Ok(res) =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(dead_line), w.work()).await
+            {
+                report_tx.send(res).unwrap();
+            }
         }
     }))
     .await;
@@ -321,7 +325,11 @@ pub async fn work_until_with_qps(
             if std::time::Instant::now() > dead_line {
                 break;
             }
-            report_tx.send(w.work().await).unwrap();
+            if let Ok(res) =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(dead_line), w.work()).await
+            {
+                report_tx.send(res).unwrap();
+            }
         }
     }))
     .await;
