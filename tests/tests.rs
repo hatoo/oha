@@ -69,6 +69,35 @@ async fn get_method(args: &[&str]) -> http::method::Method {
     rx.try_recv().unwrap()
 }
 
+async fn get_query(p: &'static str) -> String {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let report_headers = warp::path!(String).and(warp::filters::query::raw()).map(
+        move |path: String, query: String| {
+            tx.send(path + "?" + &query).unwrap();
+            "Hello World"
+        },
+    );
+
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg(format!("http://127.0.0.1:{}/{}", port, p))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
+}
+
 #[tokio::test]
 async fn test_enable_compression_default() {
     let header = get_header_body(&[]).await.0;
@@ -161,5 +190,13 @@ async fn test_setting_method() {
     assert_eq!(
         get_method(&["-m", "TRACE"]).await,
         http::method::Method::TRACE
+    );
+}
+
+#[tokio::test]
+async fn test_query() {
+    assert_eq!(
+        get_query("index?a=b&c=d").await,
+        "index?a=b&c=d".to_string()
     );
 }

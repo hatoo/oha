@@ -1,12 +1,14 @@
+use anyhow::Context;
 use futures::prelude::*;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue};
 use std::io::Read;
 use structopt::StructOpt;
-use url::Url;
 
+mod client;
 mod monitor;
 mod printer;
-mod work;
+
+use client::RequestResult;
 
 struct ParseDuration(std::time::Duration);
 
@@ -21,7 +23,7 @@ impl std::str::FromStr for ParseDuration {
 #[structopt(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
 struct Opts {
     #[structopt(help = "Target URL.")]
-    url: Url,
+    url: http::Uri,
     #[structopt(
         help = "Number of requests to run.",
         short = "n",
@@ -52,7 +54,7 @@ Examples: -z 10s -z 3m.",
         long = "method",
         default_value = "GET"
     )]
-    method: reqwest::Method,
+    method: http::Method,
     #[structopt(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = "H")]
     headers: Vec<String>,
     #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
@@ -67,142 +69,119 @@ Examples: -z 10s -z 3m.",
     content_type: Option<String>,
     #[structopt(help = "Basic authentication, username:password", short = "a")]
     basic_auth: Option<String>,
+    /*
     #[structopt(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
-    #[structopt(help = "Only HTTP2", long = "http2")]
-    only_http2: bool,
+    */
+    #[structopt(
+        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2.",
+        long = "http-version"
+    )]
+    http_version: Option<String>,
     #[structopt(help = "HTTP Host header", long = "host")]
     host: Option<String>,
     #[structopt(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
+    /*
     #[structopt(
         help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
         long = "redirect"
     )]
     redirect: usize,
-    #[structopt(help = "Set that all scokets have TCP_NODELAY", long = "tcp-nodelay")]
+    */
+    #[structopt(help = "Set that all sockets have TCP_NODELAY", long = "tcp-nodelay")]
     tcp_nodelay: bool,
-}
-
-#[derive(Debug, Clone)]
-/// a result for a request
-pub struct RequestResult {
-    /// When the query started
-    start: std::time::Instant,
-    /// When the query ends
-    end: std::time::Instant,
-    /// HTTP status
-    status: reqwest::StatusCode,
-    /// Length of body
-    len_bytes: usize,
-}
-
-impl RequestResult {
-    /// Dusration the request takes.
-    pub fn duration(&self) -> std::time::Duration {
-        self.end - self.start
-    }
-}
-
-#[derive(Clone)]
-/// All data to send a request
-struct Request {
-    /// reqwest client. We can clone this freely.
-    client: reqwest::Client,
-    /// HTTP method
-    method: reqwest::Method,
-    /// Target URL
-    url: Url,
-    /// Custom body to send
-    body: Option<&'static [u8]>,
-    /// Basic auth info. (username, password)
-    basic_auth: Option<(String, Option<String>)>,
-}
-
-impl Request {
-    async fn request(self) -> anyhow::Result<RequestResult> {
-        let start = std::time::Instant::now();
-        let mut req = self.client.request(self.method, self.url);
-        if let Some(body) = self.body {
-            req = req.body(body);
-        }
-        if let Some((user, pass)) = self.basic_auth {
-            req = req.basic_auth(user, pass);
-        }
-        let resp = req.send().await?;
-        let status = resp.status();
-        let len_bytes = resp.bytes().await?.len();
-        let end = std::time::Instant::now();
-        Ok::<_, anyhow::Error>(RequestResult {
-            start,
-            end,
-            status,
-            len_bytes,
-        })
-    }
+    #[structopt(
+        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
+        long = "disable-keepalive"
+    )]
+    disable_keepalive: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::from_args();
-    let client = {
-        // Various settings for client here.
-        let mut client_builder = reqwest::ClientBuilder::new();
-        if let Some(proxy) = opts.proxy {
-            client_builder = client_builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
+
+    let headers = {
+        let mut headers: http::header::HeaderMap = Default::default();
+
+        // default headers
+        headers.insert(
+            http::header::ACCEPT,
+            http::header::HeaderValue::from_static("*/*"),
+        );
+        if !opts.disable_compression {
+            headers.insert(
+                http::header::ACCEPT_ENCODING,
+                http::header::HeaderValue::from_static("gzip, compress, deflate, br"),
+            );
         }
-        if opts.only_http2 {
-            client_builder = client_builder.http2_prior_knowledge();
-        }
-        if let Some(ParseDuration(d)) = opts.timeout {
-            client_builder = client_builder.timeout(d);
-        }
-        let mut headers: HeaderMap = opts
-            .headers
-            .into_iter()
-            .map(|s| {
-                let header = s.splitn(2, ": ").collect::<Vec<_>>();
-                anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-                let name = HeaderName::from_bytes(header[0].as_bytes())?;
-                let value = HeaderValue::from_str(header[1])?;
-                Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
-            })
-            .collect::<anyhow::Result<HeaderMap>>()?;
+
+        headers.insert(
+            http::header::HOST,
+            http::header::HeaderValue::from_str(
+                opts.url.authority().context("get authority")?.as_str(),
+            )?,
+        );
+
+        headers.extend(
+            opts.headers
+                .into_iter()
+                .map(|s| {
+                    let header = s.splitn(2, ": ").collect::<Vec<_>>();
+                    anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+                    let name = HeaderName::from_bytes(header[0].as_bytes())?;
+                    let value = HeaderValue::from_str(header[1])?;
+                    Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?
+                .into_iter(),
+        );
 
         if let Some(h) = opts.accept_header {
-            headers.insert(
-                reqwest::header::ACCEPT,
-                HeaderValue::from_bytes(h.as_bytes())?,
-            );
+            headers.insert(http::header::ACCEPT, HeaderValue::from_bytes(h.as_bytes())?);
         }
+
         if let Some(h) = opts.content_type {
             headers.insert(
-                reqwest::header::CONTENT_TYPE,
+                http::header::CONTENT_TYPE,
                 HeaderValue::from_bytes(h.as_bytes())?,
             );
         }
+
         if let Some(h) = opts.host {
+            headers.insert(http::header::HOST, HeaderValue::from_bytes(h.as_bytes())?);
+        }
+
+        if let Some(auth) = opts.basic_auth {
+            let u_p = auth.splitn(2, ':').collect::<Vec<_>>();
+            anyhow::ensure!(u_p.len() == 2, anyhow::anyhow!("Parse auth"));
+            let mut header_value = b"Basic ".to_vec();
+            {
+                use std::io::Write;
+                let username = u_p[0];
+                let password = if u_p[1].is_empty() {
+                    None
+                } else {
+                    Some(u_p[1])
+                };
+                let mut encoder =
+                    base64::write::EncoderWriter::new(&mut header_value, base64::STANDARD);
+                // The unwraps here are fine because Vec::write* is infallible.
+                write!(encoder, "{}:", username).unwrap();
+                if let Some(password) = password {
+                    write!(encoder, "{}", password).unwrap();
+                }
+            }
+
             headers.insert(
-                reqwest::header::HOST,
-                HeaderValue::from_bytes(h.as_bytes())?,
+                http::header::AUTHORIZATION,
+                HeaderValue::from_bytes(&header_value)?,
             );
         }
-        if opts.disable_compression {
-            client_builder = client_builder.no_gzip().no_brotli();
-        }
 
-        client_builder = client_builder.redirect(if opts.redirect == 0 {
-            reqwest::redirect::Policy::none()
-        } else {
-            reqwest::redirect::Policy::limited(opts.redirect)
-        });
-
-        if opts.tcp_nodelay {
-            client_builder = client_builder.tcp_nodelay();
-        }
-
-        client_builder.default_headers(headers).build()?
+        headers
     };
 
     let body: Option<&'static _> = match (opts.body_string, opts.body_path) {
@@ -215,17 +194,15 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
-    let basic_auth = if let Some(auth) = opts.basic_auth {
-        let u_p = auth.splitn(2, ':').collect::<Vec<_>>();
-        anyhow::ensure!(u_p.len() == 2, anyhow::anyhow!("Parse auth"));
-        Some((
-            u_p[0].to_string(),
-            if u_p[1].is_empty() {
-                None
-            } else {
-                Some(u_p[1].to_string())
-            },
-        ))
+    let http_version: Option<http::Version> = if let Some(http_version) = opts.http_version {
+        match http_version.as_str() {
+            "0.9" => Some(http::Version::HTTP_09),
+            "1.0" => Some(http::Version::HTTP_10),
+            "1.1" => Some(http::Version::HTTP_11),
+            "2.0" | "2" => Some(http::Version::HTTP_2),
+            "3.0" | "3" => Some(http::Version::HTTP_3),
+            _ => anyhow::bail!("Unknown HTTP version"),
+        }
     } else {
         None
     };
@@ -285,14 +262,6 @@ async fn main() -> anyhow::Result<()> {
         .boxed()
     };
 
-    let req = Request {
-        method: opts.method,
-        url: opts.url,
-        client: client.clone(),
-        body,
-        basic_auth,
-    };
-
     // On mac, tokio runtime crashes when too many files are opend.
     // Then reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(|info| {
@@ -304,34 +273,48 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
-    let task_generator = || async { result_tx.send(req.clone().request().await) };
-
-    // Start sending requests here
-    if let Some(ParseDuration(duration)) = opts.duration.take() {
-        if let Some(qps) = opts.query_per_second.take() {
-            work::work_until_with_qps(task_generator, qps, start, start + duration, opts.n_workers)
-                .await
-        } else {
-            work::work_until(task_generator, start + duration, opts.n_workers).await
-        }
-    } else if let Some(qps) = opts.query_per_second.take() {
-        work::work_with_qps(task_generator, qps, opts.n_requests, opts.n_workers).await
-    } else {
-        work::work(task_generator, opts.n_requests, opts.n_workers).await
+    let client_builder = client::ClientBuilder {
+        http_version,
+        url: opts.url,
+        method: opts.method,
+        headers,
+        body,
+        tcp_nodelay: opts.tcp_nodelay,
+        timeout: opts.timeout.map(|d| d.0),
+        disable_keepalive: opts.disable_keepalive,
     };
+    if let Some(ParseDuration(duration)) = opts.duration.take() {
+        if let Some(qps) = opts.query_per_second {
+            client::work_until_with_qps(
+                client_builder,
+                result_tx,
+                qps,
+                start,
+                start + duration,
+                opts.n_workers,
+            )
+            .await;
+        } else {
+            client::work_until(client_builder, result_tx, start + duration, opts.n_workers).await;
+        }
+    } else if let Some(qps) = opts.query_per_second {
+        client::work_with_qps(
+            client_builder,
+            result_tx,
+            qps,
+            opts.n_requests,
+            opts.n_workers,
+        )
+        .await;
+    } else {
+        client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await;
+    }
 
     let duration = start.elapsed();
-    std::mem::drop(result_tx);
 
     let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
 
     printer::print_summary(&mut std::io::stdout(), &res, duration)?;
 
-    if cfg!(target_os = "macos") {
-        // On macos, it takes too long time in end of execution for many `-c`.
-        // So call exit to quit immediately.
-        std::process::exit(libc::EXIT_SUCCESS);
-    } else {
-        Ok(())
-    }
+    Ok(())
 }

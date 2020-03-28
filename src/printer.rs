@@ -1,4 +1,5 @@
-use super::RequestResult;
+use crate::client::ConnectionTime;
+use crate::client::RequestResult;
 use byte_unit::Byte;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -98,13 +99,59 @@ pub fn print_summary<W: Write, E: std::fmt::Display>(
     print_distribution(w, &durations)?;
     writeln!(w)?;
 
-    let mut status_dist: BTreeMap<reqwest::StatusCode, usize> = Default::default();
+    let connection_times: Vec<(std::time::Instant, ConnectionTime)> = res
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .filter_map(|r| r.connection_time.clone().map(|c| (r.start, c)))
+        .collect();
+    writeln!(w, "Details (average, fastest, slowest):")?;
+    writeln!(
+        w,
+        "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        connection_times
+            .iter()
+            .map(|(s, c)| (c.dialup - *s).as_secs_f64())
+            .collect::<average::Mean>()
+            .mean(),
+        connection_times
+            .iter()
+            .map(|(s, c)| (c.dialup - *s).as_secs_f64())
+            .collect::<average::Min>()
+            .min(),
+        connection_times
+            .iter()
+            .map(|(s, c)| (c.dialup - *s).as_secs_f64())
+            .collect::<average::Max>()
+            .max()
+    )?;
+    writeln!(
+        w,
+        "  DNS-lookup:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        connection_times
+            .iter()
+            .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
+            .collect::<average::Mean>()
+            .mean(),
+        connection_times
+            .iter()
+            .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
+            .collect::<average::Min>()
+            .min(),
+        connection_times
+            .iter()
+            .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
+            .collect::<average::Max>()
+            .max()
+    )?;
+    writeln!(w)?;
+
+    let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
 
     for s in res.iter().filter_map(|r| r.as_ref().ok()).map(|r| r.status) {
         *status_dist.entry(s).or_default() += 1;
     }
 
-    let mut status_v: Vec<(reqwest::StatusCode, usize)> = status_dist.into_iter().collect();
+    let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
     writeln!(w, "Status code distribution:")?;

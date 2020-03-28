@@ -12,7 +12,7 @@ use tui::style::{Color, Style};
 use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
 use tui::Terminal;
 
-use crate::RequestResult;
+use crate::client::RequestResult;
 
 /// When the monitor ends
 pub enum EndLine {
@@ -47,7 +47,7 @@ impl Monitor {
         // We must not read all data from this due to computational cost.
         let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
         // statics for HTTP status
-        let mut status_dist: BTreeMap<reqwest::StatusCode, usize> = Default::default();
+        let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
         // statics for Error
         let mut error_dist: BTreeMap<String, usize> = Default::default();
 
@@ -206,7 +206,7 @@ impl Monitor {
                 );
                 f.render(&mut statics, mid[0]);
 
-                let mut status_v: Vec<(reqwest::StatusCode, usize)> =
+                let mut status_v: Vec<(http::StatusCode, usize)> =
                     status_dist.clone().into_iter().collect();
                 status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 

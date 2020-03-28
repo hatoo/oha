@@ -1,6 +1,6 @@
 [package]
 name = "oha"
-version = "0.1.11"
+version = "0.2.0"
 authors = ["hatoo <hato2000@gmail.com>"]
 edition = "2018"
 description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation."
@@ -15,10 +15,8 @@ license = "MIT"
 [dependencies]
 clap = "2"
 structopt = "0.3"
-reqwest = { version = "0.10", features = ["gzip", "brotli"] }
 tokio = { version = "0.2", features = ["full"] }
 anyhow = "1"
-url = "2"
 crossbeam = "0.7"
 futures = "0.3"
 parse_duration = "2"
@@ -30,11 +28,21 @@ crossterm = "0.14.0"
 libc = "0.2.67"
 flume = "0.7.0"
 
+hyper = "0.13.4"
+http = "0.2"
+futures-util = "0.3.4"
+native-tls = "0.2.4"
+tokio-tls = "0.3.0"
+rand = "0.7"
+trust-dns-resolver = "0.19.3"
+base64 = "0.12.0"
+
+
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.3.0"
 
 [dev-dependencies]
-assert_cmd = "0.12.0"
+assert_cmd = "1.0.0"
 warp = "0.2"
 get-port = "1.3.1"
 lazy_static = "1.4.0"
