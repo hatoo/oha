@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
         if !opts.disable_compression {
             headers.insert(
                 http::header::ACCEPT_ENCODING,
-                http::header::HeaderValue::from_static("gzip, br"),
+                http::header::HeaderValue::from_static("gzip, compress, deflate, br"),
             );
         }
 
