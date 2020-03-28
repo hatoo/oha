@@ -184,7 +184,7 @@ impl Client {
             send_request
         };
 
-        let timeout = if let Some(timeout) = self.timeout.clone() {
+        let timeout = if let Some(timeout) = self.timeout {
             tokio::time::delay_for(timeout).boxed()
         } else {
             futures::future::pending().boxed()
