@@ -15,7 +15,7 @@ pub struct RequestResult {
     /// When the query started
     pub start: std::time::Instant,
     /// DNS + dialup
-    /// None if keep-alive
+    /// None when reuse connection
     pub connection_time: Option<ConnectionTime>,
     /// When the query ends
     pub end: std::time::Instant,
@@ -26,7 +26,7 @@ pub struct RequestResult {
 }
 
 impl RequestResult {
-    /// Dusration the request takes.
+    /// Duration the request takes.
     pub fn duration(&self) -> std::time::Duration {
         self.end - self.start
     }
@@ -40,6 +40,7 @@ pub struct ClientBuilder {
     pub body: Option<&'static [u8]>,
     pub tcp_nodelay: bool,
     pub timeout: Option<std::time::Duration>,
+    /// always discard when used a connection.
     pub disable_keepalive: bool,
 }
 
@@ -67,6 +68,7 @@ pub struct Client {
     method: http::Method,
     headers: http::header::HeaderMap,
     body: Option<&'static [u8]>,
+    // To pick a random address from DNS.
     rng: rand::rngs::ThreadRng,
     resolver: Option<
         trust_dns_resolver::AsyncResolver<
