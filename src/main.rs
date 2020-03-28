@@ -90,7 +90,7 @@ Examples: -z 10s -z 3m.",
     )]
     redirect: usize,
     */
-    #[structopt(help = "Set that all scokets have TCP_NODELAY", long = "tcp-nodelay")]
+    #[structopt(help = "Set that all sockets have TCP_NODELAY", long = "tcp-nodelay")]
     tcp_nodelay: bool,
 }
 
