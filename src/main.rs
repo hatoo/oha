@@ -72,11 +72,9 @@ Examples: -z 10s -z 3m.",
     /*
     #[structopt(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
-    #[structopt(help = "Only HTTP2", long = "http2")]
-    only_http2: bool,
     */
     #[structopt(
-        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2, 3.",
+        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2.",
         long = "http-version"
     )]
     http_version: Option<String>,
