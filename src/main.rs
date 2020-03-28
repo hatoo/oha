@@ -75,6 +75,11 @@ Examples: -z 10s -z 3m.",
     #[structopt(help = "Only HTTP2", long = "http2")]
     only_http2: bool,
     */
+    #[structopt(
+        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2, 3.",
+        long = "http-version"
+    )]
+    http_version: Option<String>,
     #[structopt(help = "HTTP Host header", long = "host")]
     host: Option<String>,
     #[structopt(help = "Disable compression.", long = "disable-compression")]
@@ -186,6 +191,19 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
+    let http_version: Option<http::Version> = if let Some(http_version) = opts.http_version {
+        match http_version.as_str() {
+            "0.9" => Some(http::Version::HTTP_09),
+            "1.0" => Some(http::Version::HTTP_10),
+            "1.1" => Some(http::Version::HTTP_11),
+            "2.0" | "2" => Some(http::Version::HTTP_2),
+            "3.0" | "3" => Some(http::Version::HTTP_3),
+            _ => anyhow::bail!("Unknown HTTP version"),
+        }
+    } else {
+        None
+    };
+
     let (result_tx, mut result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
@@ -253,6 +271,7 @@ async fn main() -> anyhow::Result<()> {
     }));
 
     let client_builder = client::ClientBuilder {
+        http_version,
         url: opts.url,
         method: opts.method,
         headers,
