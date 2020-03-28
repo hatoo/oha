@@ -111,7 +111,9 @@ impl Client {
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
         if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
             let stream = tokio::net::TcpStream::connect(addr).await?;
-            stream.set_nodelay(self.tcp_nodelay)?;
+            if self.tcp_nodelay {
+                stream.set_nodelay(self.tcp_nodelay)?;
+            }
             let connector = native_tls::TlsConnector::new()?;
             let connector = tokio_tls::TlsConnector::from(connector);
             let stream = connector
@@ -122,7 +124,9 @@ impl Client {
             Ok(send)
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
-            stream.set_nodelay(self.tcp_nodelay)?;
+            if self.tcp_nodelay {
+                stream.set_nodelay(self.tcp_nodelay)?;
+            }
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
             Ok(send)
