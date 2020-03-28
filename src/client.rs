@@ -40,6 +40,7 @@ pub struct ClientBuilder {
     pub body: Option<&'static [u8]>,
     pub tcp_nodelay: bool,
     pub timeout: Option<std::time::Duration>,
+    pub disable_keepalive: bool,
 }
 
 impl ClientBuilder {
@@ -55,6 +56,7 @@ impl ClientBuilder {
             tcp_nodelay: self.tcp_nodelay,
             timeout: self.timeout,
             http_version: self.http_version,
+            disable_keepalive: self.disable_keepalive,
         }
     }
 }
@@ -77,6 +79,7 @@ pub struct Client {
     send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     tcp_nodelay: bool,
     timeout: Option<std::time::Duration>,
+    disable_keepalive: bool,
 }
 
 impl Client {
@@ -210,7 +213,9 @@ impl Client {
                             connection_time,
                         };
 
-                        self.send_request = Some(send_request);
+                        if !self.disable_keepalive {
+                            self.send_request = Some(send_request);
+                        }
 
                         return Ok::<_, anyhow::Error>(result);
                     }

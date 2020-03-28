@@ -92,6 +92,11 @@ Examples: -z 10s -z 3m.",
     */
     #[structopt(help = "Set that all sockets have TCP_NODELAY", long = "tcp-nodelay")]
     tcp_nodelay: bool,
+    #[structopt(
+        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
+        long = "disable-keepalive"
+    )]
+    disable_keepalive: bool,
 }
 
 #[tokio::main]
@@ -276,6 +281,7 @@ async fn main() -> anyhow::Result<()> {
         body,
         tcp_nodelay: opts.tcp_nodelay,
         timeout: opts.timeout.map(|d| d.0),
+        disable_keepalive: opts.disable_keepalive,
     };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {
