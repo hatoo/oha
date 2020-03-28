@@ -29,7 +29,7 @@ $ cargo install oha
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
 ```bash
-oha 0.1.9
+oha 0.1.11
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
@@ -38,31 +38,31 @@ USAGE:
 
 FLAGS:
         --no-tui                 No realtime tui
-        --http2                  Only HTTP2
         --disable-compression    Disable compression.
-        --tcp-nodelay            Set that all scokets have TCP_NODELAY
+        --tcp-nodelay            Set that all sockets have TCP_NODELAY
+        --disable-keepalive      Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.
     -h, --help                   Prints help information
     -V, --version                Prints version information
 
 OPTIONS:
-    -n <n-requests>              Number of requests to run. [default: 200]
-    -c <n-workers>               Number of workers to run concurrently. You may should increase limit to number of open
-                                 files for larger `-c`. [default: 50]
-    -z <duration>                Duration of application to send requests. If duration is specified, n is ignored.
-                                 Examples: -z 10s -z 3m.
-    -q <query-per-second>        Rate limit for all, in queries per second (QPS)
-        --fps <fps>              Frame per second for tui. [default: 16]
-    -m, --method <method>        HTTP method [default: GET]
-    -H <headers>...              Custom HTTP header. Examples: -H "foo: bar"
-    -t <timeout>                 Timeout for each request. Default to infinite.
-    -A <accept-header>           HTTP Accept Header.
-    -d <body-string>             HTTP request body.
-    -D <body-path>               HTTP request body from file.
-    -T <content-type>            Content-Type.
-    -a <basic-auth>              Basic authentication, username:password
-    -x <proxy>                   HTTP proxy
-        --host <host>            HTTP Host header
-        --redirect <redirect>    Limit for number of Redirect. Set 0 for no redirection. [default: 10]
+    -n <n-requests>                      Number of requests to run. [default: 200]
+    -c <n-workers>                       Number of workers to run concurrently. You may should increase limit to number
+                                         of open files for larger `-c`. [default: 50]
+    -z <duration>                        Duration of application to send requests. If duration is specified, n is
+                                         ignored.
+                                         Examples: -z 10s -z 3m.
+    -q <query-per-second>                Rate limit for all, in queries per second (QPS)
+        --fps <fps>                      Frame per second for tui. [default: 16]
+    -m, --method <method>                HTTP method [default: GET]
+    -H <headers>...                      Custom HTTP header. Examples: -H "foo: bar"
+    -t <timeout>                         Timeout for each request. Default to infinite.
+    -A <accept-header>                   HTTP Accept Header.
+    -d <body-string>                     HTTP request body.
+    -D <body-path>                       HTTP request body from file.
+    -T <content-type>                    Content-Type.
+    -a <basic-auth>                      Basic authentication, username:password
+        --http-version <http-version>    HTTP version. Available values 0.9, 1.0, 1.1, 2.
+        --host <host>                    HTTP Host header
 
 ARGS:
     <url>    Target URL.
@@ -80,8 +80,6 @@ Here are some issues to improving.
   - There are no color in realtime tui now. I want help from someone who has some color sense.
 - Improve speed
   - I'm new to tokio. I think there are some space to optimize query scheduling.
-- Mesasure DNS lookup time and dialup time.
-- Add an option to disable keep-alive connection.
 - Output like CSV or JSON format.
 - Improve histogram in summary output
   - It uses very simple algorithm now.
