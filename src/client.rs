@@ -52,7 +52,7 @@ impl ClientBuilder {
             body: self.body,
             rng: rand::thread_rng(),
             resolver: None,
-            send_request: None,
+            client: None,
             tcp_nodelay: self.tcp_nodelay,
             timeout: self.timeout,
             http_version: self.http_version,
@@ -76,7 +76,7 @@ pub struct Client {
             >,
         >,
     >,
-    send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+    client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     tcp_nodelay: bool,
     timeout: Option<std::time::Duration>,
     disable_keepalive: bool,
@@ -103,7 +103,7 @@ impl Client {
         Ok(addr)
     }
 
-    async fn send_request(
+    async fn client(
         &mut self,
         addr: (std::net::IpAddr, u16),
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
@@ -169,7 +169,7 @@ impl Client {
         let mut start = std::time::Instant::now();
         let mut connection_time: Option<ConnectionTime> = None;
 
-        let mut send_request = if let Some(send_request) = self.send_request.take() {
+        let mut send_request = if let Some(send_request) = self.client.take() {
             send_request
         } else {
             let addr = (
@@ -177,7 +177,7 @@ impl Client {
                 self.get_port().context("get port")?,
             );
             let dns_lookup = std::time::Instant::now();
-            let send_request = self.send_request(addr).await?;
+            let send_request = self.client(addr).await?;
             let dialup = std::time::Instant::now();
 
             connection_time = Some(ConnectionTime { dns_lookup, dialup });
@@ -214,7 +214,7 @@ impl Client {
                         };
 
                         if !self.disable_keepalive {
-                            self.send_request = Some(send_request);
+                            self.client = Some(send_request);
                         }
 
                         return Ok::<_, anyhow::Error>(result);
@@ -229,7 +229,7 @@ impl Client {
                             self.get_port().context("get port")?,
                         );
                         let dns_lookup = std::time::Instant::now();
-                        send_request = self.send_request(addr).await?;
+                        send_request = self.client(addr).await?;
                         let dialup = std::time::Instant::now();
                         connection_time = Some(ConnectionTime { dns_lookup, dialup });
                         num_retry += 1;
