@@ -42,6 +42,7 @@ pub struct ClientBuilder {
     pub timeout: Option<std::time::Duration>,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
+    pub lookup_ip_strategy: trust_dns_resolver::config::LookupIpStrategy,
 }
 
 impl ClientBuilder {
@@ -58,6 +59,7 @@ impl ClientBuilder {
             timeout: self.timeout,
             http_version: self.http_version,
             disable_keepalive: self.disable_keepalive,
+            lookup_ip_strategy: self.lookup_ip_strategy,
         }
     }
 }
@@ -82,6 +84,7 @@ pub struct Client {
     tcp_nodelay: bool,
     timeout: Option<std::time::Duration>,
     disable_keepalive: bool,
+    lookup_ip_strategy: trust_dns_resolver::config::LookupIpStrategy,
 }
 
 impl Client {
@@ -89,7 +92,14 @@ impl Client {
         let resolver = if let Some(resolver) = self.resolver.take() {
             resolver
         } else {
-            trust_dns_resolver::AsyncResolver::tokio(Default::default(), Default::default()).await?
+            trust_dns_resolver::AsyncResolver::tokio(
+                Default::default(),
+                trust_dns_resolver::config::ResolverOpts {
+                    ip_strategy: self.lookup_ip_strategy,
+                    ..Default::default()
+                },
+            )
+            .await?
         };
 
         let addrs = resolver

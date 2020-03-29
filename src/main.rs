@@ -97,6 +97,10 @@ Examples: -z 10s -z 3m.",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
+    #[structopt(help = "Lookup only ipv6.", long = "ipv6")]
+    ipv6: bool,
+    #[structopt(help = "Lookup only ipv4.", long = "ipv4")]
+    ipv4: bool,
 }
 
 #[tokio::main]
@@ -282,6 +286,12 @@ async fn main() -> anyhow::Result<()> {
         tcp_nodelay: opts.tcp_nodelay,
         timeout: opts.timeout.map(|d| d.0),
         disable_keepalive: opts.disable_keepalive,
+        lookup_ip_strategy: match (opts.ipv4, opts.ipv6) {
+            (false, false) => Default::default(),
+            (true, false) => trust_dns_resolver::config::LookupIpStrategy::Ipv4Only,
+            (false, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv6Only,
+            (true, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
+        },
     };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {
