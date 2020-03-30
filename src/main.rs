@@ -101,6 +101,8 @@ Examples: -z 10s -z 3m.",
     ipv6: bool,
     #[structopt(help = "Lookup only ipv4.", long = "ipv4")]
     ipv4: bool,
+    #[structopt(help = "Accept invalid certs.", long = "insecure")]
+    insecure: bool,
 }
 
 #[tokio::main]
@@ -292,6 +294,7 @@ async fn main() -> anyhow::Result<()> {
             (false, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv6Only,
             (true, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
         },
+        insecure: opts.insecure,
     };
     if let Some(ParseDuration(duration)) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {
