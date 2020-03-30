@@ -185,6 +185,10 @@ async fn main() -> anyhow::Result<()> {
             );
         }
 
+        if opts.disable_keepalive {
+            headers.insert(http::header::CONNECTION, HeaderValue::from_static("close"));
+        }
+
         headers
     };
 
