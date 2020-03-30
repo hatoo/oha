@@ -43,6 +43,7 @@ pub struct ClientBuilder {
     /// always discard when used a connection.
     pub disable_keepalive: bool,
     pub lookup_ip_strategy: trust_dns_resolver::config::LookupIpStrategy,
+    pub insecure: bool,
 }
 
 impl ClientBuilder {
@@ -60,6 +61,7 @@ impl ClientBuilder {
             http_version: self.http_version,
             disable_keepalive: self.disable_keepalive,
             lookup_ip_strategy: self.lookup_ip_strategy,
+            insecure: self.insecure,
         }
     }
 }
@@ -85,6 +87,7 @@ pub struct Client {
     timeout: Option<std::time::Duration>,
     disable_keepalive: bool,
     lookup_ip_strategy: trust_dns_resolver::config::LookupIpStrategy,
+    insecure: bool,
 }
 
 impl Client {
@@ -124,7 +127,14 @@ impl Client {
             if self.tcp_nodelay {
                 stream.set_nodelay(self.tcp_nodelay)?;
             }
-            let connector = native_tls::TlsConnector::new()?;
+            let connector = if self.insecure {
+                native_tls::TlsConnector::builder()
+                    .danger_accept_invalid_certs(true)
+                    .danger_accept_invalid_hostnames(true)
+                    .build()?
+            } else {
+                native_tls::TlsConnector::new()?
+            };
             let connector = tokio_tls::TlsConnector::from(connector);
             let stream = connector
                 .connect(self.url.host().context("get host")?, stream)
