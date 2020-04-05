@@ -33,7 +33,7 @@ impl RequestResult {
 }
 
 pub struct ClientBuilder {
-    pub http_version: Option<http::Version>,
+    pub http_version: http::Version,
     pub url: http::Uri,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
@@ -67,7 +67,7 @@ impl ClientBuilder {
 }
 
 pub struct Client {
-    http_version: Option<http::Version>,
+    http_version: http::Version,
     url: http::Uri,
     method: http::Method,
     headers: http::header::HeaderMap,
@@ -161,11 +161,8 @@ impl Client {
                     .context("get path and query")?
                     .as_str(),
             )
-            .method(self.method.clone());
-
-        if let Some(http_version) = self.http_version {
-            builder = builder.version(http_version);
-        }
+            .method(self.method.clone())
+            .version(self.http_version);
 
         builder
             .headers_mut()

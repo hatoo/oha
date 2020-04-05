@@ -109,6 +109,19 @@ Examples: -z 10s -z 3m.",
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::from_args();
 
+    let http_version: http::Version = if let Some(http_version) = opts.http_version {
+        match http_version.as_str() {
+            "0.9" => http::Version::HTTP_09,
+            "1.0" => http::Version::HTTP_10,
+            "1.1" => http::Version::HTTP_11,
+            "2.0" | "2" => http::Version::HTTP_2,
+            "3.0" | "3" => http::Version::HTTP_3,
+            _ => anyhow::bail!("Unknown HTTP version"),
+        }
+    } else {
+        http::Version::HTTP_11
+    };
+
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
 
@@ -187,6 +200,10 @@ async fn main() -> anyhow::Result<()> {
             );
         }
 
+        if opts.disable_keepalive && http_version == http::Version::HTTP_11 {
+            headers.insert(http::header::CONNECTION, HeaderValue::from_static("close"));
+        }
+
         headers
     };
 
@@ -198,19 +215,6 @@ async fn main() -> anyhow::Result<()> {
             Some(Box::leak(buf.into_boxed_slice()))
         }
         _ => None,
-    };
-
-    let http_version: Option<http::Version> = if let Some(http_version) = opts.http_version {
-        match http_version.as_str() {
-            "0.9" => Some(http::Version::HTTP_09),
-            "1.0" => Some(http::Version::HTTP_10),
-            "1.1" => Some(http::Version::HTTP_11),
-            "2.0" | "2" => Some(http::Version::HTTP_2),
-            "3.0" | "3" => Some(http::Version::HTTP_3),
-            _ => anyhow::bail!("Unknown HTTP version"),
-        }
-    } else {
-        None
     };
 
     let (result_tx, mut result_rx) = flume::unbounded();
