@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
             "1.1" => http::Version::HTTP_11,
             "2.0" | "2" => http::Version::HTTP_2,
             "3.0" | "3" => http::Version::HTTP_3,
-            _ => anyhow::bail!("Unknown HTTP version"),
+            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2, 3"),
         }
     } else {
         http::Version::HTTP_11
