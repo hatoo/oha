@@ -138,11 +138,11 @@ impl Monitor {
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                     .split(top_mid2_bot[1]);
 
-                let mut gauge = Gauge::default()
+                let gauge = Gauge::default()
                     .block(Block::default().title("Progress").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
                     .ratio(progress);
-                f.render(&mut gauge, top_mid2_bot[0]);
+                f.render_widget(gauge, top_mid2_bot[0]);
 
                 let last_1_sec = all
                     .iter()
@@ -199,12 +199,12 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let mut statics = Paragraph::new(statics_text.iter()).block(
+                let statics = Paragraph::new(statics_text.iter()).block(
                     Block::default()
                         .title("statics for last 1 second")
                         .borders(Borders::ALL),
                 );
-                f.render(&mut statics, mid[0]);
+                f.render_widget(statics, mid[0]);
 
                 let mut status_v: Vec<(http::StatusCode, usize)> =
                     status_dist.clone().into_iter().collect();
@@ -216,12 +216,12 @@ impl Monitor {
                         format!("[{}] {} responses\n", status.as_str(), count).as_str();
                 }
                 let statics2_text = [Text::raw(statics2_string)];
-                let mut statics2 = Paragraph::new(statics2_text.iter()).block(
+                let statics2 = Paragraph::new(statics2_text.iter()).block(
                     Block::default()
                         .title("Status code distribution")
                         .borders(Borders::ALL),
                 );
-                f.render(&mut statics2, mid[1]);
+                f.render_widget(statics2, mid[1]);
 
                 let mut error_v: Vec<(String, usize)> = error_dist.clone().into_iter().collect();
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
@@ -230,14 +230,14 @@ impl Monitor {
                     errors_string += format!("[{}] {}\n", count, e).as_str();
                 }
                 let errors_text = [Text::raw(errors_string)];
-                let mut errors = Paragraph::new(errors_text.iter()).block(
+                let errors = Paragraph::new(errors_text.iter()).block(
                     Block::default()
                         .title("Error distribution")
                         .borders(Borders::ALL),
                 );
-                f.render(&mut errors, top_mid2_bot[2]);
+                f.render_widget(errors, top_mid2_bot[2]);
 
-                let mut barchart = BarChart::default()
+                let barchart = BarChart::default()
                     .block(
                         Block::default()
                             .title("Requests - number of requests / past seconds")
@@ -252,7 +252,7 @@ impl Monitor {
                             .map(|w| w + 2)
                             .unwrap_or(1) as u16,
                     );
-                f.render(&mut barchart, top_mid2_bot[3]);
+                f.render_widget(barchart, top_mid2_bot[3]);
             })?;
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
                 match crossterm::event::read()? {
