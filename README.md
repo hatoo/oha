@@ -14,9 +14,7 @@ This program is written in Rust and powered by [tokio](https://github.com/tokio-
 
 This program is built on stable Rust.
 
-```bash
-$ cargo install oha
-```
+    cargo install oha
 
 ## On Arch Linux
 
