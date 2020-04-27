@@ -18,6 +18,10 @@ This program is built on stable Rust.
 $ cargo install oha
 ```
 
+## On Arch Linux
+
+    yay -S oha
+
 # Platform
 
 - Linux - Tested on Ubuntu 18.04 gnome-terminal
