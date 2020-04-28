@@ -2,6 +2,7 @@ use anyhow::Context;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
 use std::io::Read;
+use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 mod client;
@@ -20,7 +21,11 @@ impl std::str::FromStr for ParseDuration {
 }
 
 #[derive(StructOpt)]
-#[structopt(version = clap::crate_version!(), author = clap::crate_authors!(), about = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.", global_setting = clap::AppSettings::DeriveDisplayOrder)]
+#[structopt(
+    author,
+    about,
+    global_settings = &[AppSettings::ColoredHelp, AppSettings::DeriveDisplayOrder]
+)]
 struct Opts {
     #[structopt(help = "Target URL.")]
     url: http::Uri,
