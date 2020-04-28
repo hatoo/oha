@@ -95,10 +95,14 @@ impl Client {
         let resolver = if let Some(resolver) = self.resolver.take() {
             resolver
         } else {
+            let (config, _) = trust_dns_resolver::system_conf::read_system_conf()?;
             trust_dns_resolver::AsyncResolver::tokio(
-                Default::default(),
+                config,
                 trust_dns_resolver::config::ResolverOpts {
                     ip_strategy: self.lookup_ip_strategy,
+                    // Note: Due to https://github.com/bluejekyll/trust-dns/issues/933
+                    // we'll use just one concurrent request for the time being.
+                    num_concurrent_reqs: 1,
                     ..Default::default()
                 },
             )
