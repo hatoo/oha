@@ -277,8 +277,6 @@ impl Client {
 }
 
 /// Run n tasks by m workers
-/// Currently We use Fn() -> F as "task generator".
-/// Any replacement?
 pub async fn work(
     client_builder: ClientBuilder,
     report_tx: flume::Sender<anyhow::Result<RequestResult>>,
