@@ -19,6 +19,10 @@ This program is built on stable Rust.
 ## On Arch Linux
 
     yay -S oha
+    
+## On macOS (Homebrew)
+
+    brew install oha
 
 # Platform
 
