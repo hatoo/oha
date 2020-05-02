@@ -8,6 +8,7 @@ use structopt::StructOpt;
 mod client;
 mod monitor;
 mod printer;
+mod timescale;
 
 use client::RequestResult;
 
