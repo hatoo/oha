@@ -19,11 +19,11 @@ pub struct TimeLabel {
 impl fmt::Display for TimeScale {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TimeScale::Second => write!(f, "1s"),
-            TimeScale::TenSeconds => write!(f, "10s"),
-            TimeScale::Minute => write!(f, "1m"),
-            TimeScale::TenMinutes => write!(f, "10m"),
-            TimeScale::Hour => write!(f, "1h"),
+            TimeScale::Second => write!(f, "second"),
+            TimeScale::TenSeconds => write!(f, "10 seconds"),
+            TimeScale::Minute => write!(f, "minute"),
+            TimeScale::TenMinutes => write!(f, "10 minutes"),
+            TimeScale::Hour => write!(f, "hour"),
         }
     }
 }

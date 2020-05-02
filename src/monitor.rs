@@ -174,17 +174,22 @@ impl Monitor {
                     .ratio(progress);
                 f.render_widget(gauge, top_mid2_bot[0]);
 
-                let last_1_sec = all
+                let last_1_timescale = all
                     .iter()
                     .rev()
                     .filter_map(|r| r.as_ref().ok())
-                    .take_while(|r| (now - r.end).as_secs_f64() <= 1.0)
+                    .take_while(|r| (now - r.end).as_secs_f64() <= timescale.as_secs_f64())
                     .collect::<Vec<_>>();
+
                 let statics_text = [
-                    Text::raw(format!("Query per second: {}\n", last_1_sec.len())),
+                    Text::raw(format!(
+                        "Query per {} : {}\n",
+                        timescale,
+                        last_1_timescale.len()
+                    )),
                     Text::raw(format!(
                         "Slowest: {:.4} secs\n",
-                        last_1_sec
+                        last_1_timescale
                             .iter()
                             .map(|r| r.duration())
                             .max()
@@ -193,7 +198,7 @@ impl Monitor {
                     )),
                     Text::raw(format!(
                         "Fastest: {:.4} secs\n",
-                        last_1_sec
+                        last_1_timescale
                             .iter()
                             .map(|r| r.duration())
                             .min()
@@ -202,17 +207,20 @@ impl Monitor {
                     )),
                     Text::raw(format!(
                         "Average: {:.4} secs\n",
-                        last_1_sec
+                        last_1_timescale
                             .iter()
                             .map(|r| r.duration())
                             .sum::<std::time::Duration>()
                             .as_secs_f64()
-                            / last_1_sec.len() as f64
+                            / last_1_timescale.len() as f64
                     )),
                     Text::raw(format!(
                         "Data: {}\n",
                         Byte::from_bytes(
-                            last_1_sec.iter().map(|r| r.len_bytes as u128).sum::<u128>()
+                            last_1_timescale
+                                .iter()
+                                .map(|r| r.len_bytes as u128)
+                                .sum::<u128>()
                         )
                         .get_appropriate_unit(true)
                     )),
@@ -229,11 +237,9 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let statics = Paragraph::new(statics_text.iter()).block(
-                    Block::default()
-                        .title("statics for last 1 second")
-                        .borders(Borders::ALL),
-                );
+                let statics_title = format!("statics for last {}", timescale);
+                let statics = Paragraph::new(statics_text.iter())
+                    .block(Block::default().title(&statics_title).borders(Borders::ALL));
                 f.render_widget(statics, mid[0]);
 
                 let mut status_v: Vec<(http::StatusCode, usize)> =
