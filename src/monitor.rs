@@ -270,7 +270,7 @@ impl Monitor {
                 f.render_widget(errors, top_mid2_bot[2]);
 
                 let title = format!(
-                    "Requests - number of requests / past {}{} press -/+/a to change",
+                    "Requests - number of requests / past {}{}. press -/+/a to change",
                     timescale,
                     if timescale_auto.is_none() {
                         " (autoscale)"
