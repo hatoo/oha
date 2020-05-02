@@ -304,7 +304,7 @@ impl Monitor {
                         code: KeyCode::Char('a'),
                         modifiers: KeyModifiers::NONE,
                     }) => {
-                        if let Some(_) = timescale_auto {
+                        if timescale_auto.is_some() {
                             timescale_auto = None;
                         } else {
                             timescale_auto = Some(timescale)
