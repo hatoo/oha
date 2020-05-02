@@ -13,6 +13,7 @@ use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
 use tui::Terminal;
 
 use crate::client::RequestResult;
+use crate::timescale::{TimeLabel, TimeScale};
 
 /// When the monitor ends
 pub enum EndLine {
@@ -55,6 +56,9 @@ impl Monitor {
         // Limit for number open files. eg. ulimit -n
         let nofile_limit = rlimit::getrlimit(rlimit::Resource::NOFILE);
 
+        // None means auto timescale which depends on how long it takes
+        let mut timescale_auto = None;
+
         'outer: loop {
             let frame_start = std::time::Instant::now();
             loop {
@@ -85,7 +89,14 @@ impl Monitor {
             };
 
             let count = 32;
-            let bin = 1.0;
+
+            let timescale = if let Some(timescale) = timescale_auto {
+                timescale
+            } else {
+                TimeScale::from_elapsed(self.start.elapsed())
+            };
+
+            let bin = timescale.as_secs_f64();
 
             let mut bar_num_req = vec![0u64; count];
             let short_bin = (now - self.start).as_secs_f64() % bin;
@@ -104,10 +115,29 @@ impl Monitor {
                 }
             }
 
+            let cols = bar_num_req
+                .iter()
+                .map(|x| x.to_string().chars().count())
+                .max()
+                .unwrap_or(0);
+
             let bar_num_req: Vec<(String, u64)> = bar_num_req
                 .into_iter()
                 .enumerate()
-                .map(|(i, n)| (format!("{:.1}s", bin * i as f64), n))
+                .map(|(i, n)| {
+                    (
+                        {
+                            let mut s = TimeLabel { x: i, timescale }.to_string();
+                            if cols > s.len() {
+                                for _ in 0..cols - s.len() {
+                                    s.push(' ');
+                                }
+                            }
+                            s
+                        },
+                        n,
+                    )
+                })
                 .collect();
 
             let bar_num_req_str: Vec<(&str, u64)> =
@@ -237,12 +267,18 @@ impl Monitor {
                 );
                 f.render_widget(errors, top_mid2_bot[2]);
 
+                let title = format!(
+                    "Requests - number of requests / past {}{} press -/+/a to change",
+                    timescale,
+                    if timescale_auto.is_none() {
+                        " (autoscale)"
+                    } else {
+                        ""
+                    }
+                );
+
                 let barchart = BarChart::default()
-                    .block(
-                        Block::default()
-                            .title("Requests - number of requests / past seconds")
-                            .borders(Borders::ALL),
-                    )
+                    .block(Block::default().title(&title).borders(Borders::ALL))
                     .data(bar_num_req_str.as_slice())
                     .bar_width(
                         bar_num_req
@@ -256,6 +292,24 @@ impl Monitor {
             })?;
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
                 match crossterm::event::read()? {
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('+'),
+                        modifiers: KeyModifiers::NONE,
+                    }) => timescale_auto = Some(timescale.dec()),
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('-'),
+                        modifiers: KeyModifiers::NONE,
+                    }) => timescale_auto = Some(timescale.inc()),
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('a'),
+                        modifiers: KeyModifiers::NONE,
+                    }) => {
+                        if timescale_auto.is_some() {
+                            timescale_auto = None;
+                        } else {
+                            timescale_auto = Some(timescale)
+                        }
+                    }
                     // User pressed q or ctrl-c
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('q'),
