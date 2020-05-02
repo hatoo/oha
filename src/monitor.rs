@@ -182,11 +182,7 @@ impl Monitor {
                     .collect::<Vec<_>>();
 
                 let statics_text = [
-                    Text::raw(format!(
-                        "Query per {} : {}\n",
-                        timescale,
-                        last_1_timescale.len()
-                    )),
+                    Text::raw(format!("Requests : {}\n", last_1_timescale.len())),
                     Text::raw(format!(
                         "Slowest: {:.4} secs\n",
                         last_1_timescale
