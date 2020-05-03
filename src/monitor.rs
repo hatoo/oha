@@ -168,9 +168,20 @@ impl Monitor {
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                     .split(top_mid2_bot[1]);
 
+                let gauge_label = match &self.end_line {
+                    EndLine::Duration(d) => format!(
+                        "{} / {}",
+                        humantime::Duration::from(std::time::Duration::from_secs(
+                            (now - self.start).as_secs_f64() as u64
+                        )),
+                        humantime::Duration::from(*d)
+                    ),
+                    EndLine::NumQuery(n) => format!("{} / {}", all.len(), n),
+                };
                 let gauge = Gauge::default()
                     .block(Block::default().title("Progress").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
+                    .label(&gauge_label)
                     .ratio(progress);
                 f.render_widget(gauge, top_mid2_bot[0]);
 
