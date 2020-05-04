@@ -36,7 +36,7 @@ This program is built on stable Rust.
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
 ```bash
-oha 0.2.0
+oha 0.2.5
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
@@ -48,6 +48,9 @@ FLAGS:
         --disable-compression    Disable compression.
         --tcp-nodelay            Set that all sockets have TCP_NODELAY
         --disable-keepalive      Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.
+        --ipv6                   Lookup only ipv6.
+        --ipv4                   Lookup only ipv4.
+        --insecure               Accept invalid certs.
     -h, --help                   Prints help information
     -V, --version                Prints version information
 
