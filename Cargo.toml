@@ -17,6 +17,7 @@ clap = "2"
 structopt = "0.3"
 tokio = { version = "0.2", features = ["full"] }
 anyhow = "1"
+thiserror = "1.0.16"
 crossbeam = "0.7"
 futures = "0.3"
 average = "0.10.4"

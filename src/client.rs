@@ -1,6 +1,7 @@
 use anyhow::Context;
 use futures_util::future::FutureExt;
 use rand::seq::SliceRandom;
+use thiserror::Error;
 use tokio::stream::StreamExt;
 
 #[derive(Debug, Clone)]
@@ -66,6 +67,18 @@ impl ClientBuilder {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum ClientError {
+    #[error("failed to get port from URL")]
+    PortNotFound,
+    #[error("failed to get host from URL")]
+    HostNotFound,
+    #[error("failed to get path and query from URL")]
+    PathAndQueryNotFound,
+    #[error("No record returned from DNS")]
+    DNSNoRecord,
+}
+
 pub struct Client {
     http_version: http::Version,
     url: http::Uri,
@@ -110,12 +123,14 @@ impl Client {
         };
 
         let addrs = resolver
-            .lookup_ip(self.url.host().context("get host")?)
+            .lookup_ip(self.url.host().ok_or_else(|| ClientError::HostNotFound)?)
             .await?
             .iter()
             .collect::<Vec<_>>();
 
-        let addr = *addrs.choose(&mut self.rng).context("get addr")?;
+        let addr = *addrs
+            .choose(&mut self.rng)
+            .ok_or_else(|| ClientError::DNSNoRecord)?;
 
         self.resolver = Some(resolver);
 
@@ -141,7 +156,10 @@ impl Client {
             };
             let connector = tokio_tls::TlsConnector::from(connector);
             let stream = connector
-                .connect(self.url.host().context("get host")?, stream)
+                .connect(
+                    self.url.host().ok_or_else(|| ClientError::HostNotFound)?,
+                    stream,
+                )
                 .await?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
@@ -162,7 +180,7 @@ impl Client {
             .uri(
                 self.url
                     .path_and_query()
-                    .context("get path and query")?
+                    .ok_or_else(|| ClientError::PathAndQueryNotFound)?
                     .as_str(),
             )
             .method(self.method.clone())
@@ -170,7 +188,7 @@ impl Client {
 
         builder
             .headers_mut()
-            .context("get header")?
+            .context("Failed to get header from builder")?
             .extend(self.headers.iter().map(|(k, v)| (k.clone(), v.clone())));
 
         if let Some(body) = self.body {
@@ -180,16 +198,19 @@ impl Client {
         }
     }
 
-    fn get_port(&self) -> Option<u16> {
-        self.url.port_u16().or_else(|| {
-            if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
-                Some(80)
-            } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-                Some(443)
-            } else {
-                None
-            }
-        })
+    fn get_port(&self) -> Result<u16, ClientError> {
+        self.url
+            .port_u16()
+            .or_else(|| {
+                if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
+                    Some(80)
+                } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+                    Some(443)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| ClientError::PortNotFound)
     }
 
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
@@ -199,10 +220,7 @@ impl Client {
         let mut send_request = if let Some(send_request) = self.client.take() {
             send_request
         } else {
-            let addr = (
-                self.lookup_ip().await?,
-                self.get_port().context("get port")?,
-            );
+            let addr = (self.lookup_ip().await?, self.get_port()?);
             let dns_lookup = std::time::Instant::now();
             let send_request = self.client(addr).await?;
             let dialup = std::time::Instant::now();
@@ -251,10 +269,7 @@ impl Client {
                             return Err(e.into());
                         }
                         start = std::time::Instant::now();
-                        let addr = (
-                            self.lookup_ip().await?,
-                            self.get_port().context("get port")?,
-                        );
+                        let addr = (self.lookup_ip().await?, self.get_port()?);
                         let dns_lookup = std::time::Instant::now();
                         send_request = self.client(addr).await?;
                         let dialup = std::time::Instant::now();
