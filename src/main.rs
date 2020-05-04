@@ -12,15 +12,6 @@ mod timescale;
 
 use client::RequestResult;
 
-struct ParseDuration(std::time::Duration);
-
-impl std::str::FromStr for ParseDuration {
-    type Err = parse_duration::parse::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_duration::parse(s).map(ParseDuration)
-    }
-}
-
 #[derive(StructOpt)]
 #[structopt(
     author,
@@ -47,7 +38,7 @@ struct Opts {
 Examples: -z 10s -z 3m.",
         short = "z"
     )]
-    duration: Option<ParseDuration>,
+    duration: Option<humantime::Duration>,
     #[structopt(help = "Rate limit for all, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
     #[structopt(help = "No realtime tui", long = "no-tui")]
@@ -64,7 +55,7 @@ Examples: -z 10s -z 3m.",
     #[structopt(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = "H")]
     headers: Vec<String>,
     #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
-    timeout: Option<ParseDuration>,
+    timeout: Option<humantime::Duration>,
     #[structopt(help = "HTTP Accept Header.", short = "A")]
     accept_header: Option<String>,
     #[structopt(help = "HTTP request body.", short = "d")]
@@ -266,8 +257,7 @@ async fn main() -> anyhow::Result<()> {
             monitor::Monitor {
                 end_line: opts
                     .duration
-                    .as_ref()
-                    .map(|d| monitor::EndLine::Duration(d.0))
+                    .map(|d| monitor::EndLine::Duration(d.into()))
                     .unwrap_or(monitor::EndLine::NumQuery(opts.n_requests)),
                 report_receiver: result_rx,
                 start,
@@ -296,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
         headers,
         body,
         tcp_nodelay: opts.tcp_nodelay,
-        timeout: opts.timeout.map(|d| d.0),
+        timeout: opts.timeout.map(|d| d.into()),
         disable_keepalive: opts.disable_keepalive,
         lookup_ip_strategy: match (opts.ipv4, opts.ipv6) {
             (false, false) => Default::default(),
@@ -306,19 +296,25 @@ async fn main() -> anyhow::Result<()> {
         },
         insecure: opts.insecure,
     };
-    if let Some(ParseDuration(duration)) = opts.duration.take() {
+    if let Some(duration) = opts.duration.take() {
         if let Some(qps) = opts.query_per_second {
             client::work_until_with_qps(
                 client_builder,
                 result_tx,
                 qps,
                 start,
-                start + duration,
+                start + duration.into(),
                 opts.n_workers,
             )
             .await;
         } else {
-            client::work_until(client_builder, result_tx, start + duration, opts.n_workers).await;
+            client::work_until(
+                client_builder,
+                result_tx,
+                start + duration.into(),
+                opts.n_workers,
+            )
+            .await;
         }
     } else if let Some(qps) = opts.query_per_second {
         client::work_with_qps(
