@@ -36,7 +36,7 @@ This program is built on stable Rust.
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
 ```bash
-oha 0.2.6
+oha 0.2.7
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
