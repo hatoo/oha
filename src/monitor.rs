@@ -307,15 +307,15 @@ impl Monitor {
                 match crossterm::event::read()? {
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('+'),
-                        modifiers: KeyModifiers::NONE,
+                        ..
                     }) => timescale_auto = Some(timescale.dec()),
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('-'),
-                        modifiers: KeyModifiers::NONE,
+                        ..
                     }) => timescale_auto = Some(timescale.inc()),
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('a'),
-                        modifiers: KeyModifiers::NONE,
+                        ..
                     }) => {
                         if timescale_auto.is_some() {
                             timescale_auto = None;
