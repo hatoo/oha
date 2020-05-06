@@ -289,7 +289,7 @@ impl Monitor {
                     "Requests / past {}{}. press -/+/a to change",
                     timescale,
                     if timescale_auto.is_none() {
-                        " (autoscale)"
+                        " (auto)"
                     } else {
                         ""
                     }
