@@ -187,33 +187,15 @@ fn print_histogram<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
         return Ok(());
     }
     let lines = 11;
-    let mut bucket: Vec<u64> = vec![0; lines];
-    let average = values.iter().collect::<average::Mean>().mean();
-    let min = values.iter().collect::<average::Min>().min();
-    let max = values
-        .iter()
-        .collect::<average::Max>()
-        .max()
-        .min(average * 3.0);
-    let step = (max - min) / lines as f64;
+    let data = crate::histogram::histogram(values, lines);
 
-    for &v in values {
-        let i = std::cmp::min(((v - min) / step) as usize, lines - 1);
-        bucket[i] += 1;
-    }
+    let max_bar = data.iter().map(|t| t.1).max().unwrap();
+    let str_len_max = max_bar.to_string().len();
 
-    let max_bar = *bucket.iter().max().unwrap();
-    let str_len_max = bucket
-        .iter()
-        .map(|x| x.to_string().len())
-        .max()
-        .unwrap_or(0);
-
-    for (i, &b) in bucket.iter().enumerate() {
-        let t = min + i as f64 * step;
+    for (label, b) in data.iter() {
         let indent = str_len_max - b.to_string().len();
-        write!(w, "  {:.3} [{}]{} |", t, b, " ".repeat(indent))?;
-        bar(w, b as f64 / max_bar as f64)?;
+        write!(w, "  {:.3} [{}]{} |", label, b, " ".repeat(indent))?;
+        bar(w, *b as f64 / max_bar as f64)?;
         writeln!(w)?;
     }
     Ok(())

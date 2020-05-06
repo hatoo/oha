@@ -286,7 +286,7 @@ impl Monitor {
                 f.render_widget(errors, row4[2]);
 
                 let title = format!(
-                    "Requests - number of requests / past {}{}. press -/+/a to change",
+                    "Requests / past {}{}. press -/+/a to change",
                     timescale,
                     if timescale_auto.is_none() {
                         " (autoscale)"
@@ -309,7 +309,7 @@ impl Monitor {
                 f.render_widget(barchart, bottom[0]);
 
                 let resp_histo_data: Vec<(String, u64)> = {
-                    let lines = 11;
+                    let bins = 11;
                     let values = all
                         .iter()
                         .rev()
@@ -317,25 +317,11 @@ impl Monitor {
                         .take_while(|r| (now - r.end).as_secs_f64() < timescale.as_secs_f64())
                         .map(|r| r.duration().as_secs_f64())
                         .collect::<Vec<_>>();
-                    let mut bucket: Vec<u64> = vec![0; lines];
-                    let average = values.iter().collect::<average::Mean>().mean();
-                    let min = values.iter().collect::<average::Min>().min();
-                    let max = values
-                        .iter()
-                        .collect::<average::Max>()
-                        .max()
-                        .min(average * 3.0);
-                    let step = (max - min) / lines as f64;
 
-                    for v in values {
-                        let i = std::cmp::min(((v - min) / step) as usize, lines - 1);
-                        bucket[i] += 1;
-                    }
-
-                    bucket
+                    let histo = crate::histogram::histogram(&values, bins);
+                    histo
                         .into_iter()
-                        .enumerate()
-                        .map(|(i, v)| (format!("{:.4}", step * (i + 1) as f64), v))
+                        .map(|(label, v)| (format!("{:.4}", label), v))
                         .collect()
                 };
 
@@ -354,6 +340,7 @@ impl Monitor {
                     .bar_width(7);
                 f.render_widget(resp_histo, bottom[1]);
             })?;
+
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
                 match crossterm::event::read()? {
                     Event::Key(KeyEvent {
