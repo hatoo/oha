@@ -308,8 +308,13 @@ impl Monitor {
                     );
                 f.render_widget(barchart, bottom[0]);
 
+                let resp_histo_width = 7;
                 let resp_histo_data: Vec<(String, u64)> = {
-                    let bins = 11;
+                    let bins = if bottom[1].width < 2 {
+                        0
+                    } else {
+                        (bottom[1].width as usize - 2) / (resp_histo_width + 1)
+                    };
                     let values = all
                         .iter()
                         .rev()
@@ -337,7 +342,7 @@ impl Monitor {
                             .borders(Borders::ALL),
                     )
                     .data(resp_histo_data_str.as_slice())
-                    .bar_width(7);
+                    .bar_width(resp_histo_width as u16);
                 f.render_widget(resp_histo, bottom[1]);
             })?;
 
