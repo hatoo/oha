@@ -291,6 +291,14 @@ impl Client {
     }
 }
 
+fn is_too_many_open_files(res: &anyhow::Result<RequestResult>) -> bool {
+    res.as_ref()
+        .err()
+        .and_then(|err| err.downcast_ref::<std::io::Error>())
+        .map(|err| err.raw_os_error() == Some(24))
+        .unwrap_or(false)
+}
+
 /// Run n tasks by m workers
 pub async fn work(
     client_builder: ClientBuilder,
@@ -307,7 +315,12 @@ pub async fn work(
     futures::future::join_all((0..n_workers).map(|_| async {
         let mut w = client_builder.build();
         while let crossbeam::deque::Steal::Success(()) = injector.steal() {
-            report_tx.send(w.work().await).unwrap();
+            let res = w.work().await;
+            let is_cancel = is_too_many_open_files(&res);
+            report_tx.send(res).unwrap();
+            if is_cancel {
+                break;
+            }
         }
     }))
     .await;
@@ -338,7 +351,12 @@ pub async fn work_with_qps(
     futures::future::join_all((0..n_workers).map(|_| async {
         let mut w = client_builder.build();
         while let Ok(()) = rx.recv() {
-            report_tx.send(w.work().await).unwrap();
+            let res = w.work().await;
+            let is_cancel = is_too_many_open_files(&res);
+            report_tx.send(res).unwrap();
+            if is_cancel {
+                break;
+            }
         }
     }))
     .await;
@@ -355,7 +373,11 @@ pub async fn work_until(
         let mut w = client_builder.build();
         while std::time::Instant::now() < dead_line {
             if let Ok(res) = tokio::time::timeout_at(dead_line.into(), w.work()).await {
+                let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();
+                if is_cancel {
+                    break;
+                }
             }
         }
     }))
@@ -396,7 +418,11 @@ pub async fn work_until_with_qps(
                 break;
             }
             if let Ok(res) = tokio::time::timeout_at(dead_line.into(), w.work()).await {
+                let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();
+                if is_cancel {
+                    break;
+                }
             }
         }
     }))
