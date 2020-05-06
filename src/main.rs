@@ -6,6 +6,7 @@ use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 mod client;
+mod histogram;
 mod monitor;
 mod printer;
 mod timescale;

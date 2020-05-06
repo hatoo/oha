@@ -150,7 +150,7 @@ impl Monitor {
             };
 
             terminal.draw(|mut f| {
-                let top_mid2_bot = Layout::default()
+                let row4 = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints(
                         [
@@ -166,7 +166,12 @@ impl Monitor {
                 let mid = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                    .split(top_mid2_bot[1]);
+                    .split(row4[1]);
+
+                let bottom = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(row4[3]);
 
                 let gauge_label = match &self.end_line {
                     EndLine::Duration(d) => format!(
@@ -183,7 +188,7 @@ impl Monitor {
                     .style(Style::default().fg(Color::White))
                     .label(&gauge_label)
                     .ratio(progress);
-                f.render_widget(gauge, top_mid2_bot[0]);
+                f.render_widget(gauge, row4[0]);
 
                 let last_1_timescale = all
                     .iter()
@@ -278,13 +283,13 @@ impl Monitor {
                         .title("Error distribution")
                         .borders(Borders::ALL),
                 );
-                f.render_widget(errors, top_mid2_bot[2]);
+                f.render_widget(errors, row4[2]);
 
                 let title = format!(
-                    "Requests - number of requests / past {}{}. press -/+/a to change",
+                    "Requests / past {}{}. press -/+/a to change",
                     timescale,
                     if timescale_auto.is_none() {
-                        " (autoscale)"
+                        " (auto)"
                     } else {
                         ""
                     }
@@ -301,8 +306,41 @@ impl Monitor {
                             .map(|w| w + 2)
                             .unwrap_or(1) as u16,
                     );
-                f.render_widget(barchart, top_mid2_bot[3]);
+                f.render_widget(barchart, bottom[0]);
+
+                let resp_histo_data: Vec<(String, u64)> = {
+                    let bins = 11;
+                    let values = all
+                        .iter()
+                        .rev()
+                        .filter_map(|r| r.as_ref().ok())
+                        .take_while(|r| (now - r.end).as_secs_f64() < timescale.as_secs_f64())
+                        .map(|r| r.duration().as_secs_f64())
+                        .collect::<Vec<_>>();
+
+                    let histo = crate::histogram::histogram(&values, bins);
+                    histo
+                        .into_iter()
+                        .map(|(label, v)| (format!("{:.4}", label), v))
+                        .collect()
+                };
+
+                let resp_histo_data_str: Vec<(&str, u64)> = resp_histo_data
+                    .iter()
+                    .map(|(l, v)| (l.as_str(), *v))
+                    .collect();
+
+                let resp_histo = BarChart::default()
+                    .block(
+                        Block::default()
+                            .title("Response time histogram")
+                            .borders(Borders::ALL),
+                    )
+                    .data(resp_histo_data_str.as_slice())
+                    .bar_width(7);
+                f.render_widget(resp_histo, bottom[1]);
             })?;
+
             while crossterm::event::poll(std::time::Duration::from_secs(0))? {
                 match crossterm::event::read()? {
                     Event::Key(KeyEvent {
