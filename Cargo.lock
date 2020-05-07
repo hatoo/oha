@@ -1045,7 +1045,6 @@ dependencies = [
  "float-ord",
  "flume",
  "futures",
- "futures-util",
  "get-port",
  "http",
  "humantime",
