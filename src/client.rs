@@ -1,6 +1,6 @@
 use anyhow::Context;
+use futures::future::FutureExt;
 use futures::stream::FuturesUnordered;
-use futures_util::future::FutureExt;
 use rand::seq::SliceRandom;
 use thiserror::Error;
 use tokio::stream::StreamExt;

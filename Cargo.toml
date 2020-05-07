@@ -31,7 +31,6 @@ humantime = "2.0.0"
 
 hyper = "0.13.4"
 http = "0.2"
-futures-util = "0.3.4"
 native-tls = "0.2.4"
 tokio-tls = "0.3.0"
 rand = "0.7"
