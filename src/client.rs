@@ -2,6 +2,7 @@ use anyhow::Context;
 use futures::future::FutureExt;
 use futures::stream::FuturesUnordered;
 use rand::seq::SliceRandom;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::stream::StreamExt;
 
@@ -44,7 +45,14 @@ pub struct ClientBuilder {
     pub timeout: Option<std::time::Duration>,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
-    pub lookup_ip_strategy: trust_dns_resolver::config::LookupIpStrategy,
+    pub resolver: Arc<
+        trust_dns_resolver::AsyncResolver<
+            trust_dns_resolver::name_server::GenericConnection,
+            trust_dns_resolver::name_server::GenericConnectionProvider<
+                trust_dns_resolver::name_server::TokioRuntime,
+            >,
+        >,
+    >,
     pub insecure: bool,
 }
 
@@ -55,14 +63,13 @@ impl ClientBuilder {
             method: self.method.clone(),
             headers: self.headers.clone(),
             body: self.body,
+            resolver: self.resolver.clone(),
             rng: rand::thread_rng(),
-            resolver: None,
             client: None,
             tcp_nodelay: self.tcp_nodelay,
             timeout: self.timeout,
             http_version: self.http_version,
             disable_keepalive: self.disable_keepalive,
-            lookup_ip_strategy: self.lookup_ip_strategy,
             insecure: self.insecure,
         }
     }
@@ -88,7 +95,7 @@ pub struct Client {
     body: Option<&'static [u8]>,
     // To pick a random address from DNS.
     rng: rand::rngs::ThreadRng,
-    resolver: Option<
+    resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,
             trust_dns_resolver::name_server::GenericConnectionProvider<
@@ -100,30 +107,13 @@ pub struct Client {
     tcp_nodelay: bool,
     timeout: Option<std::time::Duration>,
     disable_keepalive: bool,
-    lookup_ip_strategy: trust_dns_resolver::config::LookupIpStrategy,
     insecure: bool,
 }
 
 impl Client {
     async fn lookup_ip(&mut self) -> anyhow::Result<std::net::IpAddr> {
-        let resolver = if let Some(resolver) = self.resolver.take() {
-            resolver
-        } else {
-            let (config, _) = trust_dns_resolver::system_conf::read_system_conf()?;
-            trust_dns_resolver::AsyncResolver::tokio(
-                config,
-                trust_dns_resolver::config::ResolverOpts {
-                    ip_strategy: self.lookup_ip_strategy,
-                    // Note: Due to https://github.com/bluejekyll/trust-dns/issues/933
-                    // we'll use just one concurrent request for the time being.
-                    num_concurrent_reqs: 1,
-                    ..Default::default()
-                },
-            )
-            .await?
-        };
-
-        let addrs = resolver
+        let addrs = self
+            .resolver
             .lookup_ip(self.url.host().ok_or_else(|| ClientError::HostNotFound)?)
             .await?
             .iter()
@@ -132,8 +122,6 @@ impl Client {
         let addr = *addrs
             .choose(&mut self.rng)
             .ok_or_else(|| ClientError::DNSNoRecord)?;
-
-        self.resolver = Some(resolver);
 
         Ok(addr)
     }

@@ -2,6 +2,7 @@ use anyhow::Context;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
 use std::io::Read;
+use std::sync::Arc;
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
@@ -280,21 +281,35 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
+    let ip_strategy = match (opts.ipv4, opts.ipv6) {
+        (false, false) => Default::default(),
+        (true, false) => trust_dns_resolver::config::LookupIpStrategy::Ipv4Only,
+        (false, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv6Only,
+        (true, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
+    };
+    let (config, _) = trust_dns_resolver::system_conf::read_system_conf()?;
+    let resolver = trust_dns_resolver::AsyncResolver::tokio(
+        config,
+        trust_dns_resolver::config::ResolverOpts {
+            ip_strategy,
+            // Note: Due to https://github.com/bluejekyll/trust-dns/issues/933
+            // we'll use just one concurrent request for the time being.
+            num_concurrent_reqs: 1,
+            ..Default::default()
+        },
+    )
+    .await?;
+
     let client_builder = client::ClientBuilder {
         http_version,
         url: opts.url,
         method: opts.method,
         headers,
         body,
+        resolver: Arc::new(resolver),
         tcp_nodelay: opts.tcp_nodelay,
         timeout: opts.timeout.map(|d| d.into()),
         disable_keepalive: opts.disable_keepalive,
-        lookup_ip_strategy: match (opts.ipv4, opts.ipv6) {
-            (false, false) => Default::default(),
-            (true, false) => trust_dns_resolver::config::LookupIpStrategy::Ipv4Only,
-            (false, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv6Only,
-            (true, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
-        },
         insecure: opts.insecure,
     };
     if let Some(duration) = opts.duration.take() {
