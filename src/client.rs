@@ -367,19 +367,21 @@ pub async fn work_until(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while std::time::Instant::now() < dead_line {
-                if let Ok(res) = tokio::time::timeout_at(dead_line.into(), w.work()).await {
-                    let is_cancel = is_too_many_open_files(&res);
-                    report_tx.send(res).unwrap();
-                    if is_cancel {
-                        break;
-                    }
+            loop {
+                let res = w.work().await;
+                let is_cancel = is_too_many_open_files(&res);
+                report_tx.send(res).unwrap();
+                if is_cancel {
+                    break;
                 }
             }
         })
         .collect::<FuturesUnordered<_>>();
 
-    while futures_unordered.next().await.is_some() {}
+    let _ = tokio::time::timeout_at(dead_line.into(), async {
+        while futures_unordered.next().await.is_some() {}
+    })
+    .await;
 }
 
 /// Run until dead_line by n workers limit to qps works in a second
@@ -413,21 +415,20 @@ pub async fn work_until_with_qps(
         .map(|_| async {
             let mut w = client_builder.build();
             while let Ok(()) = rx.recv() {
-                if std::time::Instant::now() > dead_line {
+                let res = w.work().await;
+                let is_cancel = is_too_many_open_files(&res);
+                report_tx.send(res).unwrap();
+                if is_cancel {
                     break;
-                }
-                if let Ok(res) = tokio::time::timeout_at(dead_line.into(), w.work()).await {
-                    let is_cancel = is_too_many_open_files(&res);
-                    report_tx.send(res).unwrap();
-                    if is_cancel {
-                        break;
-                    }
                 }
             }
         })
         .collect::<FuturesUnordered<_>>();
 
-    while futures_unordered.next().await.is_some() {}
+    let _ = tokio::time::timeout_at(dead_line.into(), async {
+        while futures_unordered.next().await.is_some() {}
+    })
+    .await;
 
     let _ = gen.await;
 }
