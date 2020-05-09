@@ -1,7 +1,7 @@
 use anyhow::Context;
 use futures::future::FutureExt;
 use futures::stream::FuturesUnordered;
-use rand::seq::SliceRandom;
+use rand::prelude::*;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::stream::StreamExt;
@@ -64,7 +64,7 @@ impl ClientBuilder {
             headers: self.headers.clone(),
             body: self.body,
             resolver: self.resolver.clone(),
-            rng: rand::thread_rng(),
+            rng: rand::rngs::StdRng::from_entropy(),
             client: None,
             tcp_nodelay: self.tcp_nodelay,
             timeout: self.timeout,
@@ -94,7 +94,7 @@ pub struct Client {
     headers: http::header::HeaderMap,
     body: Option<&'static [u8]>,
     // To pick a random address from DNS.
-    rng: rand::rngs::ThreadRng,
+    rng: rand::rngs::StdRng,
     resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,
