@@ -225,46 +225,45 @@ impl Client {
         };
 
         let do_req = async {
-            let mut num_retry = 0;
-            loop {
-                let request = self.request()?;
-                match send_request.send_request(request).await {
-                    Ok(res) => {
-                        let (parts, mut stream) = res.into_parts();
+            while futures::future::poll_fn(|x| send_request.poll_ready(x))
+                .await
+                .is_err()
+            {
+                start = std::time::Instant::now();
+                let addr = (self.lookup_ip().await?, self.get_port()?);
+                let dns_lookup = std::time::Instant::now();
+                send_request = self.client(addr).await?;
+                let dialup = std::time::Instant::now();
+                connection_time = Some(ConnectionTime { dns_lookup, dialup });
+            }
+            let request = self.request()?;
+            match send_request.send_request(request).await {
+                Ok(res) => {
+                    let (parts, mut stream) = res.into_parts();
 
-                        let mut len_sum = 0;
-                        while let Some(chunk) = stream.next().await {
-                            len_sum += chunk?.len();
-                        }
-
-                        let end = std::time::Instant::now();
-
-                        let result = RequestResult {
-                            start,
-                            end,
-                            status: parts.status,
-                            len_bytes: len_sum,
-                            connection_time,
-                        };
-
-                        if !self.disable_keepalive {
-                            self.client = Some(send_request);
-                        }
-
-                        return Ok::<_, anyhow::Error>(result);
+                    let mut len_sum = 0;
+                    while let Some(chunk) = stream.next().await {
+                        len_sum += chunk?.len();
                     }
-                    Err(e) => {
-                        if num_retry >= 1 {
-                            return Err(e.into());
-                        }
-                        start = std::time::Instant::now();
-                        let addr = (self.lookup_ip().await?, self.get_port()?);
-                        let dns_lookup = std::time::Instant::now();
-                        send_request = self.client(addr).await?;
-                        let dialup = std::time::Instant::now();
-                        connection_time = Some(ConnectionTime { dns_lookup, dialup });
-                        num_retry += 1;
+
+                    let end = std::time::Instant::now();
+
+                    let result = RequestResult {
+                        start,
+                        end,
+                        status: parts.status,
+                        len_bytes: len_sum,
+                        connection_time,
+                    };
+
+                    if !self.disable_keepalive {
+                        self.client = Some(send_request);
                     }
+
+                    return Ok::<_, anyhow::Error>(result);
+                }
+                Err(e) => {
+                    return Err(e.into());
                 }
             }
         };
