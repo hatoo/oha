@@ -203,21 +203,6 @@ impl Client {
     }
 
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
-        let mut start = std::time::Instant::now();
-        let mut connection_time: Option<ConnectionTime> = None;
-
-        let mut send_request = if let Some(send_request) = self.client.take() {
-            send_request
-        } else {
-            let addr = (self.lookup_ip().await?, self.get_port()?);
-            let dns_lookup = std::time::Instant::now();
-            let send_request = self.client(addr).await?;
-            let dialup = std::time::Instant::now();
-
-            connection_time = Some(ConnectionTime { dns_lookup, dialup });
-            send_request
-        };
-
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::delay_for(timeout).boxed()
         } else {
@@ -225,7 +210,21 @@ impl Client {
         };
 
         let do_req = async {
-            while futures::future::poll_fn(|x| send_request.poll_ready(x))
+            let mut start = std::time::Instant::now();
+            let mut connection_time: Option<ConnectionTime> = None;
+
+            let mut send_request = if let Some(send_request) = self.client.take() {
+                send_request
+            } else {
+                let addr = (self.lookup_ip().await?, self.get_port()?);
+                let dns_lookup = std::time::Instant::now();
+                let send_request = self.client(addr).await?;
+                let dialup = std::time::Instant::now();
+
+                connection_time = Some(ConnectionTime { dns_lookup, dialup });
+                send_request
+            };
+            while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
                 .await
                 .is_err()
             {
