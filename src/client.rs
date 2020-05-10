@@ -135,6 +135,7 @@ impl Client {
             if self.tcp_nodelay {
                 stream.set_nodelay(self.tcp_nodelay)?;
             }
+            stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
             let connector = if self.insecure {
                 native_tls::TlsConnector::builder()
                     .danger_accept_invalid_certs(true)
@@ -158,6 +159,7 @@ impl Client {
             if self.tcp_nodelay {
                 stream.set_nodelay(self.tcp_nodelay)?;
             }
+            stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
             Ok(send)
