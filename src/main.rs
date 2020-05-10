@@ -89,8 +89,6 @@ Examples: -z 10s -z 3m.",
     )]
     redirect: usize,
     */
-    #[structopt(help = "Set that all sockets have TCP_NODELAY", long = "tcp-nodelay")]
-    tcp_nodelay: bool,
     #[structopt(
         help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
         long = "disable-keepalive"
@@ -307,7 +305,6 @@ async fn main() -> anyhow::Result<()> {
         headers,
         body,
         resolver: Arc::new(resolver),
-        tcp_nodelay: opts.tcp_nodelay,
         timeout: opts.timeout.map(|d| d.into()),
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
