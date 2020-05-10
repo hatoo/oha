@@ -41,7 +41,6 @@ pub struct ClientBuilder {
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
-    pub tcp_nodelay: bool,
     pub timeout: Option<std::time::Duration>,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
@@ -66,7 +65,6 @@ impl ClientBuilder {
             resolver: self.resolver.clone(),
             rng: rand::rngs::StdRng::from_entropy(),
             client: None,
-            tcp_nodelay: self.tcp_nodelay,
             timeout: self.timeout,
             http_version: self.http_version,
             disable_keepalive: self.disable_keepalive,
@@ -104,7 +102,6 @@ pub struct Client {
         >,
     >,
     client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
-    tcp_nodelay: bool,
     timeout: Option<std::time::Duration>,
     disable_keepalive: bool,
     insecure: bool,
@@ -132,9 +129,8 @@ impl Client {
     ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
         if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
             let stream = tokio::net::TcpStream::connect(addr).await?;
-            if self.tcp_nodelay {
-                stream.set_nodelay(self.tcp_nodelay)?;
-            }
+            stream.set_nodelay(true)?;
+            stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
             let connector = if self.insecure {
                 native_tls::TlsConnector::builder()
                     .danger_accept_invalid_certs(true)
@@ -155,9 +151,8 @@ impl Client {
             Ok(send)
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
-            if self.tcp_nodelay {
-                stream.set_nodelay(self.tcp_nodelay)?;
-            }
+            stream.set_nodelay(true)?;
+            stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
             Ok(send)
