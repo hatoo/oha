@@ -139,7 +139,7 @@ impl Client {
             } else {
                 native_tls::TlsConnector::new()?
             };
-            let connector = tokio_tls::TlsConnector::from(connector);
+            let connector = tokio_native_tls::TlsConnector::from(connector);
             let stream = connector
                 .connect(
                     self.url.host().ok_or_else(|| ClientError::HostNotFound)?,
