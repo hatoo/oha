@@ -257,6 +257,7 @@ impl Client {
                     return Ok::<_, anyhow::Error>(result);
                 }
                 Err(e) => {
+                    self.client = Some(send_request);
                     return Err(e.into());
                 }
             }
