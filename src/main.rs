@@ -204,7 +204,7 @@ async fn main() -> anyhow::Result<()> {
         headers
     };
 
-    let body: Option<&'static _> = match (opts.body_string, opts.body_path) {
+    let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path) {
         (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
         (_, Some(path)) => {
             let mut buf = Vec::new();
