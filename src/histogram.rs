@@ -1,7 +1,7 @@
-pub fn histogram(values: &[f64], bins: usize) -> Vec<(f64, u64)> {
+pub fn histogram(values: &[f64], bins: usize) -> Vec<(f64, usize)> {
     // TODO: Use better algorithm.
     // Is there any common and good algorithm?
-    let mut bucket: Vec<u64> = vec![0; bins];
+    let mut bucket: Vec<usize> = vec![0; bins];
     let average = values.iter().collect::<average::Mean>().mean();
     let min = values.iter().collect::<average::Min>().min();
     let max = values

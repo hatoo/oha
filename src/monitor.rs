@@ -326,7 +326,7 @@ impl Monitor {
                     let histo = crate::histogram::histogram(&values, bins);
                     histo
                         .into_iter()
-                        .map(|(label, v)| (format!("{:.4}", label), v))
+                        .map(|(label, v)| (format!("{:.4}", label), v as u64))
                         .collect()
                 };
 
