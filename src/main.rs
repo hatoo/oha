@@ -253,6 +253,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .boxed()
     } else {
+        // Spawn monitor future which draws realtime tui
         tokio::spawn(
             monitor::Monitor {
                 end_line: opts
@@ -298,6 +299,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
+    // client_builder builds client for each workers
     let client_builder = client::ClientBuilder {
         http_version,
         url: opts.url,

@@ -274,6 +274,7 @@ impl Client {
     }
 }
 
+/// Check error was "Too many open file"
 fn is_too_many_open_files(res: &anyhow::Result<RequestResult>) -> bool {
     res.as_ref()
         .err()
