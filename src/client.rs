@@ -290,16 +290,13 @@ pub async fn work(
     n_tasks: usize,
     n_workers: usize,
 ) {
-    let injector = crossbeam::deque::Injector::new();
-
-    for _ in 0..n_tasks {
-        injector.push(());
-    }
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let counter = AtomicUsize::new(0);
 
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let crossbeam::deque::Steal::Success(()) = injector.steal() {
+            while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();
