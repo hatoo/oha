@@ -84,6 +84,7 @@ Examples: -z 10s -z 3m.",
     #[structopt(
         help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
+        short = "r",
         long = "redirect"
     )]
     redirect: usize,
