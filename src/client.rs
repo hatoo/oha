@@ -255,9 +255,12 @@ impl Client {
                     }
 
                     if let Some(location) = parts.headers.get("Location") {
-                        send_request = self
+                        let (send_request_redirect, len) = self
                             .redirect(send_request, &self.url.clone(), location)
                             .await?;
+
+                        send_request = send_request_redirect;
+                        len_sum += len;
                     }
 
                     let end = std::time::Instant::now();
@@ -297,8 +300,10 @@ impl Client {
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
         base_url: &'a http::Uri,
         location: &'a http::header::HeaderValue,
-    ) -> futures::future::BoxFuture<'a, anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>>>
-    {
+    ) -> futures::future::BoxFuture<
+        'a,
+        anyhow::Result<(hyper::client::conn::SendRequest<hyper::Body>, usize)>,
+    > {
         async move {
             let url: http::Uri = location.to_str()?.parse()?;
             let url = if url.authority().is_none() {
@@ -355,19 +360,22 @@ impl Client {
             let res = send_request.send_request(request).await?;
             let (parts, mut stream) = res.into_parts();
 
+            let mut len_sum = 0;
             while let Some(chunk) = stream.next().await {
-                chunk?;
+                len_sum += chunk?.len();
             }
 
             if let Some(location) = parts.headers.get("Location") {
-                dbg!(&url, location);
-                send_request = self.redirect(send_request, &url, location).await?;
+                let (send_request_redirect, len) =
+                    self.redirect(send_request, &url, location).await?;
+                send_request = send_request_redirect;
+                len_sum += len;
             }
 
             if let Some(send_request_base) = send_request_base {
-                Ok(send_request_base)
+                Ok((send_request_base, len_sum))
             } else {
-                Ok(send_request)
+                Ok((send_request, len_sum))
             }
         }
         .boxed()
