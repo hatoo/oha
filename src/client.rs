@@ -42,6 +42,7 @@ pub struct ClientBuilder {
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
     pub timeout: Option<std::time::Duration>,
+    pub redirect_limit: usize,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
     pub resolver: Arc<
@@ -67,6 +68,7 @@ impl ClientBuilder {
             client: None,
             timeout: self.timeout,
             http_version: self.http_version,
+            redirect_limit: self.redirect_limit,
             disable_keepalive: self.disable_keepalive,
             insecure: self.insecure,
         }
@@ -83,6 +85,8 @@ pub enum ClientError {
     PathAndQueryNotFound,
     #[error("No record returned from DNS")]
     DNSNoRecord,
+    #[error("Redirection limit has reached")]
+    TooManyRedirect,
 }
 
 pub struct Client {
@@ -103,6 +107,7 @@ pub struct Client {
     >,
     client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     timeout: Option<std::time::Duration>,
+    redirect_limit: usize,
     disable_keepalive: bool,
     insecure: bool,
 }
@@ -257,7 +262,12 @@ impl Client {
 
                     if let Some(location) = parts.headers.get("Location") {
                         let (send_request_redirect, new_status, len) = self
-                            .redirect(send_request, &self.url.clone(), location)
+                            .redirect(
+                                send_request,
+                                &self.url.clone(),
+                                location,
+                                self.redirect_limit,
+                            )
                             .await?;
 
                         send_request = send_request_redirect;
@@ -302,6 +312,7 @@ impl Client {
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
         base_url: &'a http::Uri,
         location: &'a http::header::HeaderValue,
+        limit: usize,
     ) -> futures::future::BoxFuture<
         'a,
         anyhow::Result<(
@@ -311,6 +322,9 @@ impl Client {
         )>,
     > {
         async move {
+            if limit == 0 {
+                anyhow::bail!(ClientError::TooManyRedirect);
+            }
             let url: http::Uri = location.to_str()?.parse()?;
             let url = if url.authority().is_none() {
                 // location was relative url
@@ -373,8 +387,9 @@ impl Client {
             }
 
             if let Some(location) = parts.headers.get("Location") {
-                let (send_request_redirect, new_status, len) =
-                    self.redirect(send_request, &url, location).await?;
+                let (send_request_redirect, new_status, len) = self
+                    .redirect(send_request, &url, location, limit - 1)
+                    .await?;
                 send_request = send_request_redirect;
                 status = new_status;
                 len_sum += len;

@@ -81,14 +81,12 @@ Examples: -z 10s -z 3m.",
     host: Option<String>,
     #[structopt(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
-    /*
     #[structopt(
         help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
         long = "redirect"
     )]
     redirect: usize,
-    */
     #[structopt(
         help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
         long = "disable-keepalive"
@@ -308,6 +306,7 @@ async fn main() -> anyhow::Result<()> {
         body,
         resolver: Arc::new(resolver),
         timeout: opts.timeout.map(|d| d.into()),
+        redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
     };
