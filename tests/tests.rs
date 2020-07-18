@@ -98,19 +98,32 @@ async fn get_query(p: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-async fn test_redirect1() -> bool {
-    use http::Uri;
+async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
-    let second = warp::path("second").map(move || {
-        tx.send(()).unwrap();
-        "OK"
-    });
-    let route = first.or(second);
-
     let _guard = PORT_LOCK.lock().unwrap();
     let port = get_port::get_port().unwrap();
+
+    let route = warp::path!(usize).map(move |x| {
+        if x == n {
+            tx.send(()).unwrap();
+            http::Response::builder().status(200).body("OK").unwrap()
+        } else {
+            if is_relative {
+                http::Response::builder()
+                    .status(301)
+                    .header("Location", format!("/{}", x + 1))
+                    .body("OK")
+                    .unwrap()
+            } else {
+                http::Response::builder()
+                    .status(301)
+                    .header("Location", format!("http://localhost:{}/{}", port, x + 1))
+                    .body("OK")
+                    .unwrap()
+            }
+        }
+    });
+
     tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
@@ -118,8 +131,9 @@ async fn test_redirect1() -> bool {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://127.0.0.1:{}/first", port))
+            .args(&["-n", "1", "--no-tui", "--redirect"])
+            .arg(limit.to_string())
+            .arg(format!("http://127.0.0.1:{}/0", port))
             .assert()
             .success();
     })
@@ -127,77 +141,6 @@ async fn test_redirect1() -> bool {
     .unwrap();
 
     rx.try_recv().is_ok()
-}
-
-async fn test_redirect2() -> bool {
-    use http::Uri;
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
-
-    let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
-    // test absolute path
-    let second = warp::path("second").map(move || {
-        warp::redirect(
-            format!("http://localhost:{}/third", port)
-                .parse::<Uri>()
-                .unwrap(),
-        )
-    });
-    let third = warp::path("third").map(move || {
-        tx.send(()).unwrap();
-        "OK"
-    });
-    let route = first.or(second).or(third);
-
-    tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
-
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://127.0.0.1:{}/first", port))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
-
-    rx.try_recv().is_ok()
-}
-
-async fn test_redirect_limit() -> bool {
-    use http::Uri;
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
-    let second = warp::path("second").map(|| warp::redirect(Uri::from_static("/third")));
-    let third = warp::path("third").map(move || {
-        tx.send(()).unwrap();
-        "OK"
-    });
-    let route = first.or(second).or(third);
-
-    let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
-    tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
-
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(&["-n", "1", "--no-tui", "--redirect", "1"])
-            .arg(format!("http://127.0.0.1:{}/first", port))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
-
-    !rx.try_recv().is_ok()
 }
 
 #[tokio::test]
@@ -305,7 +248,12 @@ async fn test_query() {
 
 #[tokio::test]
 async fn test_redirect() {
-    assert!(test_redirect1().await);
-    assert!(test_redirect2().await);
-    assert!(test_redirect_limit().await);
+    for n in 1..=5 {
+        assert!(redirect(n, true, 10).await);
+        assert!(redirect(n, false, 10).await);
+    }
+    for n in 11..=15 {
+        assert!(!redirect(n, true, 10).await);
+        assert!(!redirect(n, false, 10).await);
+    }
 }
