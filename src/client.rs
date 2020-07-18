@@ -248,6 +248,7 @@ impl Client {
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
+                    let mut status = parts.status;
 
                     let mut len_sum = 0;
                     while let Some(chunk) = stream.next().await {
@@ -255,11 +256,12 @@ impl Client {
                     }
 
                     if let Some(location) = parts.headers.get("Location") {
-                        let (send_request_redirect, len) = self
+                        let (send_request_redirect, new_status, len) = self
                             .redirect(send_request, &self.url.clone(), location)
                             .await?;
 
                         send_request = send_request_redirect;
+                        status = new_status;
                         len_sum += len;
                     }
 
@@ -268,7 +270,7 @@ impl Client {
                     let result = RequestResult {
                         start,
                         end,
-                        status: parts.status,
+                        status,
                         len_bytes: len_sum,
                         connection_time,
                     };
@@ -302,7 +304,11 @@ impl Client {
         location: &'a http::header::HeaderValue,
     ) -> futures::future::BoxFuture<
         'a,
-        anyhow::Result<(hyper::client::conn::SendRequest<hyper::Body>, usize)>,
+        anyhow::Result<(
+            hyper::client::conn::SendRequest<hyper::Body>,
+            http::StatusCode,
+            usize,
+        )>,
     > {
         async move {
             let url: http::Uri = location.to_str()?.parse()?;
@@ -359,6 +365,7 @@ impl Client {
             let request = self.request(&url)?;
             let res = send_request.send_request(request).await?;
             let (parts, mut stream) = res.into_parts();
+            let mut status = parts.status;
 
             let mut len_sum = 0;
             while let Some(chunk) = stream.next().await {
@@ -366,16 +373,17 @@ impl Client {
             }
 
             if let Some(location) = parts.headers.get("Location") {
-                let (send_request_redirect, len) =
+                let (send_request_redirect, new_status, len) =
                     self.redirect(send_request, &url, location).await?;
                 send_request = send_request_redirect;
+                status = new_status;
                 len_sum += len;
             }
 
             if let Some(send_request_base) = send_request_base {
-                Ok((send_request_base, len_sum))
+                Ok((send_request_base, status, len_sum))
             } else {
-                Ok((send_request, len_sum))
+                Ok((send_request, status, len_sum))
             }
         }
         .boxed()
