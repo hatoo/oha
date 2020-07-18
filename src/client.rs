@@ -260,19 +260,21 @@ impl Client {
                         len_sum += chunk?.len();
                     }
 
-                    if let Some(location) = parts.headers.get("Location") {
-                        let (send_request_redirect, new_status, len) = self
-                            .redirect(
-                                send_request,
-                                &self.url.clone(),
-                                location,
-                                self.redirect_limit,
-                            )
-                            .await?;
+                    if self.redirect_limit != 0 {
+                        if let Some(location) = parts.headers.get("Location") {
+                            let (send_request_redirect, new_status, len) = self
+                                .redirect(
+                                    send_request,
+                                    &self.url.clone(),
+                                    location,
+                                    self.redirect_limit,
+                                )
+                                .await?;
 
-                        send_request = send_request_redirect;
-                        status = new_status;
-                        len_sum += len;
+                            send_request = send_request_redirect;
+                            status = new_status;
+                            len_sum += len;
+                        }
                     }
 
                     let end = std::time::Instant::now();
