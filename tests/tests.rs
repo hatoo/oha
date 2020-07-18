@@ -129,6 +129,70 @@ async fn test_redirect1() -> bool {
     rx.try_recv().is_ok()
 }
 
+async fn test_redirect2() -> bool {
+    use http::Uri;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
+    let second = warp::path("second").map(|| warp::redirect(Uri::from_static("/third")));
+    let third = warp::path("third").map(move || {
+        tx.send(()).unwrap();
+        "OK"
+    });
+    let route = first.or(second).or(third);
+
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+    tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg(format!("http://127.0.0.1:{}/first", port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().is_ok()
+}
+
+async fn test_redirect_limit() -> bool {
+    use http::Uri;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
+    let second = warp::path("second").map(|| warp::redirect(Uri::from_static("/third")));
+    let third = warp::path("third").map(move || {
+        tx.send(()).unwrap();
+        "OK"
+    });
+    let route = first.or(second).or(third);
+
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+    tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui", "--redirect", "1"])
+            .arg(format!("http://127.0.0.1:{}/first", port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    !rx.try_recv().is_ok()
+}
+
 #[tokio::test]
 async fn test_enable_compression_default() {
     let header = get_header_body(&[]).await.0;
@@ -235,4 +299,6 @@ async fn test_query() {
 #[tokio::test]
 async fn test_redirect() {
     assert!(test_redirect1().await);
+    assert!(test_redirect2().await);
+    assert!(test_redirect_limit().await);
 }
