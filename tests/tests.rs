@@ -102,9 +102,7 @@ async fn test_redirect1() -> bool {
     use http::Uri;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let first = warp::path("first").map(|| {
-        warp::redirect(Uri::from_static("/second"))
-    });
+    let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
     let second = warp::path("second").map(move || {
         tx.send(()).unwrap();
         "OK"
