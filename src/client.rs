@@ -264,7 +264,7 @@ impl Client {
 
                             send_request = send_request_redirect;
                             status = new_status;
-                            len_sum += len;
+                            len_sum = len;
                         }
                     }
 
@@ -364,7 +364,7 @@ impl Client {
                     .await?;
                 send_request = send_request_redirect;
                 status = new_status;
-                len_sum += len;
+                len_sum = len;
             }
 
             if let Some(send_request_base) = send_request_base {
