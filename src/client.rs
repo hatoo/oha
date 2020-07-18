@@ -123,6 +123,21 @@ impl Client {
         Ok(addr)
     }
 
+    async fn lookup_ip_url(&mut self, url: &http::Uri) -> anyhow::Result<std::net::IpAddr> {
+        let addrs = self
+            .resolver
+            .lookup_ip(url.host().ok_or_else(|| ClientError::HostNotFound)?)
+            .await?
+            .iter()
+            .collect::<Vec<_>>();
+
+        let addr = *addrs
+            .choose(&mut self.rng)
+            .ok_or_else(|| ClientError::DNSNoRecord)?;
+
+        Ok(addr)
+    }
+
     async fn client(
         &mut self,
         addr: (std::net::IpAddr, u16),
@@ -159,11 +174,10 @@ impl Client {
         }
     }
 
-    fn request(&self) -> anyhow::Result<http::Request<hyper::Body>> {
+    fn request(&self, url: &http::Uri) -> anyhow::Result<http::Request<hyper::Body>> {
         let mut builder = http::Request::builder()
             .uri(
-                self.url
-                    .path_and_query()
+                url.path_and_query()
                     .ok_or_else(|| ClientError::PathAndQueryNotFound)?
                     .as_str(),
             )
@@ -230,7 +244,7 @@ impl Client {
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
-            let request = self.request()?;
+            let request = self.request(&self.url)?;
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
@@ -238,6 +252,12 @@ impl Client {
                     let mut len_sum = 0;
                     while let Some(chunk) = stream.next().await {
                         len_sum += chunk?.len();
+                    }
+
+                    if let Some(location) = parts.headers.get("Location") {
+                        send_request = self
+                            .redirect(send_request, &self.url.clone(), location)
+                            .await?;
                     }
 
                     let end = std::time::Instant::now();
@@ -271,6 +291,86 @@ impl Client {
                 anyhow::bail!("timeout");
             }
         }
+    }
+    fn redirect<'a>(
+        &'a mut self,
+        send_request: hyper::client::conn::SendRequest<hyper::Body>,
+        base_url: &'a http::Uri,
+        location: &'a http::header::HeaderValue,
+    ) -> futures::future::BoxFuture<'a, anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>>>
+    {
+        async move {
+            let url: http::Uri = location.to_str()?.parse()?;
+            let url = if url.authority().is_none() {
+                // location was relative url
+                let mut parts = base_url.clone().into_parts();
+                parts.path_and_query = url.path_and_query().cloned();
+                http::Uri::from_parts(parts)?
+            } else {
+                url
+            };
+
+            let (mut send_request, send_request_base) =
+                if base_url.authority() == url.authority() && !self.disable_keepalive {
+                    // reuse connection
+                    (send_request, None)
+                } else {
+                    let port = url
+                        .port_u16()
+                        .or_else(|| {
+                            if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
+                                Some(80)
+                            } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+                                Some(443)
+                            } else {
+                                None
+                            }
+                        })
+                        .ok_or_else(|| ClientError::PortNotFound)?;
+                    let addr = (self.lookup_ip_url(&url).await?, port);
+                    (self.client(addr).await?, Some(send_request))
+                };
+
+            while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
+                .await
+                .is_err()
+            {
+                let port = url
+                    .port_u16()
+                    .or_else(|| {
+                        if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
+                            Some(80)
+                        } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+                            Some(443)
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| ClientError::PortNotFound)?;
+                let addr = (self.lookup_ip_url(&url).await?, port);
+                send_request = self.client(addr).await?;
+            }
+
+            let request = self.request(&url)?;
+            let res = send_request.send_request(request).await?;
+            let (parts, mut stream) = res.into_parts();
+
+            while let Some(chunk) = stream.next().await {
+                chunk?;
+            }
+
+            if let Some(location) = parts.headers.get("Location") {
+                dbg!(&url, location);
+                send_request = self.redirect(send_request, &url, location).await?;
+            }
+
+            if let Some(send_request_base) = send_request_base {
+                Ok(send_request_base)
+            } else {
+                Ok(send_request)
+            }
+        }
+        .boxed()
     }
 }
 
