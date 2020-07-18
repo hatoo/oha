@@ -132,17 +132,24 @@ async fn test_redirect1() -> bool {
 async fn test_redirect2() -> bool {
     use http::Uri;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
 
     let first = warp::path("first").map(|| warp::redirect(Uri::from_static("/second")));
-    let second = warp::path("second").map(|| warp::redirect(Uri::from_static("/third")));
+    // test absolute path
+    let second = warp::path("second").map(move || {
+        warp::redirect(
+            format!("http://localhost:{}/third", port)
+                .parse::<Uri>()
+                .unwrap(),
+        )
+    });
     let third = warp::path("third").map(move || {
         tx.send(()).unwrap();
         "OK"
     });
     let route = first.or(second).or(third);
 
-    let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
     tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
