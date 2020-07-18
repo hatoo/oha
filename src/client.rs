@@ -300,6 +300,7 @@ impl Client {
             }
         }
     }
+
     fn redirect<'a>(
         &'a mut self,
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
