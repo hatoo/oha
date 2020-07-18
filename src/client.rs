@@ -201,21 +201,6 @@ impl Client {
         }
     }
 
-    fn get_port(&self) -> Result<u16, ClientError> {
-        self.url
-            .port_u16()
-            .or_else(|| {
-                if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
-                    Some(80)
-                } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-                    Some(443)
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| ClientError::PortNotFound)
-    }
-
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::delay_for(timeout).boxed()
@@ -230,7 +215,10 @@ impl Client {
             let mut send_request = if let Some(send_request) = self.client.take() {
                 send_request
             } else {
-                let addr = (self.lookup_ip().await?, self.get_port()?);
+                let addr = (
+                    self.lookup_ip().await?,
+                    get_http_port(&self.url).ok_or_else(|| ClientError::PortNotFound)?,
+                );
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
@@ -243,7 +231,10 @@ impl Client {
                 .is_err()
             {
                 start = std::time::Instant::now();
-                let addr = (self.lookup_ip().await?, self.get_port()?);
+                let addr = (
+                    self.lookup_ip().await?,
+                    get_http_port(&self.url).ok_or_else(|| ClientError::PortNotFound)?,
+                );
                 let dns_lookup = std::time::Instant::now();
                 send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
@@ -342,18 +333,7 @@ impl Client {
                     // reuse connection
                     (send_request, None)
                 } else {
-                    let port = url
-                        .port_u16()
-                        .or_else(|| {
-                            if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
-                                Some(80)
-                            } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-                                Some(443)
-                            } else {
-                                None
-                            }
-                        })
-                        .ok_or_else(|| ClientError::PortNotFound)?;
+                    let port = get_http_port(&url).ok_or_else(|| ClientError::PortNotFound)?;
                     let addr = (self.lookup_ip_url(&url).await?, port);
                     (self.client(addr).await?, Some(send_request))
                 };
@@ -362,18 +342,7 @@ impl Client {
                 .await
                 .is_err()
             {
-                let port = url
-                    .port_u16()
-                    .or_else(|| {
-                        if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
-                            Some(80)
-                        } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-                            Some(443)
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or_else(|| ClientError::PortNotFound)?;
+                let port = get_http_port(&url).ok_or_else(|| ClientError::PortNotFound)?;
                 let addr = (self.lookup_ip_url(&url).await?, port);
                 send_request = self.client(addr).await?;
             }
@@ -405,6 +374,18 @@ impl Client {
         }
         .boxed()
     }
+}
+
+fn get_http_port(url: &http::Uri) -> Option<u16> {
+    url.port_u16().or_else(|| {
+        if url.scheme() == Some(&http::uri::Scheme::HTTP) {
+            Some(80)
+        } else if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+            Some(443)
+        } else {
+            None
+        }
+    })
 }
 
 /// Check error was "Too many open file"
