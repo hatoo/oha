@@ -186,7 +186,6 @@ impl Monitor {
                 };
                 let gauge = Gauge::default()
                     .block(Block::default().title("Progress").borders(Borders::ALL))
-                    .style(Style::default().fg(Color::White))
                     .gauge_style(Style::default().fg(Color::White))
                     .label(Span::raw(gauge_label))
                     .ratio(progress);
