@@ -35,6 +35,36 @@ impl RequestResult {
     }
 }
 
+struct DNS {
+    // To pick a random address from DNS.
+    rng: rand::rngs::StdRng,
+    resolver: Arc<
+        trust_dns_resolver::AsyncResolver<
+            trust_dns_resolver::name_server::GenericConnection,
+            trust_dns_resolver::name_server::GenericConnectionProvider<
+                trust_dns_resolver::name_server::TokioRuntime,
+            >,
+        >,
+    >,
+}
+
+impl DNS {
+    async fn lookup_ip(&mut self, url: &http::Uri) -> anyhow::Result<std::net::IpAddr> {
+        let addrs = self
+            .resolver
+            .lookup_ip(url.host().ok_or_else(|| ClientError::HostNotFound)?)
+            .await?
+            .iter()
+            .collect::<Vec<_>>();
+
+        let addr = *addrs
+            .choose(&mut self.rng)
+            .ok_or_else(|| ClientError::DNSNoRecord)?;
+
+        Ok(addr)
+    }
+}
+
 pub struct ClientBuilder {
     pub http_version: http::Version,
     pub url: http::Uri,
@@ -42,6 +72,7 @@ pub struct ClientBuilder {
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
     pub timeout: Option<std::time::Duration>,
+    pub redirect_limit: usize,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
     pub resolver: Arc<
@@ -62,11 +93,14 @@ impl ClientBuilder {
             method: self.method.clone(),
             headers: self.headers.clone(),
             body: self.body,
-            resolver: self.resolver.clone(),
-            rng: rand::rngs::StdRng::from_entropy(),
+            dns: DNS {
+                resolver: self.resolver.clone(),
+                rng: rand::rngs::StdRng::from_entropy(),
+            },
             client: None,
             timeout: self.timeout,
             http_version: self.http_version,
+            redirect_limit: self.redirect_limit,
             disable_keepalive: self.disable_keepalive,
             insecure: self.insecure,
         }
@@ -83,6 +117,8 @@ pub enum ClientError {
     PathAndQueryNotFound,
     #[error("No record returned from DNS")]
     DNSNoRecord,
+    #[error("Redirection limit has reached")]
+    TooManyRedirect,
 }
 
 pub struct Client {
@@ -91,38 +127,15 @@ pub struct Client {
     method: http::Method,
     headers: http::header::HeaderMap,
     body: Option<&'static [u8]>,
-    // To pick a random address from DNS.
-    rng: rand::rngs::StdRng,
-    resolver: Arc<
-        trust_dns_resolver::AsyncResolver<
-            trust_dns_resolver::name_server::GenericConnection,
-            trust_dns_resolver::name_server::GenericConnectionProvider<
-                trust_dns_resolver::name_server::TokioRuntime,
-            >,
-        >,
-    >,
+    dns: DNS,
     client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     timeout: Option<std::time::Duration>,
+    redirect_limit: usize,
     disable_keepalive: bool,
     insecure: bool,
 }
 
 impl Client {
-    async fn lookup_ip(&mut self) -> anyhow::Result<std::net::IpAddr> {
-        let addrs = self
-            .resolver
-            .lookup_ip(self.url.host().ok_or_else(|| ClientError::HostNotFound)?)
-            .await?
-            .iter()
-            .collect::<Vec<_>>();
-
-        let addr = *addrs
-            .choose(&mut self.rng)
-            .ok_or_else(|| ClientError::DNSNoRecord)?;
-
-        Ok(addr)
-    }
-
     async fn client(
         &mut self,
         addr: (std::net::IpAddr, u16),
@@ -159,11 +172,10 @@ impl Client {
         }
     }
 
-    fn request(&self) -> anyhow::Result<http::Request<hyper::Body>> {
+    fn request(&self, url: &http::Uri) -> anyhow::Result<http::Request<hyper::Body>> {
         let mut builder = http::Request::builder()
             .uri(
-                self.url
-                    .path_and_query()
+                url.path_and_query()
                     .ok_or_else(|| ClientError::PathAndQueryNotFound)?
                     .as_str(),
             )
@@ -182,21 +194,6 @@ impl Client {
         }
     }
 
-    fn get_port(&self) -> Result<u16, ClientError> {
-        self.url
-            .port_u16()
-            .or_else(|| {
-                if self.url.scheme() == Some(&http::uri::Scheme::HTTP) {
-                    Some(80)
-                } else if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-                    Some(443)
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| ClientError::PortNotFound)
-    }
-
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::delay_for(timeout).boxed()
@@ -211,7 +208,10 @@ impl Client {
             let mut send_request = if let Some(send_request) = self.client.take() {
                 send_request
             } else {
-                let addr = (self.lookup_ip().await?, self.get_port()?);
+                let addr = (
+                    self.dns.lookup_ip(&self.url).await?,
+                    get_http_port(&self.url).ok_or_else(|| ClientError::PortNotFound)?,
+                );
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
@@ -224,20 +224,41 @@ impl Client {
                 .is_err()
             {
                 start = std::time::Instant::now();
-                let addr = (self.lookup_ip().await?, self.get_port()?);
+                let addr = (
+                    self.dns.lookup_ip(&self.url).await?,
+                    get_http_port(&self.url).ok_or_else(|| ClientError::PortNotFound)?,
+                );
                 let dns_lookup = std::time::Instant::now();
                 send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
-            let request = self.request()?;
+            let request = self.request(&self.url)?;
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
+                    let mut status = parts.status;
 
                     let mut len_sum = 0;
                     while let Some(chunk) = stream.next().await {
                         len_sum += chunk?.len();
+                    }
+
+                    if self.redirect_limit != 0 {
+                        if let Some(location) = parts.headers.get("Location") {
+                            let (send_request_redirect, new_status, len) = self
+                                .redirect(
+                                    send_request,
+                                    &self.url.clone(),
+                                    location,
+                                    self.redirect_limit,
+                                )
+                                .await?;
+
+                            send_request = send_request_redirect;
+                            status = new_status;
+                            len_sum = len;
+                        }
                     }
 
                     let end = std::time::Instant::now();
@@ -245,7 +266,7 @@ impl Client {
                     let result = RequestResult {
                         start,
                         end,
-                        status: parts.status,
+                        status,
                         len_bytes: len_sum,
                         connection_time,
                     };
@@ -272,6 +293,93 @@ impl Client {
             }
         }
     }
+
+    fn redirect<'a>(
+        &'a mut self,
+        send_request: hyper::client::conn::SendRequest<hyper::Body>,
+        base_url: &'a http::Uri,
+        location: &'a http::header::HeaderValue,
+        limit: usize,
+    ) -> futures::future::BoxFuture<
+        'a,
+        anyhow::Result<(
+            hyper::client::conn::SendRequest<hyper::Body>,
+            http::StatusCode,
+            usize,
+        )>,
+    > {
+        async move {
+            if limit == 0 {
+                anyhow::bail!(ClientError::TooManyRedirect);
+            }
+            let url: http::Uri = location.to_str()?.parse()?;
+            let url = if url.authority().is_none() {
+                // location was relative url
+                let mut parts = base_url.clone().into_parts();
+                parts.path_and_query = url.path_and_query().cloned();
+                http::Uri::from_parts(parts)?
+            } else {
+                url
+            };
+
+            let (mut send_request, send_request_base) =
+                if base_url.authority() == url.authority() && !self.disable_keepalive {
+                    // reuse connection
+                    (send_request, None)
+                } else {
+                    let port = get_http_port(&url).ok_or_else(|| ClientError::PortNotFound)?;
+                    let addr = (self.dns.lookup_ip(&url).await?, port);
+                    (self.client(addr).await?, Some(send_request))
+                };
+
+            while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
+                .await
+                .is_err()
+            {
+                let port = get_http_port(&url).ok_or_else(|| ClientError::PortNotFound)?;
+                let addr = (self.dns.lookup_ip(&url).await?, port);
+                send_request = self.client(addr).await?;
+            }
+
+            let request = self.request(&url)?;
+            let res = send_request.send_request(request).await?;
+            let (parts, mut stream) = res.into_parts();
+            let mut status = parts.status;
+
+            let mut len_sum = 0;
+            while let Some(chunk) = stream.next().await {
+                len_sum += chunk?.len();
+            }
+
+            if let Some(location) = parts.headers.get("Location") {
+                let (send_request_redirect, new_status, len) = self
+                    .redirect(send_request, &url, location, limit - 1)
+                    .await?;
+                send_request = send_request_redirect;
+                status = new_status;
+                len_sum = len;
+            }
+
+            if let Some(send_request_base) = send_request_base {
+                Ok((send_request_base, status, len_sum))
+            } else {
+                Ok((send_request, status, len_sum))
+            }
+        }
+        .boxed()
+    }
+}
+
+fn get_http_port(url: &http::Uri) -> Option<u16> {
+    url.port_u16().or_else(|| {
+        if url.scheme() == Some(&http::uri::Scheme::HTTP) {
+            Some(80)
+        } else if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+            Some(443)
+        } else {
+            None
+        }
+    })
 }
 
 /// Check error was "Too many open file"

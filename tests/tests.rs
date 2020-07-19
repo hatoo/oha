@@ -98,6 +98,51 @@ async fn get_query(p: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
+async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+
+    let route = warp::path!(usize).map(move |x| {
+        if x == n {
+            tx.send(()).unwrap();
+            http::Response::builder().status(200).body("OK").unwrap()
+        } else {
+            if is_relative {
+                http::Response::builder()
+                    .status(301)
+                    .header("Location", format!("/{}", x + 1))
+                    .body("OK")
+                    .unwrap()
+            } else {
+                http::Response::builder()
+                    .status(301)
+                    .header("Location", format!("http://localhost:{}/{}", port, x + 1))
+                    .body("OK")
+                    .unwrap()
+            }
+        }
+    });
+
+    tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui", "--redirect"])
+            .arg(limit.to_string())
+            .arg(format!("http://127.0.0.1:{}/0", port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().is_ok()
+}
+
 #[tokio::test]
 async fn test_enable_compression_default() {
     let header = get_header_body(&[]).await.0;
@@ -199,4 +244,16 @@ async fn test_query() {
         get_query("index?a=b&c=d").await,
         "index?a=b&c=d".to_string()
     );
+}
+
+#[tokio::test]
+async fn test_redirect() {
+    for n in 1..=5 {
+        assert!(redirect(n, true, 10).await);
+        assert!(redirect(n, false, 10).await);
+    }
+    for n in 11..=15 {
+        assert!(!redirect(n, true, 10).await);
+        assert!(!redirect(n, false, 10).await);
+    }
 }
