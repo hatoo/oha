@@ -341,7 +341,17 @@ impl Client {
                 send_request = self.client(addr).await?;
             }
 
-            let request = self.request(&url)?;
+            let mut request = self.request(&url)?;
+            if url.authority() != self.url.authority() {
+                request.headers_mut().insert(
+                    http::header::HOST,
+                    http::HeaderValue::from_str(
+                        url.authority()
+                            .context("Authority is missing. This is a bug.")?
+                            .as_str(),
+                    )?,
+                );
+            }
             let res = send_request.send_request(request).await?;
             let (parts, mut stream) = res.into_parts();
             let mut status = parts.status;
