@@ -9,7 +9,8 @@ use tokio::stream::StreamExt;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
-use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Text};
+use tui::text::{Span, Spans};
+use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph};
 use tui::Terminal;
 
 use crate::client::RequestResult;
@@ -149,7 +150,7 @@ impl Monitor {
                 Err(e) => Err(e),
             };
 
-            terminal.draw(|mut f| {
+            terminal.draw(|f| {
                 let row4 = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints(
@@ -186,7 +187,8 @@ impl Monitor {
                 let gauge = Gauge::default()
                     .block(Block::default().title("Progress").borders(Borders::ALL))
                     .style(Style::default().fg(Color::White))
-                    .label(&gauge_label)
+                    .gauge_style(Style::default().fg(Color::White))
+                    .label(Span::raw(gauge_label))
                     .ratio(progress);
                 f.render_widget(gauge, row4[0]);
 
@@ -197,10 +199,10 @@ impl Monitor {
                     .take_while(|r| (now - r.end).as_secs_f64() <= timescale.as_secs_f64())
                     .collect::<Vec<_>>();
 
-                let statics_text = [
-                    Text::raw(format!("Requests : {}\n", last_1_timescale.len())),
-                    Text::raw(format!(
-                        "Slowest: {:.4} secs\n",
+                let statics_text = vec![
+                    Spans::from(format!("Requests : {}", last_1_timescale.len())),
+                    Spans::from(format!(
+                        "Slowest: {:.4} secs",
                         last_1_timescale
                             .iter()
                             .map(|r| r.duration())
@@ -208,8 +210,8 @@ impl Monitor {
                             .map(|d| d.as_secs_f64())
                             .unwrap_or(std::f64::NAN)
                     )),
-                    Text::raw(format!(
-                        "Fastest: {:.4} secs\n",
+                    Spans::from(format!(
+                        "Fastest: {:.4} secs",
                         last_1_timescale
                             .iter()
                             .map(|r| r.duration())
@@ -217,8 +219,8 @@ impl Monitor {
                             .map(|d| d.as_secs_f64())
                             .unwrap_or(std::f64::NAN)
                     )),
-                    Text::raw(format!(
-                        "Average: {:.4} secs\n",
+                    Spans::from(format!(
+                        "Average: {:.4} secs",
                         last_1_timescale
                             .iter()
                             .map(|r| r.duration())
@@ -226,8 +228,8 @@ impl Monitor {
                             .as_secs_f64()
                             / last_1_timescale.len() as f64
                     )),
-                    Text::raw(format!(
-                        "Data: {}\n",
+                    Spans::from(format!(
+                        "Data: {}",
                         Byte::from_bytes(
                             last_1_timescale
                                 .iter()
@@ -238,7 +240,7 @@ impl Monitor {
                     )),
                     #[cfg(unix)]
                     // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
-                    Text::raw(format!(
+                    Spans::from(format!(
                         "Number of open files: {} / {}",
                         nofile
                             .map(|c| c.to_string())
@@ -250,21 +252,24 @@ impl Monitor {
                     )),
                 ];
                 let statics_title = format!("statics for last {}", timescale);
-                let statics = Paragraph::new(statics_text.iter())
-                    .block(Block::default().title(&statics_title).borders(Borders::ALL));
+                let statics = Paragraph::new(statics_text).block(
+                    Block::default()
+                        .title(Span::raw(statics_title))
+                        .borders(Borders::ALL),
+                );
                 f.render_widget(statics, mid[0]);
 
                 let mut status_v: Vec<(http::StatusCode, usize)> =
                     status_dist.clone().into_iter().collect();
                 status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-                let mut statics2_string = String::new();
-                for (status, count) in status_v {
-                    statics2_string +=
-                        format!("[{}] {} responses\n", status.as_str(), count).as_str();
-                }
-                let statics2_text = [Text::raw(statics2_string)];
-                let statics2 = Paragraph::new(statics2_text.iter()).block(
+                let statics2_text = status_v
+                    .into_iter()
+                    .map(|(status, count)| {
+                        Spans::from(format!("[{}] {} responses", status.as_str(), count))
+                    })
+                    .collect::<Vec<_>>();
+                let statics2 = Paragraph::new(statics2_text).block(
                     Block::default()
                         .title("Status code distribution")
                         .borders(Borders::ALL),
@@ -273,12 +278,11 @@ impl Monitor {
 
                 let mut error_v: Vec<(String, usize)> = error_dist.clone().into_iter().collect();
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
-                let mut errors_string = String::new();
-                for (e, count) in error_v {
-                    errors_string += format!("[{}] {}\n", count, e).as_str();
-                }
-                let errors_text = [Text::raw(errors_string)];
-                let errors = Paragraph::new(errors_text.iter()).block(
+                let errors_text = error_v
+                    .into_iter()
+                    .map(|(e, count)| Spans::from(format!("[{}] {}", count, e)))
+                    .collect::<Vec<_>>();
+                let errors = Paragraph::new(errors_text).block(
                     Block::default()
                         .title("Error distribution")
                         .borders(Borders::ALL),
@@ -296,7 +300,11 @@ impl Monitor {
                 );
 
                 let barchart = BarChart::default()
-                    .block(Block::default().title(&title).borders(Borders::ALL))
+                    .block(
+                        Block::default()
+                            .title(Span::raw(title))
+                            .borders(Borders::ALL),
+                    )
                     .data(bar_num_req_str.as_slice())
                     .bar_width(
                         bar_num_req
