@@ -72,6 +72,7 @@ OPTIONS:
     -a <basic-auth>                      Basic authentication, username:password
         --http-version <http-version>    HTTP version. Available values 0.9, 1.0, 1.1, 2.
         --host <host>                    HTTP Host header
+    -r, --redirect <redirect>            Limit for number of Redirect. Set 0 for no redirection. [default: 10]
 
 ARGS:
     <url>    Target URL.
