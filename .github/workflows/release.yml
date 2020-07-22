@@ -1,0 +1,43 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+jobs:
+  publish:
+    name: Publish for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # This should work with only the `include`s but it currently doesn't because of this bug:
+        # https://github.community/t5/How-to-use-Git-and-GitHub/GitHub-Actions-Matrix-options-dont-work-as-documented/td-p/29558
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: oha
+            release_name: oha-linux-amd64
+          - os: windows-latest
+            artifact_name: oha.exe
+            release_name: oha-windows-amd64.exe
+          - os: macos-latest
+            artifact_name: oha
+            release_name: oha-macos-amd64
+
+    steps:
+      - uses: hecrj/setup-rust-action@master
+        with:
+          rust-version: stable
+      - uses: actions/checkout@v1
+      - run: cargo build --release --locked
+      - uses: svenstaro/upx-action@v1-release
+        with:
+          file: target/release/${{ matrix.artifact_name }}
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.release_name }}
+          tag: ${{ github.ref }}
