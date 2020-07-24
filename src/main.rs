@@ -121,11 +121,13 @@ async fn main() -> anyhow::Result<()> {
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
 
-        // default headers
+        // Accepct all
         headers.insert(
             http::header::ACCEPT,
             http::header::HeaderValue::from_static("*/*"),
         );
+
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Accept-Encoding
         if !opts.disable_compression {
             headers.insert(
                 http::header::ACCEPT_ENCODING,
