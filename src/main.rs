@@ -18,7 +18,8 @@ use client::RequestResult;
 #[structopt(
     author,
     about,
-    global_settings = &[AppSettings::ColoredHelp, AppSettings::DeriveDisplayOrder]
+    global_settings = &[AppSettings::ColoredHelp, AppSettings::DeriveDisplayOrder],
+    usage = "oha <url>"
 )]
 struct Opts {
     #[structopt(help = "Target URL.")]
