@@ -436,7 +436,8 @@ pub async fn work_with_qps(
     n_tasks: usize,
     n_workers: usize,
 ) {
-    let (tx, rx) = crossbeam::channel::unbounded();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let rx = tokio::sync::Mutex::new(rx);
 
     tokio::spawn(async move {
         let start = std::time::Instant::now();
@@ -453,7 +454,7 @@ pub async fn work_with_qps(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv() {
+            while let Some(()) = rx.lock().await.recv().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();
@@ -503,7 +504,8 @@ pub async fn work_until_with_qps(
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let (tx, rx) = crossbeam::channel::bounded(qps);
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let rx = tokio::sync::Mutex::new(rx);
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
@@ -524,7 +526,7 @@ pub async fn work_until_with_qps(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv() {
+            while let Some(()) = rx.lock().await.recv().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();
