@@ -315,36 +315,44 @@ async fn main() -> anyhow::Result<()> {
         insecure: opts.insecure,
     };
     if let Some(duration) = opts.duration.take() {
-        if let Some(qps) = opts.query_per_second {
-            client::work_until_with_qps(
-                client_builder,
-                result_tx,
-                qps,
-                start,
-                start + duration.into(),
-                opts.n_workers,
-            )
-            .await;
-        } else {
-            client::work_until(
-                client_builder,
-                result_tx,
-                start + duration.into(),
-                opts.n_workers,
-            )
-            .await;
+        match opts.query_per_second {
+            Some(0) | None => {
+                client::work_until(
+                    client_builder,
+                    result_tx,
+                    start + duration.into(),
+                    opts.n_workers,
+                )
+                .await
+            }
+            Some(qps) => {
+                client::work_until_with_qps(
+                    client_builder,
+                    result_tx,
+                    qps,
+                    start,
+                    start + duration.into(),
+                    opts.n_workers,
+                )
+                .await
+            }
         }
-    } else if let Some(qps) = opts.query_per_second {
-        client::work_with_qps(
-            client_builder,
-            result_tx,
-            qps,
-            opts.n_requests,
-            opts.n_workers,
-        )
-        .await;
     } else {
-        client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await;
+        match opts.query_per_second {
+            Some(0) | None => {
+                client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await
+            }
+            Some(qps) => {
+                client::work_with_qps(
+                    client_builder,
+                    result_tx,
+                    qps,
+                    opts.n_requests,
+                    opts.n_workers,
+                )
+                .await
+            }
+        }
     }
 
     let duration = start.elapsed();
