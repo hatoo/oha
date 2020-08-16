@@ -39,7 +39,7 @@ base64 = "0.12.0"
 
 
 [target.'cfg(unix)'.dependencies]
-rlimit = "0.3.0"
+rlimit = "0.4.0"
 
 [dev-dependencies]
 assert_cmd = "1.0.0"
