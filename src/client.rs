@@ -436,12 +436,12 @@ pub async fn work_with_qps(
     n_tasks: usize,
     n_workers: usize,
 ) {
-    let (tx, rx) = async_channel::unbounded();
+    let (tx, rx) = flume::unbounded();
 
     tokio::spawn(async move {
         let start = std::time::Instant::now();
         for i in 0..n_tasks {
-            tx.send(()).await.unwrap();
+            tx.send_async(()).await.unwrap();
             tokio::time::delay_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
@@ -453,7 +453,7 @@ pub async fn work_with_qps(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv().await {
+            while let Ok(()) = rx.recv_async().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();
@@ -503,14 +503,14 @@ pub async fn work_until_with_qps(
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let (tx, rx) = async_channel::bounded(qps);
+    let (tx, rx) = flume::bounded(qps);
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
             if std::time::Instant::now() > dead_line {
                 break;
             }
-            if tx.send(()).await.is_err() {
+            if tx.send_async(()).await.is_err() {
                 break;
             }
             tokio::time::delay_until(
@@ -524,7 +524,7 @@ pub async fn work_until_with_qps(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv().await {
+            while let Ok(()) = rx.recv_async().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
                 report_tx.send(res).unwrap();

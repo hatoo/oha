@@ -18,7 +18,6 @@ structopt = "0.3"
 tokio = { version = "0.2", features = ["full"] }
 anyhow = "1"
 thiserror = "1.0.16"
-async-channel = "1.1"
 futures = "0.3"
 average = "0.10.4"
 float-ord = "0.2.0"
