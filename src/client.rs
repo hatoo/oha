@@ -417,7 +417,7 @@ pub async fn work(
             while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
@@ -456,7 +456,7 @@ pub async fn work_with_qps(
             while let Ok(()) = rx.recv_async().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
@@ -480,7 +480,7 @@ pub async fn work_until(
             loop {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
@@ -527,7 +527,7 @@ pub async fn work_until_with_qps(
             while let Ok(()) = rx.recv_async().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
