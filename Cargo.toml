@@ -25,7 +25,7 @@ byte-unit = "4.0.8"
 tui = { version = "0.10.0", default-features = false, features = ["crossterm"] }
 crossterm = "0.17.0"
 libc = "0.2.67"
-flume = "0.8.0"
+flume = "0.9"
 humantime = "2.0.0"
 
 hyper = "0.13.4"
