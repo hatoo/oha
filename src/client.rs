@@ -52,14 +52,14 @@ impl DNS {
     async fn lookup_ip(&mut self, url: &http::Uri) -> anyhow::Result<std::net::IpAddr> {
         let addrs = self
             .resolver
-            .lookup_ip(url.host().ok_or_else(|| ClientError::HostNotFound)?)
+            .lookup_ip(url.host().ok_or(ClientError::HostNotFound)?)
             .await?
             .iter()
             .collect::<Vec<_>>();
 
         let addr = *addrs
             .choose(&mut self.rng)
-            .ok_or_else(|| ClientError::DNSNoRecord)?;
+            .ok_or(ClientError::DNSNoRecord)?;
 
         Ok(addr)
     }
@@ -154,10 +154,7 @@ impl Client {
             };
             let connector = tokio_native_tls::TlsConnector::from(connector);
             let stream = connector
-                .connect(
-                    self.url.host().ok_or_else(|| ClientError::HostNotFound)?,
-                    stream,
-                )
+                .connect(self.url.host().ok_or(ClientError::HostNotFound)?, stream)
                 .await?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
@@ -176,7 +173,7 @@ impl Client {
         let mut builder = http::Request::builder()
             .uri(
                 url.path_and_query()
-                    .ok_or_else(|| ClientError::PathAndQueryNotFound)?
+                    .ok_or(ClientError::PathAndQueryNotFound)?
                     .as_str(),
             )
             .method(self.method.clone())
@@ -210,7 +207,7 @@ impl Client {
             } else {
                 let addr = (
                     self.dns.lookup_ip(&self.url).await?,
-                    get_http_port(&self.url).ok_or_else(|| ClientError::PortNotFound)?,
+                    get_http_port(&self.url).ok_or(ClientError::PortNotFound)?,
                 );
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr).await?;
@@ -226,7 +223,7 @@ impl Client {
                 start = std::time::Instant::now();
                 let addr = (
                     self.dns.lookup_ip(&self.url).await?,
-                    get_http_port(&self.url).ok_or_else(|| ClientError::PortNotFound)?,
+                    get_http_port(&self.url).ok_or(ClientError::PortNotFound)?,
                 );
                 let dns_lookup = std::time::Instant::now();
                 send_request = self.client(addr).await?;
@@ -275,11 +272,11 @@ impl Client {
                         self.client = Some(send_request);
                     }
 
-                    return Ok::<_, anyhow::Error>(result);
+                    Ok::<_, anyhow::Error>(result)
                 }
                 Err(e) => {
                     self.client = Some(send_request);
-                    return Err(e.into());
+                    Err(e.into())
                 }
             }
         };
@@ -327,7 +324,7 @@ impl Client {
                     // reuse connection
                     (send_request, None)
                 } else {
-                    let port = get_http_port(&url).ok_or_else(|| ClientError::PortNotFound)?;
+                    let port = get_http_port(&url).ok_or(ClientError::PortNotFound)?;
                     let addr = (self.dns.lookup_ip(&url).await?, port);
                     (self.client(addr).await?, Some(send_request))
                 };
@@ -336,7 +333,7 @@ impl Client {
                 .await
                 .is_err()
             {
-                let port = get_http_port(&url).ok_or_else(|| ClientError::PortNotFound)?;
+                let port = get_http_port(&url).ok_or(ClientError::PortNotFound)?;
                 let addr = (self.dns.lookup_ip(&url).await?, port);
                 send_request = self.client(addr).await?;
             }
@@ -417,7 +414,7 @@ pub async fn work(
             while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
@@ -436,12 +433,12 @@ pub async fn work_with_qps(
     n_tasks: usize,
     n_workers: usize,
 ) {
-    let (tx, rx) = async_channel::unbounded();
+    let (tx, rx) = flume::unbounded();
 
     tokio::spawn(async move {
         let start = std::time::Instant::now();
         for i in 0..n_tasks {
-            tx.send(()).await.unwrap();
+            tx.send_async(()).await.unwrap();
             tokio::time::delay_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
@@ -453,10 +450,10 @@ pub async fn work_with_qps(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv().await {
+            while let Ok(()) = rx.recv_async().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
@@ -480,7 +477,7 @@ pub async fn work_until(
             loop {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }
@@ -503,14 +500,14 @@ pub async fn work_until_with_qps(
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let (tx, rx) = async_channel::bounded(qps);
+    let (tx, rx) = flume::bounded(qps);
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
             if std::time::Instant::now() > dead_line {
                 break;
             }
-            if tx.send(()).await.is_err() {
+            if tx.send_async(()).await.is_err() {
                 break;
             }
             tokio::time::delay_until(
@@ -524,10 +521,10 @@ pub async fn work_until_with_qps(
     let mut futures_unordered = (0..n_workers)
         .map(|_| async {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv().await {
+            while let Ok(()) = rx.recv_async().await {
                 let res = w.work().await;
                 let is_cancel = is_too_many_open_files(&res);
-                report_tx.send(res).unwrap();
+                report_tx.send_async(res).await.unwrap();
                 if is_cancel {
                     break;
                 }

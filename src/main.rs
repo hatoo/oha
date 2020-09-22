@@ -216,7 +216,7 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
-    let (result_tx, mut result_rx) = flume::unbounded();
+    let (result_tx, result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
 
@@ -224,7 +224,7 @@ async fn main() -> anyhow::Result<()> {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(
             async move {
-                let (ctrl_c_tx, mut ctrl_c_rx) = flume::unbounded();
+                let (ctrl_c_tx, ctrl_c_rx) = flume::unbounded();
 
                 tokio::spawn(async move {
                     if let Ok(())  = tokio::signal::ctrl_c().await {
