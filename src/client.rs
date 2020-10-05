@@ -1,6 +1,5 @@
 use anyhow::Context;
 use futures::future::FutureExt;
-use futures::stream::FuturesUnordered;
 use rand::prelude::*;
 use std::sync::Arc;
 use thiserror::Error;
@@ -406,23 +405,29 @@ pub async fn work(
     n_workers: usize,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let counter = AtomicUsize::new(0);
+    let counter = Arc::new(AtomicUsize::new(0));
 
-    let mut futures_unordered = (0..n_workers)
-        .map(|_| async {
+    let futures = (0..n_workers)
+        .map(|_| {
             let mut w = client_builder.build();
-            while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                let res = w.work().await;
-                let is_cancel = is_too_many_open_files(&res);
-                report_tx.send_async(res).await.unwrap();
-                if is_cancel {
-                    break;
+            let report_tx = report_tx.clone();
+            let counter = counter.clone();
+            tokio::spawn(async move {
+                while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                    let res = w.work().await;
+                    let is_cancel = is_too_many_open_files(&res);
+                    report_tx.send_async(res).await.unwrap();
+                    if is_cancel {
+                        break;
+                    }
                 }
-            }
+            })
         })
-        .collect::<FuturesUnordered<_>>();
+        .collect::<Vec<_>>();
 
-    while futures_unordered.next().await.is_some() {}
+    for f in futures {
+        let _ = f.await;
+    }
 }
 
 /// n tasks by m workers limit to qps works in a second
@@ -447,21 +452,27 @@ pub async fn work_with_qps(
         // tx gone
     });
 
-    let mut futures_unordered = (0..n_workers)
-        .map(|_| async {
+    let futures = (0..n_workers)
+        .map(|_| {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv_async().await {
-                let res = w.work().await;
-                let is_cancel = is_too_many_open_files(&res);
-                report_tx.send_async(res).await.unwrap();
-                if is_cancel {
-                    break;
+            let report_tx = report_tx.clone();
+            let rx = rx.clone();
+            tokio::spawn(async move {
+                while let Ok(()) = rx.recv_async().await {
+                    let res = w.work().await;
+                    let is_cancel = is_too_many_open_files(&res);
+                    report_tx.send_async(res).await.unwrap();
+                    if is_cancel {
+                        break;
+                    }
                 }
-            }
+            })
         })
-        .collect::<FuturesUnordered<_>>();
+        .collect::<Vec<_>>();
 
-    while futures_unordered.next().await.is_some() {}
+    for f in futures {
+        let _ = f.await;
+    }
 }
 
 /// Run until dead_line by n workers
@@ -471,24 +482,26 @@ pub async fn work_until(
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let mut futures_unordered = (0..n_workers)
-        .map(|_| async {
+    let futures = (0..n_workers)
+        .map(|_| {
+            let report_tx = report_tx.clone();
             let mut w = client_builder.build();
-            loop {
-                let res = w.work().await;
-                let is_cancel = is_too_many_open_files(&res);
-                report_tx.send_async(res).await.unwrap();
-                if is_cancel {
-                    break;
+            tokio::spawn(tokio::time::timeout_at(dead_line.into(), async move {
+                loop {
+                    let res = w.work().await;
+                    let is_cancel = is_too_many_open_files(&res);
+                    report_tx.send_async(res).await.unwrap();
+                    if is_cancel {
+                        break;
+                    }
                 }
-            }
+            }))
         })
-        .collect::<FuturesUnordered<_>>();
+        .collect::<Vec<_>>();
 
-    let _ = tokio::time::timeout_at(dead_line.into(), async {
-        while futures_unordered.next().await.is_some() {}
-    })
-    .await;
+    for f in futures {
+        let _ = f.await;
+    }
 }
 
 /// Run until dead_line by n workers limit to qps works in a second
@@ -518,24 +531,30 @@ pub async fn work_until_with_qps(
         // tx gone
     });
 
-    let mut futures_unordered = (0..n_workers)
-        .map(|_| async {
+    let futures = (0..n_workers)
+        .map(|_| {
             let mut w = client_builder.build();
-            while let Ok(()) = rx.recv_async().await {
-                let res = w.work().await;
-                let is_cancel = is_too_many_open_files(&res);
-                report_tx.send_async(res).await.unwrap();
-                if is_cancel {
-                    break;
-                }
-            }
+            let report_tx = report_tx.clone();
+            let rx = rx.clone();
+            tokio::time::timeout_at(
+                dead_line.into(),
+                tokio::spawn(async move {
+                    while let Ok(()) = rx.recv_async().await {
+                        let res = w.work().await;
+                        let is_cancel = is_too_many_open_files(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel {
+                            break;
+                        }
+                    }
+                }),
+            )
         })
-        .collect::<FuturesUnordered<_>>();
+        .collect::<Vec<_>>();
 
-    let _ = tokio::time::timeout_at(dead_line.into(), async {
-        while futures_unordered.next().await.is_some() {}
-    })
-    .await;
+    for f in futures {
+        let _ = f.await;
+    }
 
     let _ = gen.await;
 }
