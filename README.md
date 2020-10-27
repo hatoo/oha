@@ -25,6 +25,13 @@ This program is built on stable Rust.
 
     brew install oha
 
+## On Debian ([Azlux's repository](http://packages.azlux.fr/))
+
+    echo "deb http://packages.azlux.fr/debian/ buster main" | sudo tee /etc/apt/sources.list.d/azlux.list
+    wget -qO - https://azlux.fr/repo.gpg.key | sudo apt-key add -
+    apt update
+    apt install oha
+
 # Platform
 
 - Linux - Tested on Ubuntu 18.04 gnome-terminal
