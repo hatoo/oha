@@ -1,8 +1,8 @@
 use anyhow::Context;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
-use std::io::Read;
 use std::sync::Arc;
+use std::{io::Read, str::FromStr};
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
@@ -100,6 +100,43 @@ Examples: -z 10s -z 3m.",
     ipv4: bool,
     #[structopt(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
+    #[structopt(
+        help = "Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'",
+        long = "connect-to"
+    )]
+    connect_to: Vec<ConnectToEntry>,
+}
+
+/// An entry specified by `connect-to` to override DNS resolution and default
+/// port numbers. For example, `example.org:80:localhost:5000` will connect to
+/// `localhost:5000` whenever `http://example.org` is requested.
+#[derive(Clone, Debug)]
+pub struct ConnectToEntry {
+    pub requested_host: String,
+    pub requested_port: u16,
+    pub target_host: String,
+    pub target_port: u16,
+}
+
+impl FromStr for ConnectToEntry {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let tokens: Vec<&str> = s.split(":").collect();
+        if tokens.len() != 4 {
+            return Err("must have 4 items separated by colons");
+        }
+        Ok(ConnectToEntry {
+            requested_host: tokens[0].into(),
+            requested_port: tokens[1]
+                .parse()
+                .map_err(|_| "requested port must be an u16")?,
+            target_host: tokens[2].into(),
+            target_port: tokens[3]
+                .parse()
+                .map_err(|_| "target port must be an u16")?,
+        })
+    }
 }
 
 #[tokio::main]
@@ -313,6 +350,7 @@ async fn main() -> anyhow::Result<()> {
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
+        connect_to: opts.connect_to,
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {

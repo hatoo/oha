@@ -5,6 +5,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::stream::StreamExt;
 
+use crate::ConnectToEntry;
+
 #[derive(Debug, Clone)]
 pub struct ConnectionTime {
     pub dns_lookup: std::time::Instant,
@@ -49,9 +51,14 @@ struct DNS {
 
 impl DNS {
     async fn lookup_ip(&mut self, url: &http::Uri) -> anyhow::Result<std::net::IpAddr> {
+        self.lookup_host_ip(url.host().ok_or(ClientError::HostNotFound)?)
+            .await
+    }
+
+    async fn lookup_host_ip(&mut self, host: &str) -> anyhow::Result<std::net::IpAddr> {
         let addrs = self
             .resolver
-            .lookup_ip(url.host().ok_or(ClientError::HostNotFound)?)
+            .lookup_ip(host)
             .await?
             .iter()
             .collect::<Vec<_>>();
@@ -74,6 +81,7 @@ pub struct ClientBuilder {
     pub redirect_limit: usize,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
+    pub connect_to: Vec<ConnectToEntry>,
     pub resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,
@@ -102,6 +110,7 @@ impl ClientBuilder {
             redirect_limit: self.redirect_limit,
             disable_keepalive: self.disable_keepalive,
             insecure: self.insecure,
+            connect_to: self.connect_to.clone(),
         }
     }
 }
@@ -128,6 +137,7 @@ pub struct Client {
     body: Option<&'static [u8]>,
     dns: DNS,
     client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+    connect_to: Vec<ConnectToEntry>,
     timeout: Option<std::time::Duration>,
     redirect_limit: usize,
     disable_keepalive: bool,
@@ -204,10 +214,26 @@ impl Client {
             let mut send_request = if let Some(send_request) = self.client.take() {
                 send_request
             } else {
-                let addr = (
-                    self.dns.lookup_ip(&self.url).await?,
-                    get_http_port(&self.url).ok_or(ClientError::PortNotFound)?,
-                );
+                let addr = {
+                    let url = &self.url;
+                    let port = get_http_port(url).ok_or(ClientError::PortNotFound)?;
+                    let host = url.host().ok_or(ClientError::HostNotFound)?;
+
+                    // Look for an override first
+                    let connect_to_entry = self
+                        .connect_to
+                        .iter()
+                        .find(|entry| entry.requested_port == port && entry.requested_host == host);
+
+                    if let Some(entry) = connect_to_entry {
+                        let ip = self.dns.lookup_host_ip(&entry.target_host).await?;
+                        (ip, entry.target_port)
+                    } else {
+                        // Otherwise do a regular DNS lookup
+                        let ip = self.dns.lookup_ip(&self.url).await?;
+                        (ip, port)
+                    }
+                };
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
