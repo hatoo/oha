@@ -56,24 +56,19 @@ impl DNS {
         let host = url.host().ok_or(ClientError::HostNotFound)?;
         let port = get_http_port(url).ok_or(ClientError::PortNotFound)?;
 
-        // Look for an override first
-        if let Some(entry) = self
+        // Try to find an override (passed via `--connect-to`) that applies to this (host, port)
+        let (host, port) = if let Some(entry) = self
             .connect_to
             .iter()
             .find(|entry| entry.requested_port == port && entry.requested_host == host)
-            .cloned()
-        // cloned to avoid borrowing self as mutable more than once
         {
-            let addr = self.lookup_host(&entry.target_host).await?;
-            return Ok((addr, entry.target_port));
-        }
+            (entry.target_host.as_str(), entry.target_port)
+        } else {
+            (host, port)
+        };
 
-        // Otherwise do a regular lookup
-        let addr = self.lookup_host(host).await?;
-        Ok((addr, port))
-    }
-
-    async fn lookup_host(&mut self, host: &str) -> anyhow::Result<std::net::IpAddr> {
+        // Perform actual DNS lookup, either on the original (host, port), or
+        // on the (host, port) specified with `--connect-to`.
         let addrs = self
             .resolver
             .lookup_ip(host)
@@ -85,7 +80,7 @@ impl DNS {
             .choose(&mut self.rng)
             .ok_or(ClientError::DNSNoRecord)?;
 
-        Ok(addr)
+        Ok((addr, port))
     }
 }
 
