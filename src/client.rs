@@ -39,7 +39,7 @@ impl RequestResult {
 struct DNS {
     // To pick a random address from DNS.
     rng: rand::rngs::StdRng,
-    connect_to: Vec<ConnectToEntry>,
+    connect_to: Arc<Vec<ConnectToEntry>>,
     resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,
@@ -94,7 +94,7 @@ pub struct ClientBuilder {
     pub redirect_limit: usize,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
-    pub connect_to: Vec<ConnectToEntry>,
+    pub connect_to: Arc<Vec<ConnectToEntry>>,
     pub resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,

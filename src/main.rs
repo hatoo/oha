@@ -350,7 +350,7 @@ async fn main() -> anyhow::Result<()> {
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
-        connect_to: opts.connect_to,
+        connect_to: Arc::new(opts.connect_to),
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {
