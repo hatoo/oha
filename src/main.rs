@@ -122,7 +122,7 @@ impl FromStr for ConnectToEntry {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let tokens: Vec<&str> = s.split(":").collect();
+        let tokens: Vec<&str> = s.split(':').collect();
         if tokens.len() != 4 {
             return Err("must have 4 items separated by colons");
         }
