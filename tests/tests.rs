@@ -107,20 +107,18 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
         if x == n {
             tx.send(()).unwrap();
             http::Response::builder().status(200).body("OK").unwrap()
+        } else if is_relative {
+            http::Response::builder()
+                .status(301)
+                .header("Location", format!("/{}", x + 1))
+                .body("OK")
+                .unwrap()
         } else {
-            if is_relative {
-                http::Response::builder()
-                    .status(301)
-                    .header("Location", format!("/{}", x + 1))
-                    .body("OK")
-                    .unwrap()
-            } else {
-                http::Response::builder()
-                    .status(301)
-                    .header("Location", format!("http://localhost:{}/{}", port, x + 1))
-                    .body("OK")
-                    .unwrap()
-            }
+            http::Response::builder()
+                .status(301)
+                .header("Location", format!("http://localhost:{}/{}", port, x + 1))
+                .body("OK")
+                .unwrap()
         }
     });
 
