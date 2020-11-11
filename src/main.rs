@@ -122,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
 
-        // Accepct all
+        // Accept all
         headers.insert(
             http::header::ACCEPT,
             http::header::HeaderValue::from_static("*/*"),
