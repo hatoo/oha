@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.4.3 (2020-11-12)
+
 - Add --connect-to option to override DNS for a given host+port, similar to curl
 
 # 0.4.2 (2020-10-06)

@@ -43,7 +43,7 @@ This program is built on stable Rust.
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
 ```bash
-oha 0.4.2
+oha 0.4.3
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
@@ -80,6 +80,8 @@ OPTIONS:
         --http-version <http-version>    HTTP version. Available values 0.9, 1.0, 1.1, 2.
         --host <host>                    HTTP Host header
     -r, --redirect <redirect>            Limit for number of Redirect. Set 0 for no redirection. [default: 10]
+        --connect-to <connect-to>...     Override DNS resolution and default port numbers with strings like
+                                         'example.org:443:localhost:8443'
 
 ARGS:
     <url>    Target URL.
