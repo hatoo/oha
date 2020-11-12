@@ -5,6 +5,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::stream::StreamExt;
 
+use crate::ConnectToEntry;
+
 #[derive(Debug, Clone)]
 pub struct ConnectionTime {
     pub dns_lookup: std::time::Instant,
@@ -37,6 +39,7 @@ impl RequestResult {
 struct DNS {
     // To pick a random address from DNS.
     rng: rand::rngs::StdRng,
+    connect_to: Arc<Vec<ConnectToEntry>>,
     resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,
@@ -48,10 +51,27 @@ struct DNS {
 }
 
 impl DNS {
-    async fn lookup_ip(&mut self, url: &http::Uri) -> anyhow::Result<std::net::IpAddr> {
+    /// Perform a DNS lookup for a given url and returns (ip_addr, port)
+    async fn lookup(&mut self, url: &http::Uri) -> anyhow::Result<(std::net::IpAddr, u16)> {
+        let host = url.host().ok_or(ClientError::HostNotFound)?;
+        let port = get_http_port(url).ok_or(ClientError::PortNotFound)?;
+
+        // Try to find an override (passed via `--connect-to`) that applies to this (host, port)
+        let (host, port) = if let Some(entry) = self
+            .connect_to
+            .iter()
+            .find(|entry| entry.requested_port == port && entry.requested_host == host)
+        {
+            (entry.target_host.as_str(), entry.target_port)
+        } else {
+            (host, port)
+        };
+
+        // Perform actual DNS lookup, either on the original (host, port), or
+        // on the (host, port) specified with `--connect-to`.
         let addrs = self
             .resolver
-            .lookup_ip(url.host().ok_or(ClientError::HostNotFound)?)
+            .lookup_ip(host)
             .await?
             .iter()
             .collect::<Vec<_>>();
@@ -60,7 +80,7 @@ impl DNS {
             .choose(&mut self.rng)
             .ok_or(ClientError::DNSNoRecord)?;
 
-        Ok(addr)
+        Ok((addr, port))
     }
 }
 
@@ -74,6 +94,7 @@ pub struct ClientBuilder {
     pub redirect_limit: usize,
     /// always discard when used a connection.
     pub disable_keepalive: bool,
+    pub connect_to: Arc<Vec<ConnectToEntry>>,
     pub resolver: Arc<
         trust_dns_resolver::AsyncResolver<
             trust_dns_resolver::name_server::GenericConnection,
@@ -94,6 +115,7 @@ impl ClientBuilder {
             body: self.body,
             dns: DNS {
                 resolver: self.resolver.clone(),
+                connect_to: self.connect_to.clone(),
                 rng: rand::rngs::StdRng::from_entropy(),
             },
             client: None,
@@ -204,10 +226,7 @@ impl Client {
             let mut send_request = if let Some(send_request) = self.client.take() {
                 send_request
             } else {
-                let addr = (
-                    self.dns.lookup_ip(&self.url).await?,
-                    get_http_port(&self.url).ok_or(ClientError::PortNotFound)?,
-                );
+                let addr = self.dns.lookup(&self.url).await?;
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
@@ -220,10 +239,7 @@ impl Client {
                 .is_err()
             {
                 start = std::time::Instant::now();
-                let addr = (
-                    self.dns.lookup_ip(&self.url).await?,
-                    get_http_port(&self.url).ok_or(ClientError::PortNotFound)?,
-                );
+                let addr = self.dns.lookup(&self.url).await?;
                 let dns_lookup = std::time::Instant::now();
                 send_request = self.client(addr).await?;
                 let dialup = std::time::Instant::now();
@@ -323,8 +339,7 @@ impl Client {
                     // reuse connection
                     (send_request, None)
                 } else {
-                    let port = get_http_port(&url).ok_or(ClientError::PortNotFound)?;
-                    let addr = (self.dns.lookup_ip(&url).await?, port);
+                    let addr = self.dns.lookup(&url).await?;
                     (self.client(addr).await?, Some(send_request))
                 };
 
@@ -332,8 +347,7 @@ impl Client {
                 .await
                 .is_err()
             {
-                let port = get_http_port(&url).ok_or(ClientError::PortNotFound)?;
-                let addr = (self.dns.lookup_ip(&url).await?, port);
+                let addr = self.dns.lookup(&url).await?;
                 send_request = self.client(addr).await?;
             }
 

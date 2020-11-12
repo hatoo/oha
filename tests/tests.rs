@@ -107,20 +107,18 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
         if x == n {
             tx.send(()).unwrap();
             http::Response::builder().status(200).body("OK").unwrap()
+        } else if is_relative {
+            http::Response::builder()
+                .status(301)
+                .header("Location", format!("/{}", x + 1))
+                .body("OK")
+                .unwrap()
         } else {
-            if is_relative {
-                http::Response::builder()
-                    .status(301)
-                    .header("Location", format!("/{}", x + 1))
-                    .body("OK")
-                    .unwrap()
-            } else {
-                http::Response::builder()
-                    .status(301)
-                    .header("Location", format!("http://localhost:{}/{}", port, x + 1))
-                    .body("OK")
-                    .unwrap()
-            }
+            http::Response::builder()
+                .status(301)
+                .header("Location", format!("http://localhost:{}/{}", port, x + 1))
+                .body("OK")
+                .unwrap()
         }
     });
 
@@ -141,6 +139,77 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     .unwrap();
 
     rx.try_recv().is_ok()
+}
+
+async fn get_host_with_connect_to(host: &'static str) -> String {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let report_host =
+        warp::get()
+            .and(warp::filters::header::header("host"))
+            .map(move |host: String| {
+                tx.send(host).unwrap();
+                "Hello World"
+            });
+
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+    tokio::spawn(warp::serve(report_host).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg(format!("http://{}/", host))
+            .arg("--connect-to")
+            .arg(format!("{}:80:localhost:{}", host, port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
+}
+
+async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
+    use std::convert::TryFrom;
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let redirect = warp::get().and(warp::path!("source")).map(move || {
+        let uri = http::Uri::try_from(format!("http://{}/destination", host)).unwrap();
+        warp::redirect(uri)
+    });
+    let report_host = warp::get()
+        .and(warp::path!("destination"))
+        .and(warp::filters::header::header("host"))
+        .map(move |host: String| {
+            tx.send(host).unwrap();
+            "Hello World"
+        });
+    let routes = redirect.or(report_host);
+
+    let _guard = PORT_LOCK.lock().unwrap();
+    let port = get_port::get_port().unwrap();
+    tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg(format!("http://{}/source", host))
+            .arg("--connect-to")
+            .arg(format!("{}:80:localhost:{}", host, port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
 }
 
 #[tokio::test]
@@ -244,6 +313,22 @@ async fn test_query() {
         get_query("index?a=b&c=d").await,
         "index?a=b&c=d".to_string()
     );
+}
+
+#[tokio::test]
+async fn test_connect_to() {
+    assert_eq!(
+        get_host_with_connect_to("invalid.example.org").await,
+        "invalid.example.org"
+    )
+}
+
+#[tokio::test]
+async fn test_connect_to_redirect() {
+    assert_eq!(
+        get_host_with_connect_to_redirect("invalid.example.org").await,
+        "invalid.example.org"
+    )
 }
 
 #[tokio::test]
