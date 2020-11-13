@@ -1082,6 +1082,7 @@ dependencies = [
  "libc",
  "native-tls",
  "rand 0.7.3",
+ "resolv-conf",
  "rlimit",
  "structopt",
  "thiserror",
@@ -1523,8 +1524,7 @@ dependencies = [
 [[package]]
 name = "resolv-conf"
 version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11834e137f3b14e309437a8276714eed3a80d1ef894869e510f2c0c0b98b9f4a"
+source = "git+https://github.com/tailhook/resolv-conf?rev=83c0f25ebcb0615550488692c5213ca1ae4acd8f#83c0f25ebcb0615550488692c5213ca1ae4acd8f"
 dependencies = [
  "hostname",
  "quick-error",
