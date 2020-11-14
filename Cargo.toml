@@ -35,8 +35,6 @@ tokio-native-tls = "0.1.0"
 rand = "0.7"
 trust-dns-resolver = "0.19.3"
 base64 = "0.13.0"
-resolv-conf = "0.6.3"
-
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.5.3"
@@ -48,6 +46,3 @@ get-port = "3"
 lazy_static = "1.4.0"
 bytes = "0.5.4"
 http = "0.2"
-
-[patch.crates-io]
-resolv-conf = { git = 'https://github.com/tailhook/resolv-conf', rev = '83c0f25ebcb0615550488692c5213ca1ae4acd8f' }
