@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.4.4 (2020-11-18)
+
+- Bump `resolv-conf` to support `options edns0 trust-ad` on `/etc/resolv.conf`
+
 # 0.4.3 (2020-11-12)
 
 - Add --connect-to option to override DNS for a given host+port, similar to curl

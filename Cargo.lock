@@ -1036,7 +1036,7 @@ checksum = "8d3b63360ec3cb337817c2dbd47ab4a0f170d285d8e5a2064600f3def1402397"
 
 [[package]]
 name = "oha"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "assert_cmd",
