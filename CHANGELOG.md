@@ -1,5 +1,7 @@
 # Unreleased
 
+- Enable LTO on release build
+
 # 0.4.4 (2020-11-18)
 
 - Bump `resolv-conf` to support `options edns0 trust-ad` on `/etc/resolv.conf`
