@@ -1069,7 +1069,6 @@ dependencies = [
  "base64 0.13.0",
  "byte-unit",
  "bytes",
- "clap",
  "crossterm 0.18.2",
  "float-ord",
  "flume",
