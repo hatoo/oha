@@ -216,7 +216,7 @@ impl Client {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::delay_for(timeout).boxed()
         } else {
-            futures::future::pending().boxed()
+            std::future::pending().boxed()
         };
 
         let do_req = async {
