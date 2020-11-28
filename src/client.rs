@@ -164,7 +164,7 @@ impl Client {
         if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
-            stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
+            // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
             let connector = if self.insecure {
                 native_tls::TlsConnector::builder()
                     .danger_accept_invalid_certs(true)
@@ -183,7 +183,7 @@ impl Client {
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
-            stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
+            // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
             tokio::spawn(conn);
             Ok(send)
@@ -214,7 +214,7 @@ impl Client {
 
     pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
         let timeout = if let Some(timeout) = self.timeout {
-            tokio::time::delay_for(timeout).boxed()
+            tokio::time::sleep(timeout).boxed()
         } else {
             std::future::pending().boxed()
         };
@@ -458,7 +458,7 @@ pub async fn work_with_qps(
         let start = std::time::Instant::now();
         for i in 0..n_tasks {
             tx.send_async(()).await.unwrap();
-            tokio::time::delay_until(
+            tokio::time::sleep_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
             .await;
@@ -537,7 +537,7 @@ pub async fn work_until_with_qps(
             if tx.send_async(()).await.is_err() {
                 break;
             }
-            tokio::time::delay_until(
+            tokio::time::sleep_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
             .await;

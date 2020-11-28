@@ -335,8 +335,7 @@ async fn main() -> anyhow::Result<()> {
             num_concurrent_reqs: 1,
             ..Default::default()
         },
-    )
-    .await?;
+    )?;
 
     // client_builder builds client for each workers
     let client_builder = client::ClientBuilder {

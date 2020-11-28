@@ -399,7 +399,7 @@ impl Monitor {
             let per_frame = std::time::Duration::from_secs(1) / self.fps as u32;
             let elapsed = frame_start.elapsed();
             if per_frame > elapsed {
-                tokio::time::delay_for(per_frame - elapsed).await;
+                tokio::time::sleep(per_frame - elapsed).await;
             }
         }
 

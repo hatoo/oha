@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use std::sync::Mutex;
+use tokio02 as tokio;
 use warp::{http::HeaderMap, Filter};
 
 lazy_static::lazy_static! {
