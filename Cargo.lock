@@ -1953,7 +1953,7 @@ checksum = "a7f741b240f1a48843f9b8e0444fb55fb2a4ff67293b50a9179dfd5ea67f8d41"
 [[package]]
 name = "trust-dns-proto"
 version = "0.20.0-alpha.3"
-source = "git+https://github.com/bluejekyll/trust-dns.git?branch=upgrade-to-tokio-0.3#5a40cc2de152b1e490c39778da2d176772b1423f"
+source = "git+https://github.com/bluejekyll/trust-dns.git?branch=main#a44e3f3e60f25ae091a9b598ee49d86dd147e152"
 dependencies = [
  "async-trait",
  "cfg-if 1.0.0",
@@ -1976,7 +1976,7 @@ dependencies = [
 [[package]]
 name = "trust-dns-resolver"
 version = "0.20.0-alpha.3"
-source = "git+https://github.com/bluejekyll/trust-dns.git?branch=upgrade-to-tokio-0.3#5a40cc2de152b1e490c39778da2d176772b1423f"
+source = "git+https://github.com/bluejekyll/trust-dns.git?branch=main#a44e3f3e60f25ae091a9b598ee49d86dd147e152"
 dependencies = [
  "cfg-if 1.0.0",
  "futures-util",
