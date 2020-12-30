@@ -14,7 +14,7 @@ license = "MIT"
 
 [dependencies]
 structopt = "0.3"
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "1.0.1", features = ["full"] }
 anyhow = "1"
 thiserror = "1.0.16"
 futures = "0.3"
@@ -27,18 +27,19 @@ libc = "0.2.67"
 flume = "0.9"
 humantime = "2.0.0"
 
-hyper = "0.13.4"
+hyper = { version = "0.14.2", features = ["full"] }
 http = "0.2"
 native-tls = "0.2.4"
-tokio-native-tls = "0.1.0"
+tokio-native-tls = "0.3.0"
 rand = "0.7"
-trust-dns-resolver = "0.19.3"
+trust-dns-resolver = "0.20.0"
 base64 = "0.13.0"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.5.3"
 
 [dev-dependencies]
+tokio02 = { version = "0.2", features = ["full"], package = "tokio" }
 assert_cmd = "1.0.0"
 warp = "0.2"
 get-port = "3"
