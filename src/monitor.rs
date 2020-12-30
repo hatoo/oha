@@ -4,8 +4,6 @@ use crossterm::ExecutableCommand;
 use flume::TryRecvError;
 use std::collections::BTreeMap;
 use std::io;
-#[cfg(unix)]
-use tokio::stream::StreamExt;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
@@ -146,7 +144,16 @@ impl Monitor {
 
             #[cfg(unix)]
             let nofile = match tokio::fs::read_dir("/dev/fd").await {
-                Ok(dir) => Ok(dir.fold(0, |c, _| c + 1).await),
+                Ok(mut dir) => {
+                    let mut count = 0;
+                    loop {
+                        match dir.next_entry().await {
+                            Ok(Some(_)) => count += 1,
+                            Ok(None) => break Ok(count),
+                            Err(err) => break Err(err),
+                        }
+                    }
+                }
                 Err(e) => Err(e),
             };
 

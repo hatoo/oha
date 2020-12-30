@@ -1,9 +1,9 @@
 use anyhow::Context;
 use futures::future::FutureExt;
+use futures::StreamExt;
 use rand::prelude::*;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::stream::StreamExt;
 
 use crate::ConnectToEntry;
 
