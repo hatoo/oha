@@ -2,7 +2,7 @@
 
 [![GitHub Actions](https://github.com/hatoo/oha/workflows/CI/badge.svg)](https://github.com/hatoo/oha/actions?query=workflow%3ACI)
 [![Crates.io](https://img.shields.io/crates/v/oha.svg)](https://crates.io/crates/oha)
-[![AUR](https://img.shields.io/aur/version/oha)](https://aur.archlinux.org/packages/oha/)
+[![Arch Linux](https://img.shields.io/archlinux/v/community/x86_64/oha)](https://archlinux.org/packages/community/x86_64/oha/)
 [![Homebrew](https://img.shields.io/homebrew/v/oha)](https://formulae.brew.sh/formula/oha)
 
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
@@ -19,7 +19,7 @@ This program is built on stable Rust.
 
 ## On Arch Linux
 
-    yay -S oha
+    pacman -S oha
 
 ## On macOS (Homebrew)
 
