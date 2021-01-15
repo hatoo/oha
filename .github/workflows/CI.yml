@@ -71,8 +71,8 @@ jobs:
           command: clippy
           args: -- -D warnings
 
-  minimal-version:
-    name: minimal-version
+  minimal-versions:
+    name: minimal-versions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
