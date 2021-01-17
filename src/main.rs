@@ -1,4 +1,5 @@
 use anyhow::Context;
+use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
 use std::sync::Arc;
@@ -257,7 +258,7 @@ async fn main() -> anyhow::Result<()> {
 
     let start = std::time::Instant::now();
 
-    let data_collector = if opts.no_tui {
+    let data_collector = if opts.no_tui || !std::io::stdout().is_tty() {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(
             async move {
