@@ -1,6 +1,5 @@
 use assert_cmd::Command;
 use std::sync::Mutex;
-use tokio02 as tokio;
 use warp::{http::HeaderMap, Filter};
 
 lazy_static::lazy_static! {
@@ -8,7 +7,7 @@ lazy_static::lazy_static! {
 }
 
 async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let report_headers = warp::any()
         .and(warp::header::headers_cloned())
         .and(warp::filters::body::bytes())
@@ -40,7 +39,7 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
 }
 
 async fn get_method(args: &[&str]) -> http::method::Method {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let report_headers = warp::any().and(warp::filters::method::method()).map(
         move |method: http::method::Method| {
             tx.send(method).unwrap();
@@ -71,7 +70,7 @@ async fn get_method(args: &[&str]) -> http::method::Method {
 }
 
 async fn get_query(p: &'static str) -> String {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let report_headers = warp::path!(String).and(warp::filters::query::raw()).map(
         move |path: String, query: String| {
             tx.send(path + "?" + &query).unwrap();
@@ -100,7 +99,7 @@ async fn get_query(p: &'static str) -> String {
 }
 
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let _guard = PORT_LOCK.lock().unwrap();
     let port = get_port::get_port().unwrap();
 
@@ -143,7 +142,7 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
 }
 
 async fn get_host_with_connect_to(host: &'static str) -> String {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let report_host =
         warp::get()
             .and(warp::filters::header::header("host"))
@@ -177,7 +176,7 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     use std::convert::TryFrom;
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let redirect = warp::get().and(warp::path!("source")).map(move || {
         let uri = http::Uri::try_from(format!("http://{}/destination", host)).unwrap();
         warp::redirect(uri)

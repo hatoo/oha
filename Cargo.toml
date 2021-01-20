@@ -39,12 +39,11 @@ base64 = "0.13.0"
 rlimit = "0.5.3"
 
 [dev-dependencies]
-tokio02 = { version = "0.2", features = ["full"], package = "tokio" }
 assert_cmd = "1.0.0"
-warp = "0.2"
+warp = "0.3"
 get-port = "3"
 lazy_static = "1.4.0"
-bytes = "0.5.4"
+bytes = "1.0"
 http = "0.2"
 
 [profile.release]
