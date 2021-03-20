@@ -1,7 +1,6 @@
 # Unreleased
 
 - Set '--no-tui' automatically when stdout isn't TTY
-- Enable LTO on release build
 
 # 0.4.4 (2020-11-18)
 

@@ -36,6 +36,7 @@ impl RequestResult {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 struct DNS {
     // To pick a random address from DNS.
     rng: rand::rngs::StdRng,
