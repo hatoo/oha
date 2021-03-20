@@ -45,6 +45,3 @@ get-port = "3"
 lazy_static = "1.4.0"
 bytes = "1.0"
 http = "0.2"
-
-[profile.release]
-lto = true
