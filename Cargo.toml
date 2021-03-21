@@ -18,7 +18,7 @@ tokio = { version = "1.0.1", features = ["full"] }
 anyhow = "1.0.38"
 thiserror = "1.0.16"
 futures = "0.3.12"
-average = "0.10.4"
+average = "0.11.0"
 float-ord = "0.2.0"
 byte-unit = "4.0.8"
 tui = { version = "0.14.0", default-features = false, features = ["crossterm"] }
@@ -27,7 +27,7 @@ libc = "0.2.67"
 flume = "0.10"
 humantime = "2.0.0"
 
-hyper = { version = "0.14.2", features = ["full"] }
+hyper = { version = "0.14.4", features = ["full"] }
 http = "0.2"
 native-tls = "0.2.4"
 tokio-native-tls = "0.3.0"
