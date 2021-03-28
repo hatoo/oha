@@ -408,7 +408,7 @@ fn is_too_many_open_files(res: &anyhow::Result<RequestResult>) -> bool {
     res.as_ref()
         .err()
         .and_then(|err| err.downcast_ref::<std::io::Error>())
-        .map(|err| err.raw_os_error() == Some(24))
+        .map(|err| err.raw_os_error() == Some(libc::EMFILE))
         .unwrap_or(false)
 }
 
