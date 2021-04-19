@@ -142,6 +142,7 @@ pub enum ClientError {
     #[error("Redirection limit has reached")]
     TooManyRedirect,
     #[error(transparent)]
+    // Use Box here because ResolveError is big.
     ResolveError(#[from] Box<trust_dns_resolver::error::ResolveError>),
     #[error(transparent)]
     TlsError(#[from] native_tls::Error),
