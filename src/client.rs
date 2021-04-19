@@ -72,7 +72,8 @@ impl DNS {
         let addrs = self
             .resolver
             .lookup_ip(host)
-            .await?
+            .await
+            .map_err(Box::new)?
             .iter()
             .collect::<Vec<_>>();
 
@@ -141,7 +142,7 @@ pub enum ClientError {
     #[error("Redirection limit has reached")]
     TooManyRedirect,
     #[error(transparent)]
-    ResolveError(#[from] trust_dns_resolver::error::ResolveError),
+    ResolveError(#[from] Box<trust_dns_resolver::error::ResolveError>),
     #[error(transparent)]
     TlsError(#[from] native_tls::Error),
     #[error(transparent)]
@@ -330,6 +331,7 @@ impl Client {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn redirect<'a>(
         &'a mut self,
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
