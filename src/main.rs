@@ -13,7 +13,7 @@ mod monitor;
 mod printer;
 mod timescale;
 
-use client::RequestResult;
+use client::{ClientError, RequestResult};
 
 #[derive(StructOpt)]
 #[structopt(
@@ -270,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
 
-                let mut all: Vec<anyhow::Result<RequestResult>> = Vec::new();
+                let mut all: Vec<Result<RequestResult, ClientError>> = Vec::new();
                 loop {
                     tokio::select! {
                         report = result_rx.recv_async() => {
@@ -395,7 +395,7 @@ async fn main() -> anyhow::Result<()> {
 
     let duration = start.elapsed();
 
-    let res: Vec<anyhow::Result<RequestResult>> = data_collector.await??;
+    let res: Vec<Result<RequestResult, ClientError>> = data_collector.await??;
 
     printer::print_summary(&mut std::io::stdout(), &res, duration)?;
 

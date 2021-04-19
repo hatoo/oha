@@ -1,4 +1,3 @@
-use anyhow::Context;
 use futures::future::FutureExt;
 use futures::StreamExt;
 use rand::prelude::*;
@@ -53,7 +52,7 @@ struct DNS {
 
 impl DNS {
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
-    async fn lookup(&mut self, url: &http::Uri) -> anyhow::Result<(std::net::IpAddr, u16)> {
+    async fn lookup(&mut self, url: &http::Uri) -> Result<(std::net::IpAddr, u16), ClientError> {
         let host = url.host().ok_or(ClientError::HostNotFound)?;
         let port = get_http_port(url).ok_or(ClientError::PortNotFound)?;
 
@@ -141,6 +140,30 @@ pub enum ClientError {
     DNSNoRecord,
     #[error("Redirection limit has reached")]
     TooManyRedirect,
+    #[error(transparent)]
+    ResolveError(#[from] trust_dns_resolver::error::ResolveError),
+    #[error(transparent)]
+    TlsError(#[from] native_tls::Error),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    HttpError(#[from] http::Error),
+    #[error(transparent)]
+    HyperError(#[from] hyper::Error),
+    #[error(transparent)]
+    InvalidUriParts(#[from] http::uri::InvalidUriParts),
+    #[error("Authority is missing. This is a bug.")]
+    MissingAuthority,
+    #[error(transparent)]
+    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
+    #[error("Failed to get header from builder")]
+    GetHeaderFromBuilderError,
+    #[error(transparent)]
+    HeaderToStrError(#[from] http::header::ToStrError),
+    #[error(transparent)]
+    InvalidUri(#[from] http::uri::InvalidUri),
+    #[error("timeout")]
+    Timeout,
 }
 
 pub struct Client {
@@ -161,7 +184,7 @@ impl Client {
     async fn client(
         &mut self,
         addr: (std::net::IpAddr, u16),
-    ) -> anyhow::Result<hyper::client::conn::SendRequest<hyper::Body>> {
+    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
         if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
@@ -191,7 +214,7 @@ impl Client {
         }
     }
 
-    fn request(&self, url: &http::Uri) -> anyhow::Result<http::Request<hyper::Body>> {
+    fn request(&self, url: &http::Uri) -> Result<http::Request<hyper::Body>, ClientError> {
         let mut builder = http::Request::builder()
             .uri(
                 url.path_and_query()
@@ -203,7 +226,7 @@ impl Client {
 
         builder
             .headers_mut()
-            .context("Failed to get header from builder")?
+            .ok_or(ClientError::GetHeaderFromBuilderError)?
             .extend(self.headers.iter().map(|(k, v)| (k.clone(), v.clone())));
 
         if let Some(body) = self.body {
@@ -213,7 +236,7 @@ impl Client {
         }
     }
 
-    pub async fn work(&mut self) -> anyhow::Result<RequestResult> {
+    pub async fn work(&mut self) -> Result<RequestResult, ClientError> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::sleep(timeout).boxed()
         } else {
@@ -288,7 +311,7 @@ impl Client {
                         self.client = Some(send_request);
                     }
 
-                    Ok::<_, anyhow::Error>(result)
+                    Ok::<_, ClientError>(result)
                 }
                 Err(e) => {
                     self.client = Some(send_request);
@@ -302,7 +325,7 @@ impl Client {
                 res
             }
             _ = timeout => {
-                anyhow::bail!("timeout");
+                Err(ClientError::Timeout)
             }
         }
     }
@@ -315,15 +338,18 @@ impl Client {
         limit: usize,
     ) -> futures::future::BoxFuture<
         'a,
-        anyhow::Result<(
-            hyper::client::conn::SendRequest<hyper::Body>,
-            http::StatusCode,
-            usize,
-        )>,
+        Result<
+            (
+                hyper::client::conn::SendRequest<hyper::Body>,
+                http::StatusCode,
+                usize,
+            ),
+            ClientError,
+        >,
     > {
         async move {
             if limit == 0 {
-                anyhow::bail!(ClientError::TooManyRedirect);
+                return Err(ClientError::TooManyRedirect);
             }
             let url: http::Uri = location.to_str()?.parse()?;
             let url = if url.authority().is_none() {
@@ -358,7 +384,7 @@ impl Client {
                     http::header::HOST,
                     http::HeaderValue::from_str(
                         url.authority()
-                            .context("Authority is missing. This is a bug.")?
+                            .ok_or(ClientError::MissingAuthority)?
                             .as_str(),
                     )?,
                 );
@@ -404,18 +430,20 @@ fn get_http_port(url: &http::Uri) -> Option<u16> {
 }
 
 /// Check error was "Too many open file"
-fn is_too_many_open_files(res: &anyhow::Result<RequestResult>) -> bool {
+fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
     res.as_ref()
         .err()
-        .and_then(|err| err.downcast_ref::<std::io::Error>())
-        .map(|err| err.raw_os_error() == Some(libc::EMFILE))
+        .map(|err| match err {
+            ClientError::IoError(io_error) => io_error.raw_os_error() == Some(libc::EMFILE),
+            _ => false,
+        })
         .unwrap_or(false)
 }
 
 /// Run n tasks by m workers
 pub async fn work(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
+    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_workers: usize,
 ) {
@@ -448,7 +476,7 @@ pub async fn work(
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
+    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     qps: usize,
     n_tasks: usize,
     n_workers: usize,
@@ -493,7 +521,7 @@ pub async fn work_with_qps(
 /// Run until dead_line by n workers
 pub async fn work_until(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
+    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
@@ -522,7 +550,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 pub async fn work_until_with_qps(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<anyhow::Result<RequestResult>>,
+    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     qps: usize,
     start: std::time::Instant,
     dead_line: std::time::Instant,
