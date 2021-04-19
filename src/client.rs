@@ -237,7 +237,7 @@ impl Client {
         }
     }
 
-    pub async fn work(&mut self) -> Result<RequestResult, ClientError> {
+    pub async fn work(&mut self) -> Result<Box<RequestResult>, Box<ClientError>> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::sleep(timeout).boxed()
         } else {
@@ -278,7 +278,7 @@ impl Client {
 
                     let mut len_sum = 0;
                     while let Some(chunk) = stream.next().await {
-                        len_sum += chunk?.len();
+                        len_sum += chunk.map_err(|e| Box::new(e.into()))?.len();
                     }
 
                     if self.redirect_limit != 0 {
@@ -312,11 +312,11 @@ impl Client {
                         self.client = Some(send_request);
                     }
 
-                    Ok::<_, ClientError>(result)
+                    Ok::<_, Box<ClientError>>(Box::new(result))
                 }
                 Err(e) => {
                     self.client = Some(send_request);
-                    Err(e.into())
+                    Err(Box::new(e.into()))
                 }
             }
         };
@@ -326,7 +326,7 @@ impl Client {
                 res
             }
             _ = timeout => {
-                Err(ClientError::Timeout)
+                Err(Box::new(ClientError::Timeout))
             }
         }
     }
@@ -432,10 +432,10 @@ fn get_http_port(url: &http::Uri) -> Option<u16> {
 }
 
 /// Check error was "Too many open file"
-fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
+fn is_too_many_open_files<T>(res: &Result<T, Box<ClientError>>) -> bool {
     res.as_ref()
         .err()
-        .map(|err| match err {
+        .map(|err| match err.as_ref() {
             ClientError::IoError(io_error) => io_error.raw_os_error() == Some(libc::EMFILE),
             _ => false,
         })
@@ -445,7 +445,7 @@ fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
 /// Run n tasks by m workers
 pub async fn work(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: flume::Sender<Result<Box<RequestResult>, Box<ClientError>>>,
     n_tasks: usize,
     n_workers: usize,
 ) {
@@ -478,7 +478,7 @@ pub async fn work(
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: flume::Sender<Result<Box<RequestResult>, Box<ClientError>>>,
     qps: usize,
     n_tasks: usize,
     n_workers: usize,
@@ -523,7 +523,7 @@ pub async fn work_with_qps(
 /// Run until dead_line by n workers
 pub async fn work_until(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: flume::Sender<Result<Box<RequestResult>, Box<ClientError>>>,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
@@ -552,7 +552,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 pub async fn work_until_with_qps(
     client_builder: ClientBuilder,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: flume::Sender<Result<Box<RequestResult>, Box<ClientError>>>,
     qps: usize,
     start: std::time::Instant,
     dead_line: std::time::Instant,

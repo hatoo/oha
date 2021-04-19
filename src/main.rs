@@ -270,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
 
-                let mut all: Vec<Result<RequestResult, ClientError>> = Vec::new();
+                let mut all: Vec<Result<Box<RequestResult>, Box<ClientError>>> = Vec::new();
                 loop {
                     tokio::select! {
                         report = result_rx.recv_async() => {
@@ -395,7 +395,7 @@ async fn main() -> anyhow::Result<()> {
 
     let duration = start.elapsed();
 
-    let res: Vec<Result<RequestResult, ClientError>> = data_collector.await??;
+    let res: Vec<Result<Box<RequestResult>, Box<ClientError>>> = data_collector.await??;
 
     printer::print_summary(&mut std::io::stdout(), &res, duration)?;
 

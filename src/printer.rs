@@ -8,7 +8,7 @@ use std::time::Duration;
 /// Print all summary
 pub fn print_summary<W: Write, E: std::fmt::Display>(
     w: &mut W,
-    res: &[Result<RequestResult, E>],
+    res: &[Result<Box<RequestResult>, E>],
     total_duration: Duration,
 ) -> std::io::Result<()> {
     writeln!(w, "Summary:")?;

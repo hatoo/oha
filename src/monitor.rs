@@ -25,7 +25,7 @@ pub enum EndLine {
 pub struct Monitor {
     pub end_line: EndLine,
     /// All workers sends each result to this channel
-    pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
+    pub report_receiver: flume::Receiver<Result<Box<RequestResult>, Box<ClientError>>>,
     // When started
     pub start: std::time::Instant,
     // Frame per scond of TUI
@@ -35,7 +35,7 @@ pub struct Monitor {
 impl Monitor {
     pub async fn monitor(
         self,
-    ) -> Result<Vec<Result<RequestResult, ClientError>>, crossterm::ErrorKind> {
+    ) -> Result<Vec<Result<Box<RequestResult>, Box<ClientError>>>, crossterm::ErrorKind> {
         crossterm::terminal::enable_raw_mode()?;
         io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
         io::stdout().execute(crossterm::cursor::Hide)?;
@@ -47,7 +47,7 @@ impl Monitor {
 
         // Return this when ends to application print summary
         // We must not read all data from this due to computational cost.
-        let mut all: Vec<Result<RequestResult, ClientError>> = Vec::new();
+        let mut all: Vec<Result<Box<RequestResult>, Box<ClientError>>> = Vec::new();
         // statics for HTTP status
         let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
         // statics for Error
