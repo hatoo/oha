@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.4.5 (2012-05-04)
+
 - Set '--no-tui' automatically when stdout isn't TTY
 
 # 0.4.4 (2020-11-18)
