@@ -664,7 +664,7 @@ pub async fn work_until_with_qps_latency_correction(
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let (tx, rx) = flume::bounded(qps);
+    let (tx, rx) = flume::unbounded();
 
     let gen = tokio::spawn(async move {
         for i in 0.. {
