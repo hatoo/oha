@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `--latency-correction` to avoid Coordinated Omission Problem.
+
 # 0.4.5 (2012-05-04)
 
 - Set '--no-tui' automatically when stdout isn't TTY
