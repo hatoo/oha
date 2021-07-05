@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.4.6 (2012-07-05)
+
 - Add `--latency-correction` to avoid Coordinated Omission Problem.
 
 # 0.4.5 (2012-05-04)
