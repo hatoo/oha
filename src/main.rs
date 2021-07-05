@@ -45,6 +45,11 @@ Examples: -z 10s -z 3m.",
     duration: Option<humantime::Duration>,
     #[structopt(help = "Rate limit for all, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
+    #[structopt(
+        help = "Correct latency to avoid coordinated omission probrem. It's ignored if -q is not set.",
+        long = "latency-correction"
+    )]
+    latency_correction: bool,
     #[structopt(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
     #[structopt(help = "Frame per second for tui.", default_value = "16", long = "fps")]
@@ -364,15 +369,27 @@ async fn main() -> anyhow::Result<()> {
                 .await
             }
             Some(qps) => {
-                client::work_until_with_qps(
-                    client_builder,
-                    result_tx,
-                    qps,
-                    start,
-                    start + duration.into(),
-                    opts.n_workers,
-                )
-                .await
+                if opts.latency_correction {
+                    client::work_until_with_qps_latency_correction(
+                        client_builder,
+                        result_tx,
+                        qps,
+                        start,
+                        start + duration.into(),
+                        opts.n_workers,
+                    )
+                    .await
+                } else {
+                    client::work_until_with_qps(
+                        client_builder,
+                        result_tx,
+                        qps,
+                        start,
+                        start + duration.into(),
+                        opts.n_workers,
+                    )
+                    .await
+                }
             }
         }
     } else {
@@ -381,14 +398,25 @@ async fn main() -> anyhow::Result<()> {
                 client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await
             }
             Some(qps) => {
-                client::work_with_qps(
-                    client_builder,
-                    result_tx,
-                    qps,
-                    opts.n_requests,
-                    opts.n_workers,
-                )
-                .await
+                if opts.latency_correction {
+                    client::work_with_qps_latency_correction(
+                        client_builder,
+                        result_tx,
+                        qps,
+                        opts.n_requests,
+                        opts.n_workers,
+                    )
+                    .await
+                } else {
+                    client::work_with_qps(
+                        client_builder,
+                        result_tx,
+                        qps,
+                        opts.n_requests,
+                        opts.n_workers,
+                    )
+                    .await
+                }
             }
         }
     }

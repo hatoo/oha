@@ -42,7 +42,7 @@ This program is built on stable Rust.
 
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
-```bash
+```
 oha 0.4.5
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
@@ -51,6 +51,7 @@ USAGE:
     oha [FLAGS] [OPTIONS] <url>
 
 FLAGS:
+        --latency-correction     Correct latency to avoid coordinated omission probrem. It's ignored if -q is not set.
         --no-tui                 No realtime tui
         --disable-compression    Disable compression.
         --disable-keepalive      Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.
