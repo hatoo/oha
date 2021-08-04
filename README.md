@@ -88,6 +88,25 @@ ARGS:
     <url>    Target URL.
 ```
 
+# Tips
+
+## Stress test in more realistic conditon
+
+`oha` uses default options inherited from [rakyll/hey](https://github.com/rakyll/hey) but you may need to change options to stress test in more realistic condition.
+
+I suggest to run `oha` with following options.
+```
+oha <-z or -n> -c <number of concurrent connections> -q <query per seconds> --latency-correction --disable-keepalive <target-address>
+```
+
+- --disable-keepalive
+
+    In real, user doesn't query same URL using [Keep-Alive](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Keep-Alive). You may want to run without `Keep-Alive`.
+- --latency-correction
+
+    You can avoid `Coordinated Omission Problem` by using `--latency-correction`.
+
+
 # Contribution
 
 Feel free to help us!
