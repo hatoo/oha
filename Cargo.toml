@@ -35,6 +35,9 @@ rand = "0.8"
 trust-dns-resolver = "0.20.0"
 base64 = "0.13.0"
 
+console-subscriber = { git = "https://github.com/tokio-rs/console.git" }
+tracing = "0.1.26"
+
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.5.3"
 
