@@ -147,6 +147,8 @@ impl FromStr for ConnectToEntry {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    console_subscriber::init();
+
     let mut opts: Opts = Opts::from_args();
 
     let http_version: http::Version = if let Some(http_version) = opts.http_version {
