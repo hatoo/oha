@@ -32,8 +32,9 @@ http = "0.2"
 native-tls = "0.2.4"
 tokio-native-tls = "0.3.0"
 rand = "0.8"
-trust-dns-resolver = "0.20.0"
+trust-dns-resolver = "0.20.3"
 base64 = "0.13.0"
+lazy_static = "1.4.0"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.6.2"
