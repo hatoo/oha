@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use get_port::Ops;
 use std::sync::Mutex;
 use warp::{http::HeaderMap, Filter};
 
@@ -17,7 +18,7 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
         });
 
     let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
@@ -48,7 +49,7 @@ async fn get_method(args: &[&str]) -> http::method::Method {
     );
 
     let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
@@ -79,7 +80,7 @@ async fn get_query(p: &'static str) -> String {
     );
 
     let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
@@ -101,7 +102,7 @@ async fn get_query(p: &'static str) -> String {
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = flume::unbounded();
     let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
 
     let route = warp::path!(usize).map(move |x| {
         if x == n {
@@ -152,7 +153,7 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
             });
 
     let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_host).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
@@ -191,7 +192,7 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let routes = redirect.or(report_host);
 
     let _guard = PORT_LOCK.lock().unwrap();
-    let port = get_port::get_port().unwrap();
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
     // So we can't drop guard here.
