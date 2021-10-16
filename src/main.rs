@@ -46,7 +46,7 @@ Examples: -z 10s -z 3m.",
     #[structopt(help = "Rate limit for all, in queries per second (QPS)", short = "q")]
     query_per_second: Option<usize>,
     #[structopt(
-        help = "Correct latency to avoid coordinated omission probrem. It's ignored if -q is not set.",
+        help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
     )]
     latency_correction: bool,

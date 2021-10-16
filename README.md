@@ -51,7 +51,7 @@ USAGE:
     oha [FLAGS] [OPTIONS] <url>
 
 FLAGS:
-        --latency-correction     Correct latency to avoid coordinated omission probrem. It's ignored if -q is not set.
+        --latency-correction     Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.
         --no-tui                 No realtime tui
         --disable-compression    Disable compression.
         --disable-keepalive      Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.
