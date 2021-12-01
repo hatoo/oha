@@ -175,8 +175,6 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
 }
 
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
-    use std::convert::TryFrom;
-
     let (tx, rx) = flume::unbounded();
     let redirect = warp::get().and(warp::path!("source")).map(move || {
         let uri = http::Uri::try_from(format!("http://{}/destination", host)).unwrap();
