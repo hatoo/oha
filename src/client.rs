@@ -459,7 +459,7 @@ pub async fn work(
             let report_tx = report_tx.clone();
             let counter = counter.clone();
             tokio::spawn(async move {
-                while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                while counter.fetch_add(1, Ordering::SeqCst) < n_tasks {
                     let res = w.work().await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
