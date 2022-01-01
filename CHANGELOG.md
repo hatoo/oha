@@ -1,5 +1,8 @@
 # Unreleased
 
+- Use clap 3.0.0 instead of structopt
+    - closes #131
+
 # 0.4.6 (2012-07-05)
 
 - Add `--latency-correction` to avoid Coordinated Omission Problem.
