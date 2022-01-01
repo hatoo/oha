@@ -13,7 +13,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-structopt = "0.3"
+clap = { version = "3.0.0", features = ["derive"] }
 tokio = { version = "1.14.0", features = ["full"] }
 anyhow = "1.0.38"
 thiserror = "1.0.16"

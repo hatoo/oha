@@ -1,11 +1,10 @@
 use anyhow::Context;
+use clap::{AppSettings, Parser};
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
 use std::sync::Arc;
 use std::{io::Read, str::FromStr};
-use structopt::clap::AppSettings;
-use structopt::StructOpt;
 
 mod client;
 mod histogram;
@@ -15,98 +14,99 @@ mod timescale;
 
 use client::{ClientError, RequestResult};
 
-#[derive(StructOpt)]
-#[structopt(
+#[derive(Parser)]
+#[clap(
     author,
     about,
-    global_settings = &[AppSettings::ColoredHelp, AppSettings::DeriveDisplayOrder],
-    usage = "oha [FLAGS] [OPTIONS] <url>"
+    version,
+    global_setting = AppSettings::DeriveDisplayOrder,
+    override_usage = "oha [FLAGS] [OPTIONS] <url>"
 )]
 struct Opts {
-    #[structopt(help = "Target URL.")]
+    #[clap(help = "Target URL.")]
     url: http::Uri,
     #[structopt(
         help = "Number of requests to run.",
-        short = "n",
+        short = 'n',
         default_value = "200"
     )]
     n_requests: usize,
-    #[structopt(
+    #[clap(
         help = "Number of workers to run concurrently. You may should increase limit to number of open files for larger `-c`.",
-        short = "c",
+        short = 'c',
         default_value = "50"
     )]
     n_workers: usize,
-    #[structopt(
+    #[clap(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
 Examples: -z 10s -z 3m.",
-        short = "z"
+        short = 'z'
     )]
     duration: Option<humantime::Duration>,
-    #[structopt(help = "Rate limit for all, in queries per second (QPS)", short = "q")]
+    #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
-    #[structopt(
+    #[clap(
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
     )]
     latency_correction: bool,
-    #[structopt(help = "No realtime tui", long = "no-tui")]
+    #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
-    #[structopt(help = "Frame per second for tui.", default_value = "16", long = "fps")]
+    #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
-    #[structopt(
+    #[clap(
         help = "HTTP method",
-        short = "m",
+        short = 'm',
         long = "method",
         default_value = "GET"
     )]
     method: http::Method,
-    #[structopt(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = "H")]
+    #[clap(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H')]
     headers: Vec<String>,
-    #[structopt(help = "Timeout for each request. Default to infinite.", short = "t")]
+    #[clap(help = "Timeout for each request. Default to infinite.", short = 't')]
     timeout: Option<humantime::Duration>,
-    #[structopt(help = "HTTP Accept Header.", short = "A")]
+    #[clap(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[structopt(help = "HTTP request body.", short = "d")]
+    #[clap(help = "HTTP request body.", short = 'd')]
     body_string: Option<String>,
-    #[structopt(help = "HTTP request body from file.", short = "D")]
+    #[clap(help = "HTTP request body from file.", short = 'D')]
     body_path: Option<std::path::PathBuf>,
-    #[structopt(help = "Content-Type.", short = "T")]
+    #[clap(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
-    #[structopt(help = "Basic authentication, username:password", short = "a")]
+    #[clap(help = "Basic authentication, username:password", short = 'a')]
     basic_auth: Option<String>,
     /*
     #[structopt(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
     */
-    #[structopt(
+    #[clap(
         help = "HTTP version. Available values 0.9, 1.0, 1.1, 2.",
         long = "http-version"
     )]
     http_version: Option<String>,
-    #[structopt(help = "HTTP Host header", long = "host")]
+    #[clap(help = "HTTP Host header", long = "host")]
     host: Option<String>,
-    #[structopt(help = "Disable compression.", long = "disable-compression")]
+    #[clap(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
-    #[structopt(
+    #[clap(
         help = "Limit for number of Redirect. Set 0 for no redirection.",
         default_value = "10",
-        short = "r",
+        short = 'r',
         long = "redirect"
     )]
     redirect: usize,
-    #[structopt(
+    #[clap(
         help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
-    #[structopt(help = "Lookup only ipv6.", long = "ipv6")]
+    #[clap(help = "Lookup only ipv6.", long = "ipv6")]
     ipv6: bool,
-    #[structopt(help = "Lookup only ipv4.", long = "ipv4")]
+    #[clap(help = "Lookup only ipv4.", long = "ipv4")]
     ipv4: bool,
-    #[structopt(help = "Accept invalid certs.", long = "insecure")]
+    #[clap(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
-    #[structopt(
+    #[clap(
         help = "Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'",
         long = "connect-to"
     )]
@@ -147,7 +147,7 @@ impl FromStr for ConnectToEntry {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut opts: Opts = Opts::from_args();
+    let mut opts: Opts = Opts::parse();
 
     let http_version: http::Version = if let Some(http_version) = opts.http_version {
         match http_version.as_str() {
