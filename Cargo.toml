@@ -1,6 +1,6 @@
 [package]
 name = "oha"
-version = "0.4.7"
+version = "0.5.0"
 authors = ["hatoo <hato2000@gmail.com>"]
 edition = "2021"
 description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation."

@@ -1,13 +1,15 @@
 # Unreleased
 
+# 0.5.0 (2022-01-01)
+
 - Use clap 3.0.0 instead of structopt
     - closes #131
 
-# 0.4.6 (2012-07-05)
+# 0.4.6 (2021-07-05)
 
 - Add `--latency-correction` to avoid Coordinated Omission Problem.
 
-# 0.4.5 (2012-05-04)
+# 0.4.5 (2021-05-04)
 
 - Set '--no-tui' automatically when stdout isn't TTY
 
