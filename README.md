@@ -4,6 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/oha.svg)](https://crates.io/crates/oha)
 [![Arch Linux](https://img.shields.io/archlinux/v/community/x86_64/oha)](https://archlinux.org/packages/community/x86_64/oha/)
 [![Homebrew](https://img.shields.io/homebrew/v/oha)](https://formulae.brew.sh/formula/oha)
+[![Gitter](https://img.shields.io/gitter/room/hatoo/oha)](https://gitter.im/hatoo-oha/community#)
 
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
 
