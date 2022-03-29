@@ -21,8 +21,8 @@ futures = "0.3.12"
 average = "0.13.0"
 float-ord = "0.3.1"
 byte-unit = "4.0.8"
-tui = { version = "0.16.0", default-features = false, features = ["crossterm"] }
-crossterm = "0.21.0"
+tui = { version = "0.17.0", default-features = false, features = ["crossterm"] }
+crossterm = "0.22.0"
 libc = "0.2.67"
 flume = "0.10"
 humantime = "2.0.0"
@@ -32,12 +32,12 @@ http = "0.2"
 native-tls = "0.2.4"
 tokio-native-tls = "0.3.0"
 rand = "0.8"
-trust-dns-resolver = "0.20.3"
+trust-dns-resolver = "0.21.1"
 base64 = "0.13.0"
 lazy_static = "1.4.0"
 
 [target.'cfg(unix)'.dependencies]
-rlimit = "0.6.2"
+rlimit = "0.7.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.2"
