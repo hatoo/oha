@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.1 (2022-03-29)
+
 - Fix histogram to show correct response time
     - closes #157
 
