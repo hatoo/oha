@@ -332,16 +332,9 @@ async fn main() -> anyhow::Result<()> {
         (true, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
     };
     let (config, _) = trust_dns_resolver::system_conf::read_system_conf()?;
-    let resolver = trust_dns_resolver::AsyncResolver::tokio(
-        config,
-        trust_dns_resolver::config::ResolverOpts {
-            ip_strategy,
-            // Note: Due to https://github.com/bluejekyll/trust-dns/issues/933
-            // we'll use just one concurrent request for the time being.
-            num_concurrent_reqs: 1,
-            ..Default::default()
-        },
-    )?;
+    let mut resolver_opts = trust_dns_resolver::config::ResolverOpts::default();
+    resolver_opts.ip_strategy = ip_strategy;
+    let resolver = trust_dns_resolver::AsyncResolver::tokio(config, resolver_opts)?;
 
     // client_builder builds client for each workers
     let client_builder = client::ClientBuilder {
