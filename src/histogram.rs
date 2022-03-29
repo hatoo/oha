@@ -19,6 +19,6 @@ pub fn histogram(values: &[f64], bins: usize) -> Vec<(f64, usize)> {
     bucket
         .into_iter()
         .enumerate()
-        .map(|(i, v)| (step * (i + 1) as f64, v))
+        .map(|(i, v)| (min + step * (i + 1) as f64, v))
         .collect()
 }

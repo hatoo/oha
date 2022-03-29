@@ -1,5 +1,8 @@
 # Unreleased
 
+- Fix histogram to show correct response time
+    - closes #157
+
 # 0.5.0 (2022-01-01)
 
 - Use clap 3.0.0 instead of structopt
