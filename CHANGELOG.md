@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `rustls` feature flag to build against `rustls` instead of `native-tls`.
+
 # 0.5.1 (2022-03-29)
 
 - Fix histogram to show correct response time

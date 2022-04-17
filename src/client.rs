@@ -144,8 +144,19 @@ pub enum ClientError {
     #[error(transparent)]
     // Use Box here because ResolveError is big.
     ResolveError(#[from] Box<trust_dns_resolver::error::ResolveError>),
+
+    #[cfg(feature = "native-tls")]
     #[error(transparent)]
-    TlsError(#[from] native_tls::Error),
+    NativeTlsError(#[from] native_tls::Error),
+
+    #[cfg(feature = "rustls")]
+    #[error(transparent)]
+    RustlsError(#[from] rustls::Error),
+
+    #[cfg(feature = "rustls")]
+    #[error(transparent)]
+    InvalidHost(#[from] rustls::client::InvalidDnsNameError),
+
     #[error(transparent)]
     IoError(#[from] std::io::Error),
     #[error(transparent)]
@@ -188,24 +199,7 @@ impl Client {
         addr: (std::net::IpAddr, u16),
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
         if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-            let stream = tokio::net::TcpStream::connect(addr).await?;
-            stream.set_nodelay(true)?;
-            // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            let connector = if self.insecure {
-                native_tls::TlsConnector::builder()
-                    .danger_accept_invalid_certs(true)
-                    .danger_accept_invalid_hostnames(true)
-                    .build()?
-            } else {
-                native_tls::TlsConnector::new()?
-            };
-            let connector = tokio_native_tls::TlsConnector::from(connector);
-            let stream = connector
-                .connect(self.url.host().ok_or(ClientError::HostNotFound)?, stream)
-                .await?;
-            let (send, conn) = hyper::client::conn::handshake(stream).await?;
-            tokio::spawn(conn);
-            Ok(send)
+            self.tls_client(addr).await
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
@@ -214,6 +208,63 @@ impl Client {
             tokio::spawn(conn);
             Ok(send)
         }
+    }
+
+    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+    async fn tls_client(
+        &mut self,
+        addr: (std::net::IpAddr, u16),
+    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+        let stream = tokio::net::TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
+
+        let connector = if self.insecure {
+            native_tls::TlsConnector::builder()
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
+                .build()?
+        } else {
+            native_tls::TlsConnector::new()?
+        };
+        let connector = tokio_native_tls::TlsConnector::from(connector);
+        let stream = connector
+            .connect(self.url.host().ok_or(ClientError::HostNotFound)?, stream)
+            .await?;
+
+        let (send, conn) = hyper::client::conn::handshake(stream).await?;
+        tokio::spawn(conn);
+        Ok(send)
+    }
+
+    #[cfg(feature = "rustls")]
+    async fn tls_client(
+        &mut self,
+        addr: (std::net::IpAddr, u16),
+    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+        let stream = tokio::net::TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
+
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        for cert in rustls_native_certs::load_native_certs()? {
+            root_cert_store.add(&rustls::Certificate(cert.0)).ok(); // ignore error
+        }
+        let mut config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+        if self.insecure {
+            config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
+        }
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+        let domain =
+            rustls::ServerName::try_from(self.url.host().ok_or(ClientError::HostNotFound)?)?;
+        let stream = connector.connect(domain, stream).await?;
+
+        let (send, conn) = hyper::client::conn::handshake(stream).await?;
+        tokio::spawn(conn);
+        Ok(send)
     }
 
     fn request(&self, url: &http::Uri) -> Result<http::Request<hyper::Body>, ClientError> {
@@ -417,6 +468,43 @@ impl Client {
             }
         }
         .boxed()
+    }
+}
+
+/// A server certificate verifier that accepts any certificate.
+#[cfg(feature = "rustls")]
+struct AcceptAnyServerCert;
+
+#[cfg(feature = "rustls")]
+impl rustls::client::ServerCertVerifier for AcceptAnyServerCert {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::Certificate,
+        _dss: &rustls::internal::msgs::handshake::DigitallySignedStruct,
+    ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::Certificate,
+        _dss: &rustls::internal::msgs::handshake::DigitallySignedStruct,
+    ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::HandshakeSignatureValid::assertion())
     }
 }
 
