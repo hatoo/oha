@@ -12,6 +12,11 @@ license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["native-tls"]
+native-tls = ["dep:native-tls", "dep:tokio-native-tls"]
+rustls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-native-certs"]
+
 [dependencies]
 clap = { version = "3.0.0", features = ["derive"] }
 tokio = { version = "1.14.0", features = ["full"] }
@@ -29,8 +34,16 @@ humantime = "2.0.0"
 
 hyper = { version = "0.14.13", features = ["full"] }
 http = "0.2"
-native-tls = "0.2.4"
-tokio-native-tls = "0.3.0"
+
+# native-tls
+native-tls = { version = "0.2.4", optional = true }
+tokio-native-tls = { version = "0.3.0", optional = true }
+
+# rustls
+rustls = { version = "0.20.4", features = ["dangerous_configuration"], optional = true }
+tokio-rustls = { version = "0.23.3", optional = true }
+rustls-native-certs = { version = "0.6.2", optional = true }
+
 rand = "0.8"
 trust-dns-resolver = "0.21.1"
 base64 = "0.13.0"

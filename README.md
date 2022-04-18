@@ -18,6 +18,10 @@ This program is built on stable Rust.
 
     cargo install oha
 
+You can optionally build oha against [rustls](https://github.com/rustls/rustls) instead of [native-tls](https://github.com/sfackler/rust-native-tls).
+
+    cargo install --no-default-features --features rustls oha
+
 ## On Arch Linux
 
     pacman -S oha
