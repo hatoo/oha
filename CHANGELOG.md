@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.2 (2022-04-28)
+
 - Add `rustls` feature flag to build against `rustls` instead of `native-tls`.
 
 # 0.5.1 (2022-03-29)
