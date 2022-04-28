@@ -48,7 +48,7 @@ You can optionally build oha against [rustls](https://github.com/rustls/rustls) 
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
 ```
-oha 0.5.1
+oha 0.5.2
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
