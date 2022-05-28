@@ -1,6 +1,8 @@
+use std::net::Ipv6Addr;
+
 use assert_cmd::Command;
 use get_port::Ops;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use warp::{http::HeaderMap, Filter};
 
 lazy_static::lazy_static! {
@@ -17,7 +19,7 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
             "Hello World"
         });
 
-    let _guard = PORT_LOCK.lock().unwrap();
+    let _guard = PORT_LOCK.lock().await;
     let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
@@ -48,7 +50,7 @@ async fn get_method(args: &[&str]) -> http::method::Method {
         },
     );
 
-    let _guard = PORT_LOCK.lock().unwrap();
+    let _guard = PORT_LOCK.lock().await;
     let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
@@ -79,7 +81,7 @@ async fn get_query(p: &'static str) -> String {
         },
     );
 
-    let _guard = PORT_LOCK.lock().unwrap();
+    let _guard = PORT_LOCK.lock().await;
     let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
@@ -101,7 +103,7 @@ async fn get_query(p: &'static str) -> String {
 
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = flume::unbounded();
-    let _guard = PORT_LOCK.lock().unwrap();
+    let _guard = PORT_LOCK.lock().await;
     let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
 
     let route = warp::path!(usize).map(move |x| {
@@ -152,7 +154,7 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
                 "Hello World"
             });
 
-    let _guard = PORT_LOCK.lock().unwrap();
+    let _guard = PORT_LOCK.lock().await;
     let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(report_host).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
@@ -165,6 +167,41 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
             .arg(format!("http://{}/", host))
             .arg("--connect-to")
             .arg(format!("{}:80:localhost:{}", host, port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
+}
+
+async fn get_host_with_connect_to_ipv6(host: &'static str) -> String {
+    let (tx, rx) = flume::unbounded();
+    let report_host =
+        warp::get()
+            .and(warp::filters::header::header("host"))
+            .map(move |host: String| {
+                tx.send(host).unwrap();
+                "Hello World"
+            });
+
+    let _guard = PORT_LOCK.lock().await;
+    // sic. the `get_port` crate doesn't support IpV6 addresses, so we check
+    // with 127.0.0.1 even though we bind on ::1 later.
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    let addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+    tokio::spawn(warp::serve(report_host).run((addr, port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg(format!("http://{}/", host))
+            .arg("--connect-to")
+            .arg(format!("{host}:80:[{addr}]:{port}"))
             .assert()
             .success();
     })
@@ -189,7 +226,7 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
         });
     let routes = redirect.or(report_host);
 
-    let _guard = PORT_LOCK.lock().unwrap();
+    let _guard = PORT_LOCK.lock().await;
     let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
     tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], port)));
     // It's not guaranteed that the port is used here.
@@ -318,6 +355,14 @@ async fn test_query() {
 async fn test_connect_to() {
     assert_eq!(
         get_host_with_connect_to("invalid.example.org").await,
+        "invalid.example.org"
+    )
+}
+
+#[tokio::test]
+async fn test_connect_to_ipv6() {
+    assert_eq!(
+        get_host_with_connect_to_ipv6("invalid.example.org").await,
         "invalid.example.org"
     )
 }

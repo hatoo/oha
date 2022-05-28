@@ -125,22 +125,34 @@ pub struct ConnectToEntry {
 }
 
 impl FromStr for ConnectToEntry {
-    type Err = &'static str;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let tokens: Vec<&str> = s.split(':').collect();
-        if tokens.len() != 4 {
-            return Err("must have 4 items separated by colons");
-        }
+        let expected_syntax: String =
+            "syntax for --connect-to is host:port:target_host:target_port".into();
+
+        let (requested_host, s) = s.split_once(':').ok_or_else(|| expected_syntax.clone())?;
+        let (requested_port, s) = s.split_once(':').ok_or_else(|| expected_syntax.clone())?;
+
+        let (target_host, target_port) = if s.starts_with('[') {
+            // parse bracketed IPv6 address
+            let end = s.find("]:").ok_or(expected_syntax)?;
+            let target_host = &s[1..end];
+            let target_port = &s[end + 2..]; // shouldn't panic because we looked for `]:`, not just `]`
+            (target_host, target_port)
+        } else {
+            s.split_once(':').ok_or_else(|| expected_syntax.clone())?
+        };
+
         Ok(ConnectToEntry {
-            requested_host: tokens[0].into(),
-            requested_port: tokens[1]
-                .parse()
-                .map_err(|_| "requested port must be an u16")?,
-            target_host: tokens[2].into(),
-            target_port: tokens[3]
-                .parse()
-                .map_err(|_| "target port must be an u16")?,
+            requested_host: requested_host.into(),
+            requested_port: requested_port.parse().map_err(|err| {
+                format!("requested port must be an u16, but got {requested_port}: {err}")
+            })?,
+            target_host: target_host.into(),
+            target_port: target_port.parse().map_err(|err| {
+                format!("target port must be an u16, but got {target_port}: {err}")
+            })?,
         })
     }
 }
