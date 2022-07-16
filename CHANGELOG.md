@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.3 (2022-07-16)
+
 - Add support for bracketed IPv6 syntax in connect-to
 
 # 0.5.2 (2022-04-28)
