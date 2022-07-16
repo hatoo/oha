@@ -1,4 +1,5 @@
 pub fn histogram(values: &[f64], bins: usize) -> Vec<(f64, usize)> {
+    assert!(bins >= 2);
     let mut bucket: Vec<usize> = vec![0; bins];
     let min = values.iter().collect::<average::Min>().min();
     let max = values.iter().collect::<average::Max>().max();
