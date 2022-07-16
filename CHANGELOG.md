@@ -1,5 +1,7 @@
 # Unreleased
 
+- Fix QPS control to send with correct rate for first 1 sec
+
 # 0.5.3 (2022-07-16)
 
 - Add support for bracketed IPv6 syntax in connect-to
