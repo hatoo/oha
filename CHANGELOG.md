@@ -1,5 +1,6 @@
 # Unreleased
 
+- Fix QPS control to send with correct rate for first 1 sec
 - Make histogram compatible to hey
     - closes #161
 

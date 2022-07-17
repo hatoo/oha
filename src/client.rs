@@ -577,11 +577,11 @@ pub async fn work_with_qps(
     tokio::spawn(async move {
         let start = std::time::Instant::now();
         for i in 0..n_tasks {
-            tx.send_async(()).await.unwrap();
             tokio::time::sleep_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
             .await;
+            tx.send_async(()).await.unwrap();
         }
         // tx gone
     });
@@ -704,13 +704,13 @@ pub async fn work_until_with_qps(
             if std::time::Instant::now() > dead_line {
                 break;
             }
-            if tx.send_async(()).await.is_err() {
-                break;
-            }
             tokio::time::sleep_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
             .await;
+            if tx.send_async(()).await.is_err() {
+                break;
+            }
         }
         // tx gone
     });
@@ -760,13 +760,13 @@ pub async fn work_until_with_qps_latency_correction(
             if now > dead_line {
                 break;
             }
-            if tx.send_async(now).await.is_err() {
-                break;
-            }
             tokio::time::sleep_until(
                 (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
             )
             .await;
+            if tx.send_async(now).await.is_err() {
+                break;
+            }
         }
         // tx gone
     });
