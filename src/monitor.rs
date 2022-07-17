@@ -330,7 +330,8 @@ impl Monitor {
                         0
                     } else {
                         (bottom[1].width as usize - 2) / (resp_histo_width + 1)
-                    };
+                    }
+                    .max(2);
                     let values = all
                         .iter()
                         .rev()
