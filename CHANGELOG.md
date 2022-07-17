@@ -1,5 +1,8 @@
 # Unreleased
 
+- Make histogram compatible to hey
+    - closes #161
+
 # 0.5.3 (2022-07-16)
 
 - Add support for bracketed IPv6 syntax in connect-to
