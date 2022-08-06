@@ -79,6 +79,9 @@ OPTIONS:
         --no-tui
             No realtime tui
 
+    -j, --json
+            Print results as JSON
+
         --fps <FPS>
             Frame per second for tui. [default: 16]
 
