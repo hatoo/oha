@@ -12,6 +12,7 @@ use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph};
 use tui::Terminal;
 
 use crate::client::{ClientError, RequestResult};
+use crate::printer::PrintMode;
 use crate::timescale::{TimeLabel, TimeScale};
 
 /// When the monitor ends
@@ -23,6 +24,7 @@ pub enum EndLine {
 }
 
 pub struct Monitor {
+    pub print_mode: PrintMode,
     pub end_line: EndLine,
     /// All workers sends each result to this channel
     pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
@@ -395,7 +397,8 @@ impl Monitor {
                         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
                         std::io::stdout().execute(crossterm::cursor::Show)?;
-                        let _ = crate::printer::print_summary(
+                        let _ = crate::printer::print_result(
+                            self.print_mode,
                             &mut std::io::stdout(),
                             &all,
                             now - self.start,

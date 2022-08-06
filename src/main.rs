@@ -3,6 +3,7 @@ use clap::{AppSettings, Parser};
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
+use printer::PrintMode;
 use std::sync::Arc;
 use std::{io::Read, str::FromStr};
 
@@ -52,6 +53,8 @@ Examples: -z 10s -z 3m.",
     latency_correction: bool,
     #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
+    #[clap(help = "Print results as JSON", short, long)]
+    json: bool,
     #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
     #[clap(
@@ -271,6 +274,12 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
+    let print_mode = if opts.json {
+        PrintMode::Json
+    } else {
+        PrintMode::Text
+    };
+
     let (result_tx, result_rx) = flume::unbounded();
 
     let start = std::time::Instant::now();
@@ -299,7 +308,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         _ = ctrl_c_rx.recv_async() => {
                             // User pressed ctrl-c.
-                            let _ = printer::print_summary(&mut std::io::stdout(),&all, start.elapsed());
+                            let _ = printer::print_result(print_mode,&mut std::io::stdout(),&all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
@@ -313,6 +322,7 @@ async fn main() -> anyhow::Result<()> {
         // Spawn monitor future which draws realtime tui
         tokio::spawn(
             monitor::Monitor {
+                print_mode,
                 end_line: opts
                     .duration
                     .map(|d| monitor::EndLine::Duration(d.into()))
@@ -430,7 +440,7 @@ async fn main() -> anyhow::Result<()> {
 
     let res: Vec<Result<RequestResult, ClientError>> = data_collector.await??;
 
-    printer::print_summary(&mut std::io::stdout(), &res, duration)?;
+    printer::print_result(print_mode, &mut std::io::stdout(), &res, duration)?;
 
     Ok(())
 }
