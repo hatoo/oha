@@ -1,0 +1,35 @@
+name: Publish arm64 macos
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+jobs:
+  publish:
+    name: Publish for arm64 ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact_name: oha
+            release_name: oha-macos-arm64
+
+    steps:
+      - uses: hecrj/setup-rust-action@master
+        with:
+          rust-version: stable
+          targets: aarch64-apple-darwin
+      - uses: actions/checkout@v1
+      - run: cargo build --release --locked --target aarch64-apple-darwin
+      - uses: svenstaro/upx-action@v1-release
+        with:
+          file: target/aarch64-apple-darwin/release/${{ matrix.artifact_name }}
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/aarch64-apple-darwin/release/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.release_name }}
+          tag: ${{ github.ref }}
