@@ -1,0 +1,36 @@
+name: Publish arm64 linux
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+jobs:
+  publish:
+    name: Publish for arm64 ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: oha
+            release_name: oha-linux-arm64
+
+    steps:
+      - uses: hecrj/setup-rust-action@master
+        with:
+          rust-version: stable
+          targets: aarch64-unknown-linux-gnu
+      - run: |
+            sudo apt-get update
+            sudo apt-get install -y build-essential
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - uses: actions/checkout@v1
+      - run: cargo build --release --locked --target aarch64-unknown-linux-gnu --no-default-features --features rustls
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/aarch64-unknown-linux-gnu/release/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.release_name }}
+          tag: ${{ github.ref }}
