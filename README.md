@@ -47,7 +47,7 @@ You can optionally build oha against [rustls](https://github.com/rustls/rustls) 
 
 `-q` option works different from [rakyll/hey](https://github.com/rakyll/hey). It's set overall query per second instead of for each workers.
 
-```
+```sh
 oha 0.5.3
 hatoo <hato2000@gmail.com>
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
@@ -146,12 +146,13 @@ OPTIONS:
 
 # Tips
 
-## Stress test in more realistic conditon
+## Stress test in more realistic condition
 
 `oha` uses default options inherited from [rakyll/hey](https://github.com/rakyll/hey) but you may need to change options to stress test in more realistic condition.
 
 I suggest to run `oha` with following options.
-```
+
+```sh
 oha <-z or -n> -c <number of concurrent connections> -q <query per seconds> --latency-correction --disable-keepalive <target-address>
 ```
 
@@ -161,7 +162,6 @@ oha <-z or -n> -c <number of concurrent connections> -q <query per seconds> --la
 - --latency-correction
 
     You can avoid `Coordinated Omission Problem` by using `--latency-correction`.
-
 
 # Contribution
 
