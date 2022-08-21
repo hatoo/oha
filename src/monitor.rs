@@ -398,8 +398,9 @@ impl Monitor {
                         crossterm::terminal::disable_raw_mode()?;
                         std::io::stdout().execute(crossterm::cursor::Show)?;
                         let _ = crate::printer::print_result(
-                            self.print_mode,
                             &mut std::io::stdout(),
+                            self.print_mode,
+                            self.start,
                             &all,
                             now - self.start,
                         );

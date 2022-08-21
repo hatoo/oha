@@ -1,10 +1,13 @@
 use crate::client::ConnectionTime;
 use crate::client::RequestResult;
 use crate::histogram::histogram;
+use average::Max;
+use average::Variance;
 use byte_unit::Byte;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::Duration;
+use std::time::Instant;
 
 #[derive(Clone, Copy)]
 pub enum PrintMode {
@@ -13,14 +16,15 @@ pub enum PrintMode {
 }
 
 pub fn print_result<W: Write, E: std::fmt::Display>(
-    mode: PrintMode,
     w: &mut W,
+    mode: PrintMode,
+    start: Instant,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
 ) -> anyhow::Result<()> {
     match mode {
         PrintMode::Text => print_summary(w, res, total_duration)?,
-        PrintMode::Json => print_json(w, res, total_duration)?,
+        PrintMode::Json => print_json(w, start, res, total_duration)?,
     }
     Ok(())
 }
@@ -28,6 +32,7 @@ pub fn print_result<W: Write, E: std::fmt::Display>(
 /// Print all summary as JSON
 fn print_json<W: Write, E: std::fmt::Display>(
     w: &mut W,
+    start: Instant,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
 ) -> serde_json::Result<()> {
@@ -66,12 +71,22 @@ fn print_json<W: Write, E: std::fmt::Display>(
     }
 
     #[derive(Serialize)]
+    struct Rps {
+        mean: f64,
+        stddev: f64,
+        max: f64,
+        percentiles: BTreeMap<String, f64>,
+    }
+
+    #[derive(Serialize)]
     struct Result {
         summary: Summary,
         #[serde(rename = "reaponseTimeHistogram")]
         response_time_histogram: BTreeMap<String, usize>,
-        #[serde(rename = "latencyDistribution")]
-        latency_distribution: BTreeMap<String, f64>,
+        #[serde(rename = "latencyPercentiles")]
+        latency_percentiles: BTreeMap<String, f64>,
+        #[serde(rename = "rps")]
+        rps: Rps,
         details: Details,
         #[serde(rename = "statusCodeDistribution")]
         status_code_distribution: BTreeMap<String, usize>,
@@ -138,7 +153,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
         .map(|(k, v)| (k.to_string(), v))
         .collect();
 
-    let latency_distribution = [10, 25, 50, 75, 90, 95, 99]
+    let latency_percentiles = [10, 25, 50, 75, 90, 95, 99]
         .into_iter()
         .map(|p| {
             let i = (f64::from(p) / 100.0 * durations.len() as f64) as usize;
@@ -148,6 +163,55 @@ fn print_json<W: Write, E: std::fmt::Display>(
             )
         })
         .collect();
+
+    let mut ends = res
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| (r.end - start).as_secs_f64())
+        .collect::<Vec<_>>();
+    ends.push(0.0);
+    float_ord::sort(&mut ends);
+
+    let mut rps: Vec<f64> = Vec::new();
+    // 10ms
+    const INTERVAL: f64 = 0.01;
+    let mut r = 0;
+    loop {
+        let prev_r = r;
+
+        // increment at least 1
+        if r + 1 < ends.len() {
+            r += 1;
+        }
+
+        while r + 1 < ends.len() && ends[prev_r] + INTERVAL > ends[r + 1] {
+            r += 1;
+        }
+
+        if r == prev_r {
+            break;
+        }
+
+        let n = r - prev_r;
+        let t = ends[r] - ends[prev_r];
+        rps.push(n as f64 / t);
+    }
+
+    float_ord::sort(&mut rps);
+    let rps_percentiles = [10, 25, 50, 75, 90, 95, 99]
+        .into_iter()
+        .map(|p| {
+            let i = (f64::from(p) / 100.0 * rps.len() as f64) as usize;
+            (format!("p{}", p), *rps.get(i).unwrap_or(&std::f64::NAN))
+        })
+        .collect();
+    let variance = rps.iter().collect::<Variance>();
+    let rps = Rps {
+        mean: variance.mean(),
+        stddev: variance.sample_variance().sqrt(),
+        max: rps.iter().collect::<Max>().max(),
+        percentiles: rps_percentiles,
+    };
 
     let mut status_code_distribution: BTreeMap<http::StatusCode, usize> = Default::default();
 
@@ -208,7 +272,8 @@ fn print_json<W: Write, E: std::fmt::Display>(
         &Result {
             summary,
             response_time_histogram,
-            latency_distribution,
+            latency_percentiles,
+            rps,
             details,
             status_code_distribution: status_code_distribution
                 .into_iter()
