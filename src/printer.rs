@@ -153,16 +153,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
         .map(|(k, v)| (k.to_string(), v))
         .collect();
 
-    let latency_percentiles = [10, 25, 50, 75, 90, 95, 99]
-        .into_iter()
-        .map(|p| {
-            let i = (f64::from(p) / 100.0 * durations.len() as f64) as usize;
-            (
-                format!("p{}", p),
-                *durations.get(i).unwrap_or(&std::f64::NAN),
-            )
-        })
-        .collect();
+    let latency_percentiles = percentiles(&durations, &[10, 25, 50, 75, 90, 95, 99]);
 
     let mut ends = res
         .iter()
@@ -198,13 +189,8 @@ fn print_json<W: Write, E: std::fmt::Display>(
     }
 
     float_ord::sort(&mut rps);
-    let rps_percentiles = [10, 25, 50, 75, 90, 95, 99]
-        .into_iter()
-        .map(|p| {
-            let i = (f64::from(p) / 100.0 * rps.len() as f64) as usize;
-            (format!("p{}", p), *rps.get(i).unwrap_or(&std::f64::NAN))
-        })
-        .collect();
+    let rps_percentiles = percentiles(&rps, &[10, 25, 50, 75, 90, 95, 99]);
+
     let variance = rps.iter().collect::<Variance>();
     let rps = Rps {
         mean: variance.mean(),
@@ -506,4 +492,14 @@ fn print_distribution<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()
     }
 
     Ok(())
+}
+
+fn percentiles(values: &[f64], pecents: &[i32]) -> BTreeMap<String, f64> {
+    pecents
+        .iter()
+        .map(|&p| {
+            let i = (f64::from(p) / 100.0 * values.len() as f64) as usize;
+            (format!("p{}", p), *values.get(i).unwrap_or(&std::f64::NAN))
+        })
+        .collect()
 }
