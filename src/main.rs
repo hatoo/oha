@@ -140,7 +140,7 @@ impl FromStr for ConnectToEntry {
         let (target_host, target_port) = if s.starts_with('[') {
             // parse bracketed IPv6 address
             let end = s.find("]:").ok_or(expected_syntax)?;
-            let target_host = &s[1..end];
+            let target_host = &s[..end + 1];
             let target_port = &s[end + 2..]; // shouldn't panic because we looked for `]:`, not just `]`
             (target_host, target_port)
         } else {

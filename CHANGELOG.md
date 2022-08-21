@@ -1,5 +1,6 @@
 # Unreleased
 
+- Support Ipv6 host #181
 - Add JSON Output #169
 - Fix QPS control to send with correct rate for first 1 sec
 - Make histogram compatible to hey

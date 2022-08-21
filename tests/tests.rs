@@ -386,3 +386,37 @@ async fn test_redirect() {
         assert!(!redirect(n, false, 10).await);
     }
 }
+
+#[tokio::test]
+async fn test_ipv6() {
+    let (tx, rx) = flume::unbounded();
+    let report_host =
+        warp::get()
+            .and(warp::filters::header::header("host"))
+            .map(move |host: String| {
+                tx.send(host).unwrap();
+                "Hello World"
+            });
+
+    let _guard = PORT_LOCK.lock().await;
+    // sic. the `get_port` crate doesn't support IpV6 addresses, so we check
+    // with 127.0.0.1 even though we bind on ::1 later.
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    let addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+    tokio::spawn(warp::serve(report_host).run((addr, port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg(format!("http://[::1]:{}/", port))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap();
+}

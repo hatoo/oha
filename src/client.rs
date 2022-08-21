@@ -67,6 +67,14 @@ impl DNS {
             (host, port)
         };
 
+        let host = if host.starts_with('[') && host.ends_with(']') {
+            // host is [ipv6] format
+            // remove first [ and last ]
+            &host[1..host.len() - 1]
+        } else {
+            host
+        };
+
         // Perform actual DNS lookup, either on the original (host, port), or
         // on the (host, port) specified with `--connect-to`.
         let addrs = self
