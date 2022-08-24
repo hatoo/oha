@@ -1,6 +1,7 @@
 # Unreleased
 
 - Support Ipv6 host #181
+- Print min, max, average and pXX for Requests per second in JSON output like bombardier #177
 - Add JSON Output #169
 - Fix QPS control to send with correct rate for first 1 sec
 - Make histogram compatible to hey
