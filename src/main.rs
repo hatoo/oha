@@ -308,7 +308,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         _ = ctrl_c_rx.recv_async() => {
                             // User pressed ctrl-c.
-                            let _ = printer::print_result(print_mode,&mut std::io::stdout(),&all, start.elapsed());
+                            let _ = printer::print_result(&mut std::io::stdout(),print_mode,start, &all, start.elapsed());
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
@@ -440,7 +440,7 @@ async fn main() -> anyhow::Result<()> {
 
     let res: Vec<Result<RequestResult, ClientError>> = data_collector.await??;
 
-    printer::print_result(print_mode, &mut std::io::stdout(), &res, duration)?;
+    printer::print_result(&mut std::io::stdout(), print_mode, start, &res, duration)?;
 
     Ok(())
 }
