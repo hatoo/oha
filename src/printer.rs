@@ -81,7 +81,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
     #[derive(Serialize)]
     struct Result {
         summary: Summary,
-        #[serde(rename = "reaponseTimeHistogram")]
+        #[serde(rename = "responseTimeHistogram")]
         response_time_histogram: BTreeMap<String, usize>,
         #[serde(rename = "latencyPercentiles")]
         latency_percentiles: BTreeMap<String, f64>,
