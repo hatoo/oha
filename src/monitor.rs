@@ -393,6 +393,7 @@ impl Monitor {
                     | Event::Key(KeyEvent {
                         code: KeyCode::Char('c'),
                         modifiers: KeyModifiers::CONTROL,
+                        ..
                     }) => {
                         std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
