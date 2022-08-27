@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.4 (2022-08-27)
+
 - Support Ipv6 host #181
 - Print min, max, average and pXX for Requests per second in JSON output like bombardier #177
 - Add JSON Output #169
