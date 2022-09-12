@@ -2,7 +2,7 @@ use byte_unit::Byte;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
 use flume::TryRecvError;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -21,6 +21,31 @@ pub enum EndLine {
     Duration(std::time::Duration),
     /// After n query done
     NumQuery(usize),
+}
+
+struct ColorScheme {
+    light_blue: Option<Color>,
+    green: Option<Color>,
+    orange: Option<Color>,
+    yellow: Option<Color>,
+}
+
+impl ColorScheme {
+    fn new() -> ColorScheme {
+        ColorScheme {
+            light_blue: None,
+            green: None,
+            orange: None,
+            yellow: None,
+        }
+    }
+
+    fn set_colors(&mut self) {
+        self.light_blue = Some(Color::Rgb(86, 180, 233));
+        self.green = Some(Color::Rgb(0, 158, 115));
+        self.orange = Some(Color::Rgb(230, 159, 0));
+        self.yellow = Some(Color::Rgb(240, 228, 66));
+    }
 }
 
 pub struct Monitor {
@@ -63,13 +88,9 @@ impl Monitor {
         // None means auto timescale which depends on how long it takes
         let mut timescale_auto = None;
 
-        // Setup colors if enabled
-        let mut colors: HashMap<&'static str, Color> = HashMap::new();
+        let mut colors = ColorScheme::new();
         if !self.disable_color {
-            colors.insert("light_blue", Color::Rgb(86, 180, 233));
-            colors.insert("green", Color::Rgb(0, 158, 115));
-            colors.insert("orange", Color::Rgb(230, 159, 0));
-            colors.insert("yellow", Color::Rgb(240, 228, 66));
+            colors.set_colors();
         }
 
         'outer: loop {
@@ -207,9 +228,7 @@ impl Monitor {
                 };
                 let gauge = Gauge::default()
                     .block(Block::default().title("Progress").borders(Borders::ALL))
-                    .gauge_style(
-                        Style::default().fg(*colors.get("light_blue").unwrap_or(&Color::White)),
-                    )
+                    .gauge_style(Style::default().fg(colors.light_blue.unwrap_or(Color::White)))
                     .label(Span::raw(gauge_label))
                     .ratio(progress);
                 f.render_widget(gauge, row4[0]);
@@ -233,7 +252,7 @@ impl Monitor {
                                 .map(|d| d.as_secs_f64())
                                 .unwrap_or(std::f64::NAN)
                         ),
-                        Style::default().fg(*colors.get("orange").unwrap_or(&Color::Reset)),
+                        Style::default().fg(colors.orange.unwrap_or(Color::Reset)),
                     )]),
                     Spans::from(vec![Span::styled(
                         format!(
@@ -245,7 +264,7 @@ impl Monitor {
                                 .map(|d| d.as_secs_f64())
                                 .unwrap_or(std::f64::NAN)
                         ),
-                        Style::default().fg(*colors.get("green").unwrap_or(&Color::Reset)),
+                        Style::default().fg(colors.green.unwrap_or(Color::Reset)),
                     )]),
                     Spans::from(vec![Span::styled(
                         format!(
@@ -257,7 +276,7 @@ impl Monitor {
                                 .as_secs_f64()
                                 / last_1_timescale.len() as f64
                         ),
-                        Style::default().fg(*colors.get("light_blue").unwrap_or(&Color::Reset)),
+                        Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
                     )]),
                     Spans::from(format!(
                         "Data: {}",
@@ -336,7 +355,7 @@ impl Monitor {
                             .title(Span::raw(title))
                             .style(
                                 Style::default()
-                                    .fg(*colors.get("green").unwrap_or(&Color::Reset))
+                                    .fg(colors.green.unwrap_or(Color::Reset))
                                     .bg(Color::Reset),
                             )
                             .borders(Borders::ALL),
@@ -386,7 +405,7 @@ impl Monitor {
                             .title("Response time histogram")
                             .style(
                                 Style::default()
-                                    .fg(*colors.get("yellow").unwrap_or(&Color::Reset))
+                                    .fg(colors.yellow.unwrap_or(Color::Reset))
                                     .bg(Color::Reset),
                             )
                             .borders(Borders::ALL),
