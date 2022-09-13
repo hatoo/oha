@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add colors to the tui view #64
+
 # 0.5.4 (2022-08-27)
 
 - Support Ipv6 host #181

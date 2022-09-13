@@ -137,6 +137,9 @@ OPTIONS:
             Override DNS resolution and default port numbers with strings like
             'example.org:443:localhost:8443'
 
+        --disable-color
+            Disable the color scheme.
+
     -h, --help
             Print help information
 

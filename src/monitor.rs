@@ -23,6 +23,31 @@ pub enum EndLine {
     NumQuery(usize),
 }
 
+struct ColorScheme {
+    light_blue: Option<Color>,
+    green: Option<Color>,
+    orange: Option<Color>,
+    yellow: Option<Color>,
+}
+
+impl ColorScheme {
+    fn new() -> ColorScheme {
+        ColorScheme {
+            light_blue: None,
+            green: None,
+            orange: None,
+            yellow: None,
+        }
+    }
+
+    fn set_colors(&mut self) {
+        self.light_blue = Some(Color::Rgb(86, 180, 233));
+        self.green = Some(Color::Rgb(0, 158, 115));
+        self.orange = Some(Color::Rgb(230, 159, 0));
+        self.yellow = Some(Color::Rgb(240, 228, 66));
+    }
+}
+
 pub struct Monitor {
     pub print_mode: PrintMode,
     pub end_line: EndLine,
@@ -32,6 +57,7 @@ pub struct Monitor {
     pub start: std::time::Instant,
     // Frame per scond of TUI
     pub fps: usize,
+    pub disable_color: bool,
 }
 
 impl Monitor {
@@ -61,6 +87,11 @@ impl Monitor {
 
         // None means auto timescale which depends on how long it takes
         let mut timescale_auto = None;
+
+        let mut colors = ColorScheme::new();
+        if !self.disable_color {
+            colors.set_colors();
+        }
 
         'outer: loop {
             let frame_start = std::time::Instant::now();
@@ -197,7 +228,7 @@ impl Monitor {
                 };
                 let gauge = Gauge::default()
                     .block(Block::default().title("Progress").borders(Borders::ALL))
-                    .gauge_style(Style::default().fg(Color::White))
+                    .gauge_style(Style::default().fg(colors.light_blue.unwrap_or(Color::White)))
                     .label(Span::raw(gauge_label))
                     .ratio(progress);
                 f.render_widget(gauge, row4[0]);
@@ -211,33 +242,42 @@ impl Monitor {
 
                 let statics_text = vec![
                     Spans::from(format!("Requests : {}", last_1_timescale.len())),
-                    Spans::from(format!(
-                        "Slowest: {:.4} secs",
-                        last_1_timescale
-                            .iter()
-                            .map(|r| r.duration())
-                            .max()
-                            .map(|d| d.as_secs_f64())
-                            .unwrap_or(std::f64::NAN)
-                    )),
-                    Spans::from(format!(
-                        "Fastest: {:.4} secs",
-                        last_1_timescale
-                            .iter()
-                            .map(|r| r.duration())
-                            .min()
-                            .map(|d| d.as_secs_f64())
-                            .unwrap_or(std::f64::NAN)
-                    )),
-                    Spans::from(format!(
-                        "Average: {:.4} secs",
-                        last_1_timescale
-                            .iter()
-                            .map(|r| r.duration())
-                            .sum::<std::time::Duration>()
-                            .as_secs_f64()
-                            / last_1_timescale.len() as f64
-                    )),
+                    Spans::from(vec![Span::styled(
+                        format!(
+                            "Slowest: {:.4} secs",
+                            last_1_timescale
+                                .iter()
+                                .map(|r| r.duration())
+                                .max()
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(std::f64::NAN)
+                        ),
+                        Style::default().fg(colors.orange.unwrap_or(Color::Reset)),
+                    )]),
+                    Spans::from(vec![Span::styled(
+                        format!(
+                            "Fastest: {:.4} secs",
+                            last_1_timescale
+                                .iter()
+                                .map(|r| r.duration())
+                                .min()
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(std::f64::NAN)
+                        ),
+                        Style::default().fg(colors.green.unwrap_or(Color::Reset)),
+                    )]),
+                    Spans::from(vec![Span::styled(
+                        format!(
+                            "Average: {:.4} secs",
+                            last_1_timescale
+                                .iter()
+                                .map(|r| r.duration())
+                                .sum::<std::time::Duration>()
+                                .as_secs_f64()
+                                / last_1_timescale.len() as f64
+                        ),
+                        Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
+                    )]),
                     Spans::from(format!(
                         "Data: {}",
                         Byte::from_bytes(
@@ -313,6 +353,11 @@ impl Monitor {
                     .block(
                         Block::default()
                             .title(Span::raw(title))
+                            .style(
+                                Style::default()
+                                    .fg(colors.green.unwrap_or(Color::Reset))
+                                    .bg(Color::Reset),
+                            )
                             .borders(Borders::ALL),
                     )
                     .data(bar_num_req_str.as_slice())
@@ -358,6 +403,11 @@ impl Monitor {
                     .block(
                         Block::default()
                             .title("Response time histogram")
+                            .style(
+                                Style::default()
+                                    .fg(colors.yellow.unwrap_or(Color::Reset))
+                                    .bg(Color::Reset),
+                            )
                             .borders(Borders::ALL),
                     )
                     .data(resp_histo_data_str.as_slice())

@@ -114,6 +114,8 @@ Examples: -z 10s -z 3m.",
         long = "connect-to"
     )]
     connect_to: Vec<ConnectToEntry>,
+    #[clap(help = "Disable the color scheme.", long = "disable-color")]
+    disable_color: bool,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -330,6 +332,7 @@ async fn main() -> anyhow::Result<()> {
                 report_receiver: result_rx,
                 start,
                 fps: opts.fps,
+                disable_color: opts.disable_color,
             }
             .monitor(),
         )
