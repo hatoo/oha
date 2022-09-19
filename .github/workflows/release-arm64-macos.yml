@@ -22,7 +22,7 @@ jobs:
           rust-version: stable
           targets: aarch64-apple-darwin
       - uses: actions/checkout@v1
-      - run: cargo build --release --locked --target aarch64-apple-darwin
+      - run: cargo build --release --locked --target aarch64-apple-darwin --no-default-features --features rustls
       - uses: svenstaro/upx-action@v1-release
         with:
           file: target/aarch64-apple-darwin/release/${{ matrix.artifact_name }}
