@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.5 (2022-09-19)
+
 - Add colors to the tui view #64
 
 # 0.5.4 (2022-08-27)
