@@ -49,7 +49,7 @@ tokio-rustls = {version = "0.23.3", optional = true}
 base64 = "0.13.0"
 lazy_static = "1.4.0"
 rand = "0.8"
-trust-dns-resolver = "0.21.1"
+trust-dns-resolver = "0.22.0"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.8.3"
