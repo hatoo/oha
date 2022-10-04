@@ -11,6 +11,7 @@ mod client;
 mod histogram;
 mod monitor;
 mod printer;
+mod tcp_stream;
 mod timescale;
 
 use client::{ClientError, RequestResult};

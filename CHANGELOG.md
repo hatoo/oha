@@ -1,5 +1,7 @@
 # Unreleased
 
+- Show TCP read bytes instead of body size
+
 # 0.5.5 (2022-09-19)
 
 - Add colors to the tui view #64
