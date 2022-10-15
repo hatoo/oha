@@ -176,7 +176,7 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-async fn get_host_with_connect_to_ipv6(host: &'static str) -> String {
+async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
     let report_host =
         warp::get()
@@ -202,6 +202,40 @@ async fn get_host_with_connect_to_ipv6(host: &'static str) -> String {
             .arg(format!("http://{}/", host))
             .arg("--connect-to")
             .arg(format!("{host}:80:[{addr}]:{port}"))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
+}
+
+async fn get_host_with_connect_to_ipv6_requested() -> String {
+    let (tx, rx) = flume::unbounded();
+    let report_host =
+        warp::get()
+            .and(warp::filters::header::header("host"))
+            .map(move |host: String| {
+                tx.send(host).unwrap();
+                "Hello World"
+            });
+
+    let _guard = PORT_LOCK.lock().await;
+    // sic. the `get_port` crate doesn't support IpV6 addresses, so we check
+    // with 127.0.0.1 even though we bind on ::1 later.
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    tokio::spawn(warp::serve(report_host).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(&["-n", "1", "--no-tui"])
+            .arg("http://[::1]/")
+            .arg("--connect-to")
+            .arg(format!("[::1]:80:localhost:{port}"))
             .assert()
             .success();
     })
@@ -360,11 +394,16 @@ async fn test_connect_to() {
 }
 
 #[tokio::test]
-async fn test_connect_to_ipv6() {
+async fn test_connect_to_ipv6_target() {
     assert_eq!(
-        get_host_with_connect_to_ipv6("invalid.example.org").await,
+        get_host_with_connect_to_ipv6_target("invalid.example.org").await,
         "invalid.example.org"
     )
+}
+
+#[tokio::test]
+async fn test_connect_to_ipv6_requested() {
+    assert_eq!(get_host_with_connect_to_ipv6_requested().await, "[::1]")
 }
 
 #[tokio::test]
