@@ -133,21 +133,17 @@ impl FromStr for ConnectToEntry {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let expected_syntax: String =
-            "syntax for --connect-to is host:port:target_host:target_port".into();
+        let expected_syntax: &str = "syntax for --connect-to is host:port:target_host:target_port";
 
-        let (requested_host, s) = s.split_once(':').ok_or_else(|| expected_syntax.clone())?;
-        let (requested_port, s) = s.split_once(':').ok_or_else(|| expected_syntax.clone())?;
-
-        let (target_host, target_port) = if s.starts_with('[') {
-            // parse bracketed IPv6 address
-            let end = s.find("]:").ok_or(expected_syntax)?;
-            let target_host = &s[..end + 1];
-            let target_port = &s[end + 2..]; // shouldn't panic because we looked for `]:`, not just `]`
-            (target_host, target_port)
+        let (s, target_port) = s.rsplit_once(':').ok_or(expected_syntax)?;
+        let (s, target_host) = if s.ends_with(']') {
+            // ipv6
+            let i = s.rfind(":[").ok_or(expected_syntax)?;
+            (&s[..i], &s[i + 1..])
         } else {
-            s.split_once(':').ok_or_else(|| expected_syntax.clone())?
+            s.rsplit_once(':').ok_or(expected_syntax)?
         };
+        let (requested_host, requested_port) = s.rsplit_once(':').ok_or(expected_syntax)?;
 
         Ok(ConnectToEntry {
             requested_host: requested_host.into(),
