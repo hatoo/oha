@@ -116,10 +116,10 @@ impl Monitor {
 
             let now = std::time::Instant::now();
             let progress = match &self.end_line {
-                EndLine::Duration(d) => ((now - self.start).as_secs_f64() / d.as_secs_f64())
-                    .max(0.0)
-                    .min(1.0),
-                EndLine::NumQuery(n) => (all.len() as f64 / *n as f64).max(0.0).min(1.0),
+                EndLine::Duration(d) => {
+                    ((now - self.start).as_secs_f64() / d.as_secs_f64()).clamp(0.0, 1.0)
+                }
+                EndLine::NumQuery(n) => (all.len() as f64 / *n as f64).clamp(0.0, 1.0),
             };
 
             let count = 32;
