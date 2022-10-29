@@ -35,7 +35,8 @@ tokio = {version = "1.14.0", features = ["full"]}
 tui = {version = "0.19.0", default-features = false, features = ["crossterm"]}
 
 http = "0.2"
-hyper = {version = "0.14.13", features = ["full"]}
+hyper = {version = "1.0.0-rc.1", features = ["full"]}
+http-body-util = "0.1.0-rc.1"
 
 # native-tls
 native-tls = {version = "0.2.4", optional = true}

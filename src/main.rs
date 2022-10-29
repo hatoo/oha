@@ -9,6 +9,7 @@ use std::{io::Read, str::FromStr};
 
 mod client;
 mod histogram;
+mod http_wrapper;
 mod monitor;
 mod printer;
 mod timescale;
