@@ -929,6 +929,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "native-tls",
+ "openssl-sys",
  "rand",
  "rlimit",
  "rustls",
