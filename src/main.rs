@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
@@ -16,13 +16,7 @@ mod timescale;
 use client::{ClientError, RequestResult};
 
 #[derive(Parser)]
-#[clap(
-    author,
-    about,
-    version,
-    global_setting = AppSettings::DeriveDisplayOrder,
-    override_usage = "oha [FLAGS] [OPTIONS] <url>"
-)]
+#[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
 struct Opts {
     #[clap(help = "Target URL.")]
     url: http::Uri,
