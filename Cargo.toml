@@ -46,7 +46,7 @@ rustls = {version = "0.20.4", features = ["dangerous_configuration"], optional =
 rustls-native-certs = {version = "0.6.2", optional = true}
 tokio-rustls = {version = "0.23.3", optional = true}
 
-base64 = "0.13.0"
+base64 = "0.21.0"
 lazy_static = "1.4.0"
 rand = "0.8"
 trust-dns-resolver = "0.22.0"
