@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-08-05
+          toolchain: nightly-2023-01-27
           override: true
       - name: Install cargo-hack
         run: cargo install cargo-hack

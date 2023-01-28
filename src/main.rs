@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
@@ -16,13 +16,7 @@ mod timescale;
 use client::{ClientError, RequestResult};
 
 #[derive(Parser)]
-#[clap(
-    author,
-    about,
-    version,
-    global_setting = AppSettings::DeriveDisplayOrder,
-    override_usage = "oha [FLAGS] [OPTIONS] <url>"
-)]
+#[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
 struct Opts {
     #[clap(help = "Target URL.")]
     url: http::Uri,
@@ -240,12 +234,14 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     Some(u_p[1])
                 };
-                let mut encoder =
-                    base64::write::EncoderWriter::new(&mut header_value, base64::STANDARD);
+                let mut encoder = base64::write::EncoderWriter::new(
+                    &mut header_value,
+                    &base64::engine::general_purpose::STANDARD,
+                );
                 // The unwraps here are fine because Vec::write* is infallible.
-                write!(encoder, "{}:", username).unwrap();
+                write!(encoder, "{username}:").unwrap();
                 if let Some(password) = password {
-                    write!(encoder, "{}", password).unwrap();
+                    write!(encoder, "{password}").unwrap();
                 }
             }
 
@@ -342,7 +338,7 @@ async fn main() -> anyhow::Result<()> {
         let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = std::io::stdout().execute(crossterm::cursor::Show);
-        eprintln!("{}", info);
+        eprintln!("{info}");
         std::process::exit(libc::EXIT_FAILURE);
     }));
 

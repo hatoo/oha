@@ -29,9 +29,9 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
+            .args(["-n", "1", "--no-tui"])
             .args(args)
-            .arg(format!("http://127.0.0.1:{}", port))
+            .arg(format!("http://127.0.0.1:{port}"))
             .assert()
             .success();
     })
@@ -60,9 +60,9 @@ async fn get_method(args: &[&str]) -> http::method::Method {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
+            .args(["-n", "1", "--no-tui"])
             .args(args)
-            .arg(format!("http://127.0.0.1:{}", port))
+            .arg(format!("http://127.0.0.1:{port}"))
             .assert()
             .success();
     })
@@ -90,8 +90,8 @@ async fn get_query(p: &'static str) -> String {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://127.0.0.1:{}/{}", port, p))
+            .args(["-n", "1", "--no-tui"])
+            .arg(format!("http://127.0.0.1:{port}/{p}"))
             .assert()
             .success();
     })
@@ -132,9 +132,9 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui", "--redirect"])
+            .args(["-n", "1", "--no-tui", "--redirect"])
             .arg(limit.to_string())
-            .arg(format!("http://127.0.0.1:{}/0", port))
+            .arg(format!("http://127.0.0.1:{port}/0"))
             .assert()
             .success();
     })
@@ -163,10 +163,10 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://{}/", host))
+            .args(["-n", "1", "--no-tui"])
+            .arg(format!("http://{host}/"))
             .arg("--connect-to")
-            .arg(format!("{}:80:localhost:{}", host, port))
+            .arg(format!("{host}:80:localhost:{port}"))
             .assert()
             .success();
     })
@@ -198,8 +198,8 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://{}/", host))
+            .args(["-n", "1", "--no-tui"])
+            .arg(format!("http://{host}/"))
             .arg("--connect-to")
             .arg(format!("{host}:80:[{addr}]:{port}"))
             .assert()
@@ -232,7 +232,7 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
+            .args(["-n", "1", "--no-tui"])
             .arg("http://[::1]/")
             .arg("--connect-to")
             .arg(format!("[::1]:80:localhost:{port}"))
@@ -248,7 +248,7 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
     let redirect = warp::get().and(warp::path!("source")).map(move || {
-        let uri = http::Uri::try_from(format!("http://{}/destination", host)).unwrap();
+        let uri = http::Uri::try_from(format!("http://{host}/destination")).unwrap();
         warp::redirect(uri)
     });
     let report_host = warp::get()
@@ -269,10 +269,10 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://{}/source", host))
+            .args(["-n", "1", "--no-tui"])
+            .arg(format!("http://{host}/source"))
             .arg("--connect-to")
-            .arg(format!("{}:80:localhost:{}", host, port))
+            .arg(format!("{host}:80:localhost:{port}"))
             .assert()
             .success();
     })
@@ -449,8 +449,8 @@ async fn test_ipv6() {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args(&["-n", "1", "--no-tui"])
-            .arg(format!("http://[::1]:{}/", port))
+            .args(["-n", "1", "--no-tui"])
+            .arg(format!("http://[::1]:{port}/"))
             .assert()
             .success();
     })

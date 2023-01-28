@@ -34,7 +34,7 @@ impl fmt::Display for TimeLabel {
             TimeLabel {
                 x,
                 timescale: TimeScale::Second,
-            } => write!(f, "{}s", x),
+            } => write!(f, "{x}s"),
             TimeLabel {
                 x,
                 timescale: TimeScale::TenSeconds,
@@ -42,7 +42,7 @@ impl fmt::Display for TimeLabel {
             TimeLabel {
                 x,
                 timescale: TimeScale::Minute,
-            } => write!(f, "{}m", x),
+            } => write!(f, "{x}m"),
             TimeLabel {
                 x,
                 timescale: TimeScale::TenMinutes,
@@ -50,7 +50,7 @@ impl fmt::Display for TimeLabel {
             TimeLabel {
                 x,
                 timescale: TimeScale::Hour,
-            } => write!(f, "{}h", x),
+            } => write!(f, "{x}h"),
         }
     }
 }
