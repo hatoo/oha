@@ -436,7 +436,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         writeln!(w)?;
         writeln!(w, "Error distribution:")?;
         for (error, count) in error_v {
-            writeln!(w, "  [{}] {}", count, error)?;
+            writeln!(w, "  [{count}] {error}")?;
         }
     }
 
@@ -499,7 +499,7 @@ fn percentiles(values: &[f64], pecents: &[i32]) -> BTreeMap<String, f64> {
         .iter()
         .map(|&p| {
             let i = (f64::from(p) / 100.0 * values.len() as f64) as usize;
-            (format!("p{}", p), *values.get(i).unwrap_or(&std::f64::NAN))
+            (format!("p{p}"), *values.get(i).unwrap_or(&std::f64::NAN))
         })
         .collect()
 }

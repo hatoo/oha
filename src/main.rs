@@ -239,9 +239,9 @@ async fn main() -> anyhow::Result<()> {
                     &base64::engine::general_purpose::STANDARD,
                 );
                 // The unwraps here are fine because Vec::write* is infallible.
-                write!(encoder, "{}:", username).unwrap();
+                write!(encoder, "{username}:").unwrap();
                 if let Some(password) = password {
-                    write!(encoder, "{}", password).unwrap();
+                    write!(encoder, "{password}").unwrap();
                 }
             }
 
@@ -338,7 +338,7 @@ async fn main() -> anyhow::Result<()> {
         let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = std::io::stdout().execute(crossterm::cursor::Show);
-        eprintln!("{}", info);
+        eprintln!("{info}");
         std::process::exit(libc::EXIT_FAILURE);
     }));
 

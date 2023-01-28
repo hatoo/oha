@@ -301,7 +301,7 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let statics_title = format!("statics for last {}", timescale);
+                let statics_title = format!("statics for last {timescale}");
                 let statics = Paragraph::new(statics_text).block(
                     Block::default()
                         .title(Span::raw(statics_title))
@@ -330,7 +330,7 @@ impl Monitor {
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
                 let errors_text = error_v
                     .into_iter()
-                    .map(|(e, count)| Spans::from(format!("[{}] {}", count, e)))
+                    .map(|(e, count)| Spans::from(format!("[{count}] {e}")))
                     .collect::<Vec<_>>();
                 let errors = Paragraph::new(errors_text).block(
                     Block::default()
@@ -390,7 +390,7 @@ impl Monitor {
                     let histo = crate::histogram::histogram(&values, bins);
                     histo
                         .into_iter()
-                        .map(|(label, v)| (format!("{:.4}", label), v as u64))
+                        .map(|(label, v)| (format!("{label:.4}"), v as u64))
                         .collect()
                 };
 
