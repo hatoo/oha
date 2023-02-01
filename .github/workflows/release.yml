@@ -7,37 +7,55 @@ on:
 
 jobs:
   publish:
-    name: Publish for ${{ matrix.os }}
+    name: Publish for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # This should work with only the `include`s but it currently doesn't because of this bug:
-        # https://github.community/t5/How-to-use-Git-and-GitHub/GitHub-Actions-Matrix-options-dont-work-as-documented/td-p/29558
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             artifact_name: oha
             release_name: oha-linux-amd64
+            target: x86_64-unknown-linux-musl
           - os: windows-latest
             artifact_name: oha.exe
             release_name: oha-windows-amd64.exe
+            target: x86_64-pc-windows-msvc
           - os: macos-latest
             artifact_name: oha
             release_name: oha-macos-amd64
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            artifact_name: oha
+            release_name: oha-linux-arm64
+            target: aarch64-unknown-linux-musl
+          - os: macos-latest
+            artifact_name: oha
+            release_name: oha-macos-arm64
+            target: aarch64-apple-darwin
 
     steps:
-      - uses: hecrj/setup-rust-action@master
-        with:
-          rust-version: stable
       - uses: actions/checkout@v1
-      - run: cargo build --release --locked --no-default-features --features rustls
-      - uses: svenstaro/upx-action@v1-release
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
         with:
-          file: target/release/${{ matrix.artifact_name }}
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+      - name: Build target
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target ${{ matrix.target }} --locked --no-default-features --features rustls
+      - uses: svenstaro/upx-action@v1-release
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        with:
+          file: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v1-release
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/release/${{ matrix.artifact_name }}
+          file: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
           asset_name: ${{ matrix.release_name }}
           tag: ${{ github.ref }}
