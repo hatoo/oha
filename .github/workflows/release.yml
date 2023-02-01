@@ -48,7 +48,7 @@ jobs:
           use-cross: true
           command: build
           args: --release --target ${{ matrix.target }} --locked --no-default-features --features rustls
-      - uses: svenstaro/upx-action@v1-release
+      - uses: svenstaro/upx-action@v2
         if: matrix.target != 'aarch64-unknown-linux-musl'
         with:
           file: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
