@@ -1,6 +1,10 @@
 # Unreleased
 
--  Support [Ipv6] format requested_host in --connect-to #197
+# 0.5.6 (2023-02-02)
+
+- Update `clap` to version 4
+- Release `musl` binaries #206
+- Support [Ipv6] format requested_host in --connect-to #197
 
 # 0.5.5 (2022-09-19)
 

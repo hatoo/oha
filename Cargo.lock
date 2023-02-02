@@ -909,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "oha"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "anyhow",
  "assert_cmd",
