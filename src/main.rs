@@ -13,6 +13,10 @@ mod monitor;
 mod printer;
 mod timescale;
 
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 use client::{ClientError, RequestResult};
 
 #[derive(Parser)]
