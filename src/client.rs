@@ -15,6 +15,8 @@ pub struct ConnectionTime {
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
+    // When the query should started
+    pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
     pub start: std::time::Instant,
     /// DNS + dialup
@@ -31,7 +33,7 @@ pub struct RequestResult {
 impl RequestResult {
     /// Duration the request takes.
     pub fn duration(&self) -> std::time::Duration {
-        self.end - self.start
+        self.end - self.start_latency_correction.unwrap_or(self.start)
     }
 }
 
@@ -361,6 +363,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        start_latency_correction: None,
                         start,
                         end,
                         status,
@@ -649,7 +652,7 @@ pub async fn work_with_qps_latency_correction(
                     let mut res = w.work().await;
 
                     if let Ok(request_result) = &mut res {
-                        request_result.start = start;
+                        request_result.start_latency_correction = Some(start);
                     }
 
                     let is_cancel = is_too_many_open_files(&res);
@@ -786,7 +789,7 @@ pub async fn work_until_with_qps_latency_correction(
                     let mut res = w.work().await;
 
                     if let Ok(request_result) = &mut res {
-                        request_result.start = start;
+                        request_result.start_latency_correction = Some(start);
                     }
 
                     let is_cancel = is_too_many_open_files(&res);
