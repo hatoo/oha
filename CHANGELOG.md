@@ -1,5 +1,7 @@
 # Unreleased
 
+- Fix align of histogram #210
+
 # 0.5.6 (2023-02-02)
 
 - Update `clap` to version 4
