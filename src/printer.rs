@@ -456,10 +456,23 @@ fn print_histogram<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
 
     let max_bar = data.iter().map(|t| t.1).max().unwrap();
     let str_len_max = max_bar.to_string().len();
+    let width = data
+        .iter()
+        .map(|t| (t.0 as u64).to_string().len())
+        .max()
+        .unwrap()
+        + 4;
 
     for (label, b) in data.iter() {
         let indent = str_len_max - b.to_string().len();
-        write!(w, "  {:.3} [{}]{} |", label, b, " ".repeat(indent))?;
+        write!(
+            w,
+            "  {:>width$.3} [{}]{} |",
+            label,
+            b,
+            " ".repeat(indent),
+            width = width
+        )?;
         bar(w, *b as f64 / max_bar as f64)?;
         writeln!(w)?;
     }
