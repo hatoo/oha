@@ -1,5 +1,6 @@
 # Unreleased
 
+- Fix `-z` behaviour to cancel workers at the dead line.
 - Fix align of histogram #210
 
 # 0.5.6 (2023-02-02)

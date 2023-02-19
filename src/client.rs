@@ -678,7 +678,7 @@ pub async fn work_until(
         .map(|_| {
             let report_tx = report_tx.clone();
             let mut w = client_builder.build();
-            tokio::spawn(tokio::time::timeout_at(dead_line.into(), async move {
+            tokio::spawn(async move {
                 loop {
                     let res = w.work().await;
                     let is_cancel = is_too_many_open_files(&res);
@@ -687,12 +687,13 @@ pub async fn work_until(
                         break;
                     }
                 }
-            }))
+            })
         })
         .collect::<Vec<_>>();
 
+    tokio::time::sleep_until(dead_line.into()).await;
     for f in futures {
-        let _ = f.await;
+        f.abort();
     }
 }
 
@@ -707,7 +708,7 @@ pub async fn work_until_with_qps(
 ) {
     let (tx, rx) = flume::bounded(qps);
 
-    let gen = tokio::spawn(async move {
+    tokio::spawn(async move {
         for i in 0.. {
             if std::time::Instant::now() > dead_line {
                 break;
@@ -728,27 +729,23 @@ pub async fn work_until_with_qps(
             let mut w = client_builder.build();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
-            tokio::time::timeout_at(
-                dead_line.into(),
-                tokio::spawn(async move {
-                    while let Ok(()) = rx.recv_async().await {
-                        let res = w.work().await;
-                        let is_cancel = is_too_many_open_files(&res);
-                        report_tx.send_async(res).await.unwrap();
-                        if is_cancel {
-                            break;
-                        }
+            tokio::spawn(async move {
+                while let Ok(()) = rx.recv_async().await {
+                    let res = w.work().await;
+                    let is_cancel = is_too_many_open_files(&res);
+                    report_tx.send_async(res).await.unwrap();
+                    if is_cancel {
+                        break;
                     }
-                }),
-            )
+                }
+            })
         })
         .collect::<Vec<_>>();
 
+    tokio::time::sleep_until(dead_line.into()).await;
     for f in futures {
-        let _ = f.await;
+        f.abort();
     }
-
-    let _ = gen.await;
 }
 
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
@@ -762,7 +759,7 @@ pub async fn work_until_with_qps_latency_correction(
 ) {
     let (tx, rx) = flume::unbounded();
 
-    let gen = tokio::spawn(async move {
+    tokio::spawn(async move {
         for i in 0.. {
             let now = std::time::Instant::now();
             if now > dead_line {
@@ -784,30 +781,26 @@ pub async fn work_until_with_qps_latency_correction(
             let mut w = client_builder.build();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
-            tokio::time::timeout_at(
-                dead_line.into(),
-                tokio::spawn(async move {
-                    while let Ok(start) = rx.recv_async().await {
-                        let mut res = w.work().await;
+            tokio::spawn(async move {
+                while let Ok(start) = rx.recv_async().await {
+                    let mut res = w.work().await;
 
-                        if let Ok(request_result) = &mut res {
-                            request_result.start = start;
-                        }
-
-                        let is_cancel = is_too_many_open_files(&res);
-                        report_tx.send_async(res).await.unwrap();
-                        if is_cancel {
-                            break;
-                        }
+                    if let Ok(request_result) = &mut res {
+                        request_result.start = start;
                     }
-                }),
-            )
+
+                    let is_cancel = is_too_many_open_files(&res);
+                    report_tx.send_async(res).await.unwrap();
+                    if is_cancel {
+                        break;
+                    }
+                }
+            })
         })
         .collect::<Vec<_>>();
 
+    tokio::time::sleep_until(dead_line.into()).await;
     for f in futures {
-        let _ = f.await;
+        f.abort();
     }
-
-    let _ = gen.await;
 }
