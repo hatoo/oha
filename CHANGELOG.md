@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.7 (2023-02-25)
+
 - Fix `--latency-correction` adds the time of DNS. #211
 - Fix `-z` behaviour to cancel workers at the dead line. #211
 - Fix align of histogram #210
