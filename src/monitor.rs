@@ -41,10 +41,10 @@ impl ColorScheme {
     }
 
     fn set_colors(&mut self) {
-        self.light_blue = Some(Color::Rgb(86, 180, 233));
-        self.green = Some(Color::Rgb(0, 158, 115));
-        self.orange = Some(Color::Rgb(230, 159, 0));
-        self.yellow = Some(Color::Rgb(240, 228, 66));
+        self.light_blue = Some(Color::Cyan);
+        self.green = Some(Color::Green);
+        self.orange = Some(Color::LightMagenta);
+        self.yellow = Some(Color::Yellow);
     }
 }
 

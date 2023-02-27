@@ -1,5 +1,7 @@
 # Unreleased
 
+- Fix tui to not requiring True Color. #209
+
 # 0.5.7 (2023-02-25)
 
 - Fix `--latency-correction` adds the time of DNS. #211
