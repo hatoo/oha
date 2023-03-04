@@ -114,6 +114,12 @@ Examples: -z 10s -z 3m.",
     connect_to: Vec<ConnectToEntry>,
     #[clap(help = "Disable the color scheme.", long = "disable-color")]
     disable_color: bool,
+    #[cfg(unix)]
+    #[clap(
+        help = "Connect to a unix socket instead of the domain in the URL. Only for non-HTTPS URLs.",
+        long = "unix-socket"
+    )]
+    unix_socket: Option<std::path::PathBuf>,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -370,6 +376,8 @@ async fn main() -> anyhow::Result<()> {
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
         connect_to: Arc::new(opts.connect_to),
+        #[cfg(unix)]
+        unix_socket: opts.unix_socket,
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {

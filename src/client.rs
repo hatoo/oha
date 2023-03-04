@@ -115,6 +115,8 @@ pub struct ClientBuilder {
         >,
     >,
     pub insecure: bool,
+    #[cfg(unix)]
+    pub unix_socket: Option<std::path::PathBuf>,
 }
 
 impl ClientBuilder {
@@ -135,6 +137,8 @@ impl ClientBuilder {
             redirect_limit: self.redirect_limit,
             disable_keepalive: self.disable_keepalive,
             insecure: self.insecure,
+            #[cfg(unix)]
+            unix_socket: self.unix_socket.clone(),
         }
     }
 }
@@ -201,9 +205,34 @@ pub struct Client {
     redirect_limit: usize,
     disable_keepalive: bool,
     insecure: bool,
+    #[cfg(unix)]
+    pub unix_socket: Option<std::path::PathBuf>,
 }
 
 impl Client {
+    #[cfg(unix)]
+    async fn client(
+        &mut self,
+        addr: (std::net::IpAddr, u16),
+    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+        if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+            self.tls_client(addr).await
+        } else if let Some(socket_path) = &self.unix_socket {
+            let stream = tokio::net::UnixStream::connect(socket_path).await?;
+            let (send, conn) = hyper::client::conn::handshake(stream).await?;
+            tokio::spawn(conn);
+            Ok(send)
+        } else {
+            let stream = tokio::net::TcpStream::connect(addr).await?;
+            stream.set_nodelay(true)?;
+            // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
+            let (send, conn) = hyper::client::conn::handshake(stream).await?;
+            tokio::spawn(conn);
+            Ok(send)
+        }
+    }
+
+    #[cfg(not(unix))]
     async fn client(
         &mut self,
         addr: (std::net::IpAddr, u16),
