@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.8 (2023-03-25)
+
 - Add `--unix-socket` on `unix` profiles for HTTP. #220
 - Fix tui to not requiring True Color. #209
 
