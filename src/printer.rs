@@ -279,8 +279,8 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w, "Summary:")?;
     writeln!(
         w,
-        "  Success rate:\t{:.4}",
-        res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64
+        "  Success rate:\t{:.2}%",
+        100.0 * res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64
     )?;
     writeln!(w, "  Total:\t{:.4} secs", total_duration.as_secs_f64())?;
     writeln!(
@@ -360,7 +360,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w, "Response time histogram:")?;
     print_histogram(w, &durations)?;
     writeln!(w)?;
-    writeln!(w, "Latency distribution:")?;
+    writeln!(w, "Response time distribution:")?;
     print_distribution(w, &durations)?;
     writeln!(w)?;
 
