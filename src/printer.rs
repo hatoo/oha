@@ -360,7 +360,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w, "Response time histogram:")?;
     print_histogram(w, &durations)?;
     writeln!(w)?;
-    writeln!(w, "Latency distribution:")?;
+    writeln!(w, "Response time distribution:")?;
     print_distribution(w, &durations)?;
     writeln!(w)?;
 
