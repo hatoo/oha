@@ -167,13 +167,13 @@ async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
 
     let http_version: http::Version = if let Some(http_version) = opts.http_version {
-        match http_version.as_str() {
+        match http_version.trim() {
             "0.9" => http::Version::HTTP_09,
             "1.0" => http::Version::HTTP_10,
             "1.1" => http::Version::HTTP_11,
-            "2.0" | "2" => http::Version::HTTP_2,
-            "3.0" | "3" => http::Version::HTTP_3,
-            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2, 3"),
+            "2.0" | "2" => anyhow::bail!("HTTP/2 is not supported yet."),
+            "3.0" | "3" => anyhow::bail!("HTTP/3 is not supported yet."),
+            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2, 3."),
         }
     } else {
         http::Version::HTTP_11
