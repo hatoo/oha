@@ -301,6 +301,8 @@ async fn test_enable_compression_default() {
 async fn test_setting_custom_header() {
     let header = get_header_body(&["-H", "foo: bar", "--"]).await.0;
     assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
+    let header = get_header_body(&["-H", "foo:bar", "--"]).await.0;
+    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
 #[tokio::test]
