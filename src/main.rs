@@ -207,10 +207,10 @@ async fn main() -> anyhow::Result<()> {
             opts.headers
                 .into_iter()
                 .map(|s| {
-                    let header = s.splitn(2, ": ").collect::<Vec<_>>();
+                    let header = s.splitn(2, ':').collect::<Vec<_>>();
                     anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-                    let name = HeaderName::from_bytes(header[0].as_bytes())?;
-                    let value = HeaderValue::from_str(header[1])?;
+                    let name = HeaderName::from_str(header[0])?;
+                    let value = HeaderValue::from_str(header[1].trim_start_matches(' '))?;
                     Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?
