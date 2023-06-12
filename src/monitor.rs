@@ -7,7 +7,7 @@ use std::io;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
-use tui::text::{Span, Spans};
+use tui::text::{Line, Span};
 use tui::widgets::{BarChart, Block, Borders, Gauge, Paragraph};
 use tui::Terminal;
 
@@ -241,8 +241,8 @@ impl Monitor {
                     .collect::<Vec<_>>();
 
                 let statics_text = vec![
-                    Spans::from(format!("Requests : {}", last_1_timescale.len())),
-                    Spans::from(vec![Span::styled(
+                    Line::from(format!("Requests : {}", last_1_timescale.len())),
+                    Line::from(vec![Span::styled(
                         format!(
                             "Slowest: {:.4} secs",
                             last_1_timescale
@@ -254,7 +254,7 @@ impl Monitor {
                         ),
                         Style::default().fg(colors.orange.unwrap_or(Color::Reset)),
                     )]),
-                    Spans::from(vec![Span::styled(
+                    Line::from(vec![Span::styled(
                         format!(
                             "Fastest: {:.4} secs",
                             last_1_timescale
@@ -266,7 +266,7 @@ impl Monitor {
                         ),
                         Style::default().fg(colors.green.unwrap_or(Color::Reset)),
                     )]),
-                    Spans::from(vec![Span::styled(
+                    Line::from(vec![Span::styled(
                         format!(
                             "Average: {:.4} secs",
                             last_1_timescale
@@ -278,7 +278,7 @@ impl Monitor {
                         ),
                         Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
                     )]),
-                    Spans::from(format!(
+                    Line::from(format!(
                         "Data: {}",
                         Byte::from_bytes(
                             last_1_timescale
@@ -290,7 +290,7 @@ impl Monitor {
                     )),
                     #[cfg(unix)]
                     // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
-                    Spans::from(format!(
+                    Line::from(format!(
                         "Number of open files: {} / {}",
                         nofile
                             .map(|c| c.to_string())
@@ -316,7 +316,7 @@ impl Monitor {
                 let statics2_text = status_v
                     .into_iter()
                     .map(|(status, count)| {
-                        Spans::from(format!("[{}] {} responses", status.as_str(), count))
+                        Line::from(format!("[{}] {} responses", status.as_str(), count))
                     })
                     .collect::<Vec<_>>();
                 let statics2 = Paragraph::new(statics2_text).block(
@@ -330,7 +330,7 @@ impl Monitor {
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
                 let errors_text = error_v
                     .into_iter()
-                    .map(|(e, count)| Spans::from(format!("[{count}] {e}")))
+                    .map(|(e, count)| Line::from(format!("[{count}] {e}")))
                     .collect::<Vec<_>>();
                 let errors = Paragraph::new(errors_text).block(
                     Block::default()

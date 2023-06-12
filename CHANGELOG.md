@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.5.9 (2023-06-12)
+
 - Fix -H Header parser
 -  Update printer #229
     -  Use percentage for Success rate summary value #228 
