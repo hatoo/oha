@@ -1,5 +1,10 @@
 # Unreleased
 
+- Fix -H Header parser
+-  Update printer #229
+    -  Use percentage for Success rate summary value #228 
+    - Latency distribution -> Response time distribution
+
 # 0.5.8 (2023-03-25)
 
 - Add `--unix-socket` on `unix` profiles for HTTP. #220
