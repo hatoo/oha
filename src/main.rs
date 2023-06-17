@@ -49,9 +49,17 @@ Examples: -z 10s -z 3m.",
     duration: Option<humantime::Duration>,
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
-    #[clap(default_value = "false", long)]
+    #[clap(
+        help = "Generate URL by rand_regex crate for each query. Currently dynamic scheme, host and port are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
+        default_value = "false",
+        long
+    )]
     rand_regex_url: bool,
-    #[clap(default_value = "4", long)]
+    #[clap(
+        help = "A parameter for the '--query_per_second'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
+        default_value = "4",
+        long
+    )]
     max_repeat: u32,
     #[clap(
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
