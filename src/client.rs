@@ -131,7 +131,6 @@ impl ClientBuilder {
                 resolver: self.resolver.clone(),
                 connect_to: self.connect_to.clone(),
             },
-            rng: StdRng::from_entropy(),
             client: None,
             timeout: self.timeout,
             http_version: self.http_version,
@@ -203,7 +202,6 @@ pub struct Client {
     headers: http::header::HeaderMap,
     body: Option<&'static [u8]>,
     dns: DNS,
-    rng: rand::rngs::StdRng,
     client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     timeout: Option<std::time::Duration>,
     redirect_limit: usize,
@@ -335,7 +333,7 @@ impl Client {
         }
     }
 
-    pub async fn work(&mut self) -> Result<RequestResult, ClientError> {
+    pub async fn work<R: Rng + Send>(&mut self, rng: &mut R) -> Result<RequestResult, ClientError> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::sleep(timeout).boxed()
         } else {
@@ -343,14 +341,14 @@ impl Client {
         };
 
         let do_req = async {
-            let url = self.url_generator.generate(&mut self.rng)?;
+            let url = self.url_generator.generate(rng)?;
             let mut start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
             let mut send_request = if let Some(send_request) = self.client.take() {
                 send_request
             } else {
-                let addr = self.dns.lookup(&url, &mut self.rng).await?;
+                let addr = self.dns.lookup(&url, rng).await?;
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr, &url).await?;
                 let dialup = std::time::Instant::now();
@@ -363,7 +361,7 @@ impl Client {
                 .is_err()
             {
                 start = std::time::Instant::now();
-                let addr = self.dns.lookup(&url, &mut self.rng).await?;
+                let addr = self.dns.lookup(&url, rng).await?;
                 let dns_lookup = std::time::Instant::now();
                 send_request = self.client(addr, &url).await?;
                 let dialup = std::time::Instant::now();
@@ -383,7 +381,7 @@ impl Client {
                     if self.redirect_limit != 0 {
                         if let Some(location) = parts.headers.get("Location") {
                             let (send_request_redirect, new_status, len) = self
-                                .redirect(send_request, &url, location, self.redirect_limit)
+                                .redirect(send_request, &url, location, self.redirect_limit, rng)
                                 .await?;
 
                             send_request = send_request_redirect;
@@ -427,12 +425,13 @@ impl Client {
     }
 
     #[allow(clippy::type_complexity)]
-    fn redirect<'a>(
+    fn redirect<'a, R: Rng + Send>(
         &'a self,
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
         base_url: &'a http::Uri,
         location: &'a http::header::HeaderValue,
         limit: usize,
+        rng: &'a mut R,
     ) -> futures::future::BoxFuture<
         'a,
         Result<
@@ -463,7 +462,7 @@ impl Client {
                     // reuse connection
                     (send_request, None)
                 } else {
-                    let addr = self.dns.lookup(&url, &mut self.rng).await?;
+                    let addr = self.dns.lookup(&url, rng).await?;
                     (self.client(addr, &url).await?, Some(send_request))
                 };
 
@@ -471,7 +470,7 @@ impl Client {
                 .await
                 .is_err()
             {
-                let addr = self.dns.lookup(&url, &mut self.rng).await?;
+                let addr = self.dns.lookup(&url, rng).await?;
                 send_request = self.client(addr, &url).await?;
             }
 
@@ -497,7 +496,7 @@ impl Client {
 
             if let Some(location) = parts.headers.get("Location") {
                 let (send_request_redirect, new_status, len) = self
-                    .redirect(send_request, &url, location, limit - 1)
+                    .redirect(send_request, &url, location, limit - 1, rng)
                     .await?;
                 send_request = send_request_redirect;
                 status = new_status;
@@ -587,11 +586,12 @@ pub async fn work(
     let futures = (0..n_workers)
         .map(|_| {
             let mut w = client_builder.build();
+            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let counter = counter.clone();
             tokio::spawn(async move {
                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                    let res = w.work().await;
+                    let res = w.work(&mut rng).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -632,11 +632,12 @@ pub async fn work_with_qps(
     let futures = (0..n_workers)
         .map(|_| {
             let mut w = client_builder.build();
+            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(()) = rx.recv_async().await {
-                    let res = w.work().await;
+                    let res = w.work(&mut rng).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -677,11 +678,12 @@ pub async fn work_with_qps_latency_correction(
     let futures = (0..n_workers)
         .map(|_| {
             let mut w = client_builder.build();
+            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(start) = rx.recv_async().await {
-                    let mut res = w.work().await;
+                    let mut res = w.work(&mut rng).await;
 
                     if let Ok(request_result) = &mut res {
                         request_result.start_latency_correction = Some(start);
@@ -713,9 +715,10 @@ pub async fn work_until(
         .map(|_| {
             let report_tx = report_tx.clone();
             let mut w = client_builder.build();
+            let mut rng = StdRng::from_entropy();
             tokio::spawn(async move {
                 loop {
-                    let res = w.work().await;
+                    let res = w.work(&mut rng).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -762,11 +765,12 @@ pub async fn work_until_with_qps(
     let futures = (0..n_workers)
         .map(|_| {
             let mut w = client_builder.build();
+            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(()) = rx.recv_async().await {
-                    let res = w.work().await;
+                    let res = w.work(&mut rng).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -814,11 +818,12 @@ pub async fn work_until_with_qps_latency_correction(
     let futures = (0..n_workers)
         .map(|_| {
             let mut w = client_builder.build();
+            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(start) = rx.recv_async().await {
-                    let mut res = w.work().await;
+                    let mut res = w.work(&mut rng).await;
 
                     if let Ok(request_result) = &mut res {
                         request_result.start_latency_correction = Some(start);

@@ -30,7 +30,7 @@ impl UrlGenerator {
 
     pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Uri>, UrlGeneratorError> {
         match self {
-            Self::Static(url) => Ok(Cow::Borrowed(&url)),
+            Self::Static(url) => Ok(Cow::Borrowed(url)),
             Self::Dynamic(regex) => Ok(Cow::Owned(Uri::from_str(
                 Distribution::<Result<String, FromUtf8Error>>::sample(regex, rng)?.as_str(),
             )?)),
