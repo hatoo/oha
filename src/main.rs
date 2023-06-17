@@ -49,13 +49,14 @@ Examples: -z 10s -z 3m.",
     duration: Option<humantime::Duration>,
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
+    #[clap(default_value = "false", long)]
+    rand_regex_url: bool,
+    #[clap(default_value = "4", long)]
+    max_repeat: u32,
     #[clap(
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
     )]
-    rand_regex_url: bool,
-    #[clap(default_value = "4")]
-    max_repeat: u32,
     latency_correction: bool,
     #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
