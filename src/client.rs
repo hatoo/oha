@@ -4,6 +4,7 @@ use rand::prelude::*;
 use std::sync::Arc;
 use thiserror::Error;
 
+use crate::url_generator::{UrlGenerator, UrlGeneratorError};
 use crate::ConnectToEntry;
 
 #[derive(Debug, Clone)]
@@ -39,8 +40,6 @@ impl RequestResult {
 
 #[allow(clippy::upper_case_acronyms)]
 struct DNS {
-    // To pick a random address from DNS.
-    rng: rand::rngs::StdRng,
     connect_to: Arc<Vec<ConnectToEntry>>,
     resolver: Arc<
         trust_dns_resolver::AsyncResolver<
@@ -54,7 +53,11 @@ struct DNS {
 
 impl DNS {
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
-    async fn lookup(&mut self, url: &http::Uri) -> Result<(std::net::IpAddr, u16), ClientError> {
+    async fn lookup<R: Rng>(
+        &self,
+        url: &http::Uri,
+        rng: &mut R,
+    ) -> Result<(std::net::IpAddr, u16), ClientError> {
         let host = url.host().ok_or(ClientError::HostNotFound)?;
         let port = get_http_port(url).ok_or(ClientError::PortNotFound)?;
 
@@ -87,9 +90,7 @@ impl DNS {
             .iter()
             .collect::<Vec<_>>();
 
-        let addr = *addrs
-            .choose(&mut self.rng)
-            .ok_or(ClientError::DNSNoRecord)?;
+        let addr = *addrs.choose(rng).ok_or(ClientError::DNSNoRecord)?;
 
         Ok((addr, port))
     }
@@ -97,7 +98,7 @@ impl DNS {
 
 pub struct ClientBuilder {
     pub http_version: http::Version,
-    pub url: http::Uri,
+    pub url_generator: UrlGenerator,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
@@ -122,15 +123,15 @@ pub struct ClientBuilder {
 impl ClientBuilder {
     pub fn build(&self) -> Client {
         Client {
-            url: self.url.clone(),
+            url_generator: self.url_generator.clone(),
             method: self.method.clone(),
             headers: self.headers.clone(),
             body: self.body,
             dns: DNS {
                 resolver: self.resolver.clone(),
                 connect_to: self.connect_to.clone(),
-                rng: rand::rngs::StdRng::from_entropy(),
             },
+            rng: StdRng::from_entropy(),
             client: None,
             timeout: self.timeout,
             http_version: self.http_version,
@@ -191,15 +192,18 @@ pub enum ClientError {
     InvalidUri(#[from] http::uri::InvalidUri),
     #[error("timeout")]
     Timeout,
+    #[error(transparent)]
+    UrlGeneratorError(#[from] UrlGeneratorError),
 }
 
 pub struct Client {
     http_version: http::Version,
-    url: http::Uri,
+    url_generator: UrlGenerator,
     method: http::Method,
     headers: http::header::HeaderMap,
     body: Option<&'static [u8]>,
     dns: DNS,
+    rng: rand::rngs::StdRng,
     client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     timeout: Option<std::time::Duration>,
     redirect_limit: usize,
@@ -212,11 +216,12 @@ pub struct Client {
 impl Client {
     #[cfg(unix)]
     async fn client(
-        &mut self,
+        &self,
         addr: (std::net::IpAddr, u16),
+        url: &http::Uri,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
-        if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-            self.tls_client(addr).await
+        if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+            self.tls_client(addr, url).await
         } else if let Some(socket_path) = &self.unix_socket {
             let stream = tokio::net::UnixStream::connect(socket_path).await?;
             let (send, conn) = hyper::client::conn::handshake(stream).await?;
@@ -234,11 +239,12 @@ impl Client {
 
     #[cfg(not(unix))]
     async fn client(
-        &mut self,
+        &self,
         addr: (std::net::IpAddr, u16),
+        url: &http::Uri,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
-        if self.url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-            self.tls_client(addr).await
+        if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+            self.tls_client(addr, url).await
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
@@ -251,8 +257,9 @@ impl Client {
 
     #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
     async fn tls_client(
-        &mut self,
+        &self,
         addr: (std::net::IpAddr, u16),
+        url: &http::Uri,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
@@ -267,7 +274,7 @@ impl Client {
         };
         let connector = tokio_native_tls::TlsConnector::from(connector);
         let stream = connector
-            .connect(self.url.host().ok_or(ClientError::HostNotFound)?, stream)
+            .connect(url.host().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
 
         let (send, conn) = hyper::client::conn::handshake(stream).await?;
@@ -277,8 +284,9 @@ impl Client {
 
     #[cfg(feature = "rustls")]
     async fn tls_client(
-        &mut self,
+        &self,
         addr: (std::net::IpAddr, u16),
+        url: &http::Uri,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
@@ -297,8 +305,7 @@ impl Client {
                 .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
         }
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-        let domain =
-            rustls::ServerName::try_from(self.url.host().ok_or(ClientError::HostNotFound)?)?;
+        let domain = rustls::ServerName::try_from(url.host().ok_or(ClientError::HostNotFound)?)?;
         let stream = connector.connect(domain, stream).await?;
 
         let (send, conn) = hyper::client::conn::handshake(stream).await?;
@@ -336,15 +343,16 @@ impl Client {
         };
 
         let do_req = async {
+            let url = self.url_generator.generate(&mut self.rng)?;
             let mut start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
             let mut send_request = if let Some(send_request) = self.client.take() {
                 send_request
             } else {
-                let addr = self.dns.lookup(&self.url).await?;
+                let addr = self.dns.lookup(&url, &mut self.rng).await?;
                 let dns_lookup = std::time::Instant::now();
-                let send_request = self.client(addr).await?;
+                let send_request = self.client(addr, &url).await?;
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
@@ -355,13 +363,13 @@ impl Client {
                 .is_err()
             {
                 start = std::time::Instant::now();
-                let addr = self.dns.lookup(&self.url).await?;
+                let addr = self.dns.lookup(&url, &mut self.rng).await?;
                 let dns_lookup = std::time::Instant::now();
-                send_request = self.client(addr).await?;
+                send_request = self.client(addr, &url).await?;
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
-            let request = self.request(&self.url)?;
+            let request = self.request(&url)?;
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
@@ -375,12 +383,7 @@ impl Client {
                     if self.redirect_limit != 0 {
                         if let Some(location) = parts.headers.get("Location") {
                             let (send_request_redirect, new_status, len) = self
-                                .redirect(
-                                    send_request,
-                                    &self.url.clone(),
-                                    location,
-                                    self.redirect_limit,
-                                )
+                                .redirect(send_request, &url, location, self.redirect_limit)
                                 .await?;
 
                             send_request = send_request_redirect;
@@ -425,7 +428,7 @@ impl Client {
 
     #[allow(clippy::type_complexity)]
     fn redirect<'a>(
-        &'a mut self,
+        &'a self,
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
         base_url: &'a http::Uri,
         location: &'a http::header::HeaderValue,
@@ -460,20 +463,20 @@ impl Client {
                     // reuse connection
                     (send_request, None)
                 } else {
-                    let addr = self.dns.lookup(&url).await?;
-                    (self.client(addr).await?, Some(send_request))
+                    let addr = self.dns.lookup(&url, &mut self.rng).await?;
+                    (self.client(addr, &url).await?, Some(send_request))
                 };
 
             while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
                 .await
                 .is_err()
             {
-                let addr = self.dns.lookup(&url).await?;
-                send_request = self.client(addr).await?;
+                let addr = self.dns.lookup(&url, &mut self.rng).await?;
+                send_request = self.client(addr, &url).await?;
             }
 
             let mut request = self.request(&url)?;
-            if url.authority() != self.url.authority() {
+            if url.authority() != base_url.authority() {
                 request.headers_mut().insert(
                     http::header::HOST,
                     http::HeaderValue::from_str(

@@ -5,6 +5,7 @@ use rand::prelude::*;
 use rand_regex::Regex;
 use thiserror::Error;
 
+#[derive(Clone, Debug)]
 pub enum UrlGenerator {
     Static(Uri),
     Dynamic(Regex),
@@ -23,8 +24,8 @@ impl UrlGenerator {
         Self::Static(url)
     }
 
-    pub fn new_dynamic(url: Regex) -> Self {
-        Self::Dynamic(url)
+    pub fn new_dynamic(regex: Regex) -> Self {
+        Self::Dynamic(regex)
     }
 
     pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Uri>, UrlGeneratorError> {

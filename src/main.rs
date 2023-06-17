@@ -3,9 +3,13 @@ use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
+use http::Uri;
 use printer::PrintMode;
+use rand::prelude::*;
+use rand_regex::Regex;
 use std::sync::Arc;
 use std::{io::Read, str::FromStr};
+use url_generator::UrlGenerator;
 
 mod client;
 mod histogram;
@@ -24,7 +28,7 @@ use client::{ClientError, RequestResult};
 #[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
 struct Opts {
     #[clap(help = "Target URL.")]
-    url: http::Uri,
+    url: String,
     #[structopt(
         help = "Number of requests to run.",
         short = 'n',
@@ -49,6 +53,9 @@ Examples: -z 10s -z 3m.",
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
     )]
+    rand_regex_url: bool,
+    #[clap(default_value = "4")]
+    max_repeat: u32,
     latency_correction: bool,
     #[clap(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
@@ -180,6 +187,14 @@ async fn main() -> anyhow::Result<()> {
         http::Version::HTTP_11
     };
 
+    let url_generator = if opts.rand_regex_url {
+        UrlGenerator::new_dynamic(Regex::compile(&opts.url, opts.max_repeat)?)
+    } else {
+        UrlGenerator::new_static(Uri::from_str(&opts.url)?)
+    };
+
+    let url = url_generator.generate(&mut thread_rng())?;
+
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
 
@@ -200,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
         headers.insert(
             http::header::HOST,
             http::header::HeaderValue::from_str(
-                opts.url.authority().context("get authority")?.as_str(),
+                url.authority().context("get authority")?.as_str(),
             )?,
         );
 
@@ -367,7 +382,7 @@ async fn main() -> anyhow::Result<()> {
     // client_builder builds client for each workers
     let client_builder = client::ClientBuilder {
         http_version,
-        url: opts.url,
+        url_generator,
         method: opts.method,
         headers,
         body,
