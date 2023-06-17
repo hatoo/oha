@@ -101,7 +101,7 @@ async fn get_query(p: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-async fn get_query_rand_regex(p: &'static str) -> String {
+async fn get_path_rand_regex(p: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
     let report_headers = warp::path!(String).map(move |path: String| {
         tx.send(path).unwrap();
@@ -416,7 +416,7 @@ async fn test_query() {
 
 #[tokio::test]
 async fn test_query_rand_regex() {
-    let query = get_query_rand_regex("[a-z][0-9][a-z]").await;
+    let query = get_path_rand_regex("[a-z][0-9][a-z]").await;
     let chars = query.chars().collect::<Vec<char>>();
     assert_eq!(chars.len(), 3);
     assert!(chars[0].is_ascii_lowercase());
