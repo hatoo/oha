@@ -61,6 +61,8 @@ Options:
   -z <DURATION>                      Duration of application to send requests. If duration is specified, n is ignored.
                                      Examples: -z 10s -z 3m.
   -q <QUERY_PER_SECOND>              Rate limit for all, in queries per second (QPS)
+      --rand-regex-url               Generate URL by rand_regex crate for each query e.g. http://localhost/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
+      --max-repeat <MAX_REPEAT>      A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become. [default: 4]
       --latency-correction           Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.
       --no-tui                       No realtime tui
   -j, --json                         Print results as JSON
