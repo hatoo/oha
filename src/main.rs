@@ -12,6 +12,7 @@ mod histogram;
 mod monitor;
 mod printer;
 mod timescale;
+mod url_generator;
 
 #[cfg(all(target_env = "musl", target_pointer_width = "64"))]
 #[global_allocator]
