@@ -1017,6 +1017,7 @@ dependencies = [
  "rand",
  "rand_regex",
  "ratatui",
+ "regex-syntax",
  "rlimit",
  "rustls",
  "rustls-native-certs",

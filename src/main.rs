@@ -50,7 +50,7 @@ Examples: -z 10s -z 3m.",
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
     #[clap(
-        help = "Generate URL by rand_regex crate for each query e.g. http://localhost/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
+        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
         default_value = "false",
         long
     )]
@@ -197,7 +197,19 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let url_generator = if opts.rand_regex_url {
-        UrlGenerator::new_dynamic(Regex::compile(&opts.url, opts.max_repeat)?)
+        // Almost URL has dot in domain, so disable dot in regex for convenience.
+        let dot_disabled: String = opts
+            .url
+            .chars()
+            .map(|c| {
+                if c == '.' {
+                    regex_syntax::escape(".")
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect();
+        UrlGenerator::new_dynamic(Regex::compile(&dot_disabled, opts.max_repeat)?)
     } else {
         UrlGenerator::new_static(Uri::from_str(&opts.url)?)
     };

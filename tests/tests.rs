@@ -118,7 +118,7 @@ async fn get_path_rand_regex(p: &'static str) -> String {
         Command::cargo_bin("oha")
             .unwrap()
             .args(["-n", "1", "--no-tui", "--rand-regex-url"])
-            .arg(format!(r"http://127\.0\.0\.1:{port}/{p}"))
+            .arg(format!(r"http://127.0.0.1:{port}/{p}"))
             .assert()
             .success();
     })
