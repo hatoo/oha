@@ -13,8 +13,8 @@ pub enum UrlGenerator {
 
 #[derive(Error, Debug)]
 pub enum UrlGeneratorError {
-    #[error(transparent)]
-    InvalidUri(#[from] InvalidUri),
+    #[error("{0}, generated url: {1}")]
+    InvalidUri(InvalidUri, String),
     #[error(transparent)]
     FromUtf8Error(#[from] FromUtf8Error),
 }
@@ -31,9 +31,12 @@ impl UrlGenerator {
     pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Uri>, UrlGeneratorError> {
         match self {
             Self::Static(url) => Ok(Cow::Borrowed(url)),
-            Self::Dynamic(regex) => Ok(Cow::Owned(Uri::from_str(
-                Distribution::<Result<String, FromUtf8Error>>::sample(regex, rng)?.as_str(),
-            )?)),
+            Self::Dynamic(regex) => {
+                let generated = Distribution::<Result<String, FromUtf8Error>>::sample(regex, rng)?;
+                Ok(Cow::Owned(Uri::from_str(generated.as_str()).map_err(
+                    |e| UrlGeneratorError::InvalidUri(e, generated),
+                )?))
+            }
         }
     }
 }
