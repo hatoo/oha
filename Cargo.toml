@@ -53,10 +53,10 @@ trust-dns-resolver = "0.22.0"
 rand_regex = "0.15.1"
 regex-syntax = "0.6.22"
 url = "2.4.0"
-jemallocator = "0.5.0"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.9.0"
+jemallocator = "0.5.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.2"
