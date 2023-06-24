@@ -3,6 +3,7 @@ use futures::StreamExt;
 use rand::prelude::*;
 use std::sync::Arc;
 use thiserror::Error;
+use url::{ParseError, Url};
 
 use crate::url_generator::{UrlGenerator, UrlGeneratorError};
 use crate::ConnectToEntry;
@@ -55,11 +56,13 @@ impl DNS {
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
     async fn lookup<R: Rng>(
         &self,
-        url: &http::Uri,
+        url: &Url,
         rng: &mut R,
     ) -> Result<(std::net::IpAddr, u16), ClientError> {
-        let host = url.host().ok_or(ClientError::HostNotFound)?;
-        let port = get_http_port(url).ok_or(ClientError::PortNotFound)?;
+        let host = url.host_str().ok_or(ClientError::HostNotFound)?;
+        let port = url
+            .port_or_known_default()
+            .ok_or(ClientError::PortNotFound)?;
 
         // Try to find an override (passed via `--connect-to`) that applies to this (host, port)
         let (host, port) = if let Some(entry) = self
@@ -149,8 +152,6 @@ pub enum ClientError {
     PortNotFound,
     #[error("failed to get host from URL")]
     HostNotFound,
-    #[error("failed to get path and query from URL")]
-    PathAndQueryNotFound,
     #[error("No record returned from DNS")]
     DNSNoRecord,
     #[error("Redirection limit has reached")]
@@ -179,8 +180,6 @@ pub enum ClientError {
     HyperError(#[from] hyper::Error),
     #[error(transparent)]
     InvalidUriParts(#[from] http::uri::InvalidUriParts),
-    #[error("Authority is missing. This is a bug.")]
-    MissingAuthority,
     #[error(transparent)]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("Failed to get header from builder")]
@@ -193,6 +192,8 @@ pub enum ClientError {
     Timeout,
     #[error(transparent)]
     UrlGeneratorError(#[from] UrlGeneratorError),
+    #[error(transparent)]
+    UrlParseError(#[from] ParseError),
 }
 
 pub struct Client {
@@ -216,9 +217,9 @@ impl Client {
     async fn client(
         &self,
         addr: (std::net::IpAddr, u16),
-        url: &http::Uri,
+        url: &Url,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
-        if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+        if url.scheme() == "https" {
             self.tls_client(addr, url).await
         } else if let Some(socket_path) = &self.unix_socket {
             let stream = tokio::net::UnixStream::connect(socket_path).await?;
@@ -239,9 +240,9 @@ impl Client {
     async fn client(
         &self,
         addr: (std::net::IpAddr, u16),
-        url: &http::Uri,
+        url: &Url,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
-        if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
+        if url.scheme() == "https" {
             self.tls_client(addr, url).await
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
@@ -257,7 +258,7 @@ impl Client {
     async fn tls_client(
         &self,
         addr: (std::net::IpAddr, u16),
-        url: &http::Uri,
+        url: &Url,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
@@ -272,7 +273,7 @@ impl Client {
         };
         let connector = tokio_native_tls::TlsConnector::from(connector);
         let stream = connector
-            .connect(url.host().ok_or(ClientError::HostNotFound)?, stream)
+            .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
 
         let (send, conn) = hyper::client::conn::handshake(stream).await?;
@@ -284,7 +285,7 @@ impl Client {
     async fn tls_client(
         &self,
         addr: (std::net::IpAddr, u16),
-        url: &http::Uri,
+        url: &Url,
     ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
@@ -303,7 +304,8 @@ impl Client {
                 .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
         }
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-        let domain = rustls::ServerName::try_from(url.host().ok_or(ClientError::HostNotFound)?)?;
+        let domain =
+            rustls::ServerName::try_from(url.host_str().ok_or(ClientError::HostNotFound)?)?;
         let stream = connector.connect(domain, stream).await?;
 
         let (send, conn) = hyper::client::conn::handshake(stream).await?;
@@ -311,13 +313,9 @@ impl Client {
         Ok(send)
     }
 
-    fn request(&self, url: &http::Uri) -> Result<http::Request<hyper::Body>, ClientError> {
+    fn request(&self, url: &Url) -> Result<http::Request<hyper::Body>, ClientError> {
         let mut builder = http::Request::builder()
-            .uri(
-                url.path_and_query()
-                    .ok_or(ClientError::PathAndQueryNotFound)?
-                    .as_str(),
-            )
+            .uri(url.as_str())
             .method(self.method.clone())
             .version(self.http_version);
 
@@ -428,7 +426,7 @@ impl Client {
     fn redirect<'a, R: Rng + Send>(
         &'a self,
         send_request: hyper::client::conn::SendRequest<hyper::Body>,
-        base_url: &'a http::Uri,
+        base_url: &'a Url,
         location: &'a http::header::HeaderValue,
         limit: usize,
         rng: &'a mut R,
@@ -447,14 +445,12 @@ impl Client {
             if limit == 0 {
                 return Err(ClientError::TooManyRedirect);
             }
-            let url: http::Uri = location.to_str()?.parse()?;
-            let url = if url.authority().is_none() {
-                // location was relative url
-                let mut parts = base_url.clone().into_parts();
-                parts.path_and_query = url.path_and_query().cloned();
-                http::Uri::from_parts(parts)?
-            } else {
-                url
+            let url = match Url::parse(location.to_str()?) {
+                Ok(url) => url,
+                Err(ParseError::RelativeUrlWithoutBase) => Url::options()
+                    .base_url(Some(base_url))
+                    .parse(location.to_str()?)?,
+                Err(err) => Err(err)?,
             };
 
             let (mut send_request, send_request_base) =
@@ -478,11 +474,7 @@ impl Client {
             if url.authority() != base_url.authority() {
                 request.headers_mut().insert(
                     http::header::HOST,
-                    http::HeaderValue::from_str(
-                        url.authority()
-                            .ok_or(ClientError::MissingAuthority)?
-                            .as_str(),
-                    )?,
+                    http::HeaderValue::from_str(url.authority())?,
                 );
             }
             let res = send_request.send_request(request).await?;
@@ -548,18 +540,6 @@ impl rustls::client::ServerCertVerifier for AcceptAnyServerCert {
     ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::HandshakeSignatureValid::assertion())
     }
-}
-
-fn get_http_port(url: &http::Uri) -> Option<u16> {
-    url.port_u16().or_else(|| {
-        if url.scheme() == Some(&http::uri::Scheme::HTTP) {
-            Some(80)
-        } else if url.scheme() == Some(&http::uri::Scheme::HTTPS) {
-            Some(443)
-        } else {
-            None
-        }
-    })
 }
 
 /// Check error was "Too many open file"

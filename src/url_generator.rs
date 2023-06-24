@@ -1,26 +1,26 @@
-use std::{borrow::Cow, str::FromStr, string::FromUtf8Error};
+use std::{borrow::Cow, string::FromUtf8Error};
 
-use http::{uri::InvalidUri, Uri};
 use rand::prelude::*;
 use rand_regex::Regex;
 use thiserror::Error;
+use url::{ParseError, Url};
 
 #[derive(Clone, Debug)]
 pub enum UrlGenerator {
-    Static(Uri),
+    Static(Url),
     Dynamic(Regex),
 }
 
 #[derive(Error, Debug)]
 pub enum UrlGeneratorError {
     #[error("{0}, generated url: {1}")]
-    InvalidUri(InvalidUri, String),
+    ParseError(ParseError, String),
     #[error(transparent)]
     FromUtf8Error(#[from] FromUtf8Error),
 }
 
 impl UrlGenerator {
-    pub fn new_static(url: Uri) -> Self {
+    pub fn new_static(url: Url) -> Self {
         Self::Static(url)
     }
 
@@ -28,14 +28,14 @@ impl UrlGenerator {
         Self::Dynamic(regex)
     }
 
-    pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Uri>, UrlGeneratorError> {
+    pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Url>, UrlGeneratorError> {
         match self {
             Self::Static(url) => Ok(Cow::Borrowed(url)),
             Self::Dynamic(regex) => {
                 let generated = Distribution::<Result<String, FromUtf8Error>>::sample(regex, rng)?;
-                Ok(Cow::Owned(Uri::from_str(generated.as_str()).map_err(
-                    |e| UrlGeneratorError::InvalidUri(e, generated),
-                )?))
+                Ok(Cow::Owned(Url::parse(generated.as_str()).map_err(|e| {
+                    UrlGeneratorError::ParseError(e, generated)
+                })?))
             }
         }
     }
