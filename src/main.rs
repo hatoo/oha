@@ -50,7 +50,7 @@ Examples: -z 10s -z 3m.",
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
     #[clap(
-        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
+        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
         default_value = "false",
         long
     )]
