@@ -1028,6 +1028,7 @@ dependencies = [
  "tokio-native-tls",
  "tokio-rustls",
  "trust-dns-resolver",
+ "url",
  "warp",
 ]
 

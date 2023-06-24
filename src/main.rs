@@ -1,14 +1,13 @@
-use anyhow::Context;
 use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
-use http::Uri;
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
 use std::sync::Arc;
 use std::{io::Read, str::FromStr};
+use url::Url;
 use url_generator::UrlGenerator;
 
 mod client;
@@ -50,7 +49,7 @@ Examples: -z 10s -z 3m.",
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
     #[clap(
-        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
+        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
         default_value = "false",
         long
     )]
@@ -211,7 +210,7 @@ async fn main() -> anyhow::Result<()> {
             .collect();
         UrlGenerator::new_dynamic(Regex::compile(&dot_disabled, opts.max_repeat)?)
     } else {
-        UrlGenerator::new_static(Uri::from_str(&opts.url)?)
+        UrlGenerator::new_static(Url::parse(&opts.url)?)
     };
 
     let url = url_generator.generate(&mut thread_rng())?;
@@ -235,9 +234,7 @@ async fn main() -> anyhow::Result<()> {
 
         headers.insert(
             http::header::HOST,
-            http::header::HeaderValue::from_str(
-                url.authority().context("get authority")?.as_str(),
-            )?,
+            http::header::HeaderValue::from_str(url.authority())?,
         );
 
         headers.extend(

@@ -1,5 +1,6 @@
 # Unreleased
 
+- Support IDNA #236
 - Support randomly generated URL using rand_regex crate
 
 # 0.5.9 (2023-06-12)
