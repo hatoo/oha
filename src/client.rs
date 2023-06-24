@@ -39,20 +39,17 @@ impl RequestResult {
     }
 }
 
-#[allow(clippy::upper_case_acronyms)]
-struct DNS {
-    connect_to: Arc<Vec<ConnectToEntry>>,
-    resolver: Arc<
-        trust_dns_resolver::AsyncResolver<
-            trust_dns_resolver::name_server::GenericConnection,
-            trust_dns_resolver::name_server::GenericConnectionProvider<
-                trust_dns_resolver::name_server::TokioRuntime,
-            >,
+pub struct Dns {
+    pub connect_to: Vec<ConnectToEntry>,
+    pub resolver: trust_dns_resolver::AsyncResolver<
+        trust_dns_resolver::name_server::GenericConnection,
+        trust_dns_resolver::name_server::GenericConnectionProvider<
+            trust_dns_resolver::name_server::TokioRuntime,
         >,
     >,
 }
 
-impl DNS {
+impl Dns {
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
     async fn lookup<R: Rng>(
         &self,
@@ -96,53 +93,6 @@ impl DNS {
         let addr = *addrs.choose(rng).ok_or(ClientError::DNSNoRecord)?;
 
         Ok((addr, port))
-    }
-}
-
-pub struct ClientBuilder {
-    pub http_version: http::Version,
-    pub url_generator: UrlGenerator,
-    pub method: http::Method,
-    pub headers: http::header::HeaderMap,
-    pub body: Option<&'static [u8]>,
-    pub timeout: Option<std::time::Duration>,
-    pub redirect_limit: usize,
-    /// always discard when used a connection.
-    pub disable_keepalive: bool,
-    pub connect_to: Arc<Vec<ConnectToEntry>>,
-    pub resolver: Arc<
-        trust_dns_resolver::AsyncResolver<
-            trust_dns_resolver::name_server::GenericConnection,
-            trust_dns_resolver::name_server::GenericConnectionProvider<
-                trust_dns_resolver::name_server::TokioRuntime,
-            >,
-        >,
-    >,
-    pub insecure: bool,
-    #[cfg(unix)]
-    pub unix_socket: Option<std::path::PathBuf>,
-}
-
-impl ClientBuilder {
-    pub fn build(&self) -> Client {
-        Client {
-            url_generator: self.url_generator.clone(),
-            method: self.method.clone(),
-            headers: self.headers.clone(),
-            body: self.body,
-            dns: DNS {
-                resolver: self.resolver.clone(),
-                connect_to: self.connect_to.clone(),
-            },
-            client: None,
-            timeout: self.timeout,
-            http_version: self.http_version,
-            redirect_limit: self.redirect_limit,
-            disable_keepalive: self.disable_keepalive,
-            insecure: self.insecure,
-            #[cfg(unix)]
-            unix_socket: self.unix_socket.clone(),
-        }
     }
 }
 
@@ -197,19 +147,33 @@ pub enum ClientError {
 }
 
 pub struct Client {
-    http_version: http::Version,
-    url_generator: UrlGenerator,
-    method: http::Method,
-    headers: http::header::HeaderMap,
-    body: Option<&'static [u8]>,
-    dns: DNS,
-    client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
-    timeout: Option<std::time::Duration>,
-    redirect_limit: usize,
-    disable_keepalive: bool,
-    insecure: bool,
+    pub http_version: http::Version,
+    pub url_generator: UrlGenerator,
+    pub method: http::Method,
+    pub headers: http::header::HeaderMap,
+    pub body: Option<&'static [u8]>,
+    pub dns: Dns,
+    // client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+    pub timeout: Option<std::time::Duration>,
+    pub redirect_limit: usize,
+    pub disable_keepalive: bool,
+    pub insecure: bool,
     #[cfg(unix)]
     pub unix_socket: Option<std::path::PathBuf>,
+}
+
+struct ClientState {
+    rng: StdRng,
+    send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+}
+
+impl Default for ClientState {
+    fn default() -> Self {
+        Self {
+            rng: StdRng::from_entropy(),
+            send_request: None,
+        }
+    }
 }
 
 impl Client {
@@ -319,10 +283,9 @@ impl Client {
             .method(self.method.clone())
             .version(self.http_version);
 
-        builder
+        *builder
             .headers_mut()
-            .ok_or(ClientError::GetHeaderFromBuilderError)?
-            .extend(self.headers.iter().map(|(k, v)| (k.clone(), v.clone())));
+            .ok_or(ClientError::GetHeaderFromBuilderError)? = self.headers.clone();
 
         if let Some(body) = self.body {
             Ok(builder.body(hyper::Body::from(body))?)
@@ -331,7 +294,7 @@ impl Client {
         }
     }
 
-    pub async fn work<R: Rng + Send>(&mut self, rng: &mut R) -> Result<RequestResult, ClientError> {
+    async fn work(&self, client_state: &mut ClientState) -> Result<RequestResult, ClientError> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::sleep(timeout).boxed()
         } else {
@@ -339,14 +302,14 @@ impl Client {
         };
 
         let do_req = async {
-            let url = self.url_generator.generate(rng)?;
+            let url = self.url_generator.generate(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
-            let mut send_request = if let Some(send_request) = self.client.take() {
+            let mut send_request = if let Some(send_request) = client_state.send_request.take() {
                 send_request
             } else {
-                let addr = self.dns.lookup(&url, rng).await?;
+                let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
                 let dns_lookup = std::time::Instant::now();
                 let send_request = self.client(addr, &url).await?;
                 let dialup = std::time::Instant::now();
@@ -359,7 +322,7 @@ impl Client {
                 .is_err()
             {
                 start = std::time::Instant::now();
-                let addr = self.dns.lookup(&url, rng).await?;
+                let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
                 let dns_lookup = std::time::Instant::now();
                 send_request = self.client(addr, &url).await?;
                 let dialup = std::time::Instant::now();
@@ -379,7 +342,13 @@ impl Client {
                     if self.redirect_limit != 0 {
                         if let Some(location) = parts.headers.get("Location") {
                             let (send_request_redirect, new_status, len) = self
-                                .redirect(send_request, &url, location, self.redirect_limit, rng)
+                                .redirect(
+                                    send_request,
+                                    &url,
+                                    location,
+                                    self.redirect_limit,
+                                    &mut client_state.rng,
+                                )
                                 .await?;
 
                             send_request = send_request_redirect;
@@ -400,13 +369,13 @@ impl Client {
                     };
 
                     if !self.disable_keepalive {
-                        self.client = Some(send_request);
+                        client_state.send_request = Some(send_request);
                     }
 
                     Ok::<_, ClientError>(result)
                 }
                 Err(e) => {
-                    self.client = Some(send_request);
+                    client_state.send_request = Some(send_request);
                     Err(e.into())
                 }
             }
@@ -555,7 +524,7 @@ fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
 
 /// Run n tasks by m workers
 pub async fn work(
-    client_builder: ClientBuilder,
+    client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_workers: usize,
@@ -563,15 +532,17 @@ pub async fn work(
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
+    let client = Arc::new(client);
+
     let futures = (0..n_workers)
         .map(|_| {
-            let mut w = client_builder.build();
-            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let counter = counter.clone();
+            let client = client.clone();
             tokio::spawn(async move {
+                let mut client_state = ClientState::default();
                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                    let res = w.work(&mut rng).await;
+                    let res = client.work(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -589,7 +560,7 @@ pub async fn work(
 
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
-    client_builder: ClientBuilder,
+    client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     qps: usize,
     n_tasks: usize,
@@ -609,15 +580,17 @@ pub async fn work_with_qps(
         // tx gone
     });
 
+    let client = Arc::new(client);
+
     let futures = (0..n_workers)
         .map(|_| {
-            let mut w = client_builder.build();
-            let mut rng = StdRng::from_entropy();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
+            let client = client.clone();
             tokio::spawn(async move {
+                let mut client_state = ClientState::default();
                 while let Ok(()) = rx.recv_async().await {
-                    let res = w.work(&mut rng).await;
+                    let res = client.work(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -635,7 +608,7 @@ pub async fn work_with_qps(
 
 /// n tasks by m workers limit to qps works in a second with latency correction
 pub async fn work_with_qps_latency_correction(
-    client_builder: ClientBuilder,
+    client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     qps: usize,
     n_tasks: usize,
@@ -655,15 +628,17 @@ pub async fn work_with_qps_latency_correction(
         // tx gone
     });
 
+    let client = Arc::new(client);
+
     let futures = (0..n_workers)
         .map(|_| {
-            let mut w = client_builder.build();
-            let mut rng = StdRng::from_entropy();
+            let client = client.clone();
+            let mut client_state = ClientState::default();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(start) = rx.recv_async().await {
-                    let mut res = w.work(&mut rng).await;
+                    let mut res = client.work(&mut client_state).await;
 
                     if let Ok(request_result) = &mut res {
                         request_result.start_latency_correction = Some(start);
@@ -686,19 +661,20 @@ pub async fn work_with_qps_latency_correction(
 
 /// Run until dead_line by n workers
 pub async fn work_until(
-    client_builder: ClientBuilder,
+    client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
+    let client = Arc::new(client);
     let futures = (0..n_workers)
         .map(|_| {
+            let client = client.clone();
             let report_tx = report_tx.clone();
-            let mut w = client_builder.build();
-            let mut rng = StdRng::from_entropy();
+            let mut client_state = ClientState::default();
             tokio::spawn(async move {
                 loop {
-                    let res = w.work(&mut rng).await;
+                    let res = client.work(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -717,7 +693,7 @@ pub async fn work_until(
 
 /// Run until dead_line by n workers limit to qps works in a second
 pub async fn work_until_with_qps(
-    client_builder: ClientBuilder,
+    client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     qps: usize,
     start: std::time::Instant,
@@ -742,15 +718,17 @@ pub async fn work_until_with_qps(
         // tx gone
     });
 
+    let client = Arc::new(client);
+
     let futures = (0..n_workers)
         .map(|_| {
-            let mut w = client_builder.build();
-            let mut rng = StdRng::from_entropy();
+            let client = client.clone();
+            let mut client_state = ClientState::default();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(()) = rx.recv_async().await {
-                    let res = w.work(&mut rng).await;
+                    let res = client.work(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -769,7 +747,7 @@ pub async fn work_until_with_qps(
 
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
 pub async fn work_until_with_qps_latency_correction(
-    client_builder: ClientBuilder,
+    client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     qps: usize,
     start: std::time::Instant,
@@ -795,15 +773,17 @@ pub async fn work_until_with_qps_latency_correction(
         // tx gone
     });
 
+    let client = Arc::new(client);
+
     let futures = (0..n_workers)
         .map(|_| {
-            let mut w = client_builder.build();
-            let mut rng = StdRng::from_entropy();
+            let client = client.clone();
+            let mut client_state = ClientState::default();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(start) = rx.recv_async().await {
-                    let mut res = w.work(&mut rng).await;
+                    let mut res = client.work(&mut client_state).await;
 
                     if let Ok(request_result) = &mut res {
                         request_result.start_latency_correction = Some(start);

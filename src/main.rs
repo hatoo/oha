@@ -5,7 +5,6 @@ use http::header::{HeaderName, HeaderValue};
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
-use std::sync::Arc;
 use std::{io::Read, str::FromStr};
 use url::Url;
 use url_generator::UrlGenerator;
@@ -17,7 +16,7 @@ mod printer;
 mod timescale;
 mod url_generator;
 
-#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[cfg(unix)]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
@@ -398,36 +397,32 @@ async fn main() -> anyhow::Result<()> {
     let resolver = trust_dns_resolver::AsyncResolver::tokio(config, resolver_opts)?;
 
     // client_builder builds client for each workers
-    let client_builder = client::ClientBuilder {
+    let client = client::Client {
         http_version,
         url_generator,
         method: opts.method,
         headers,
         body,
-        resolver: Arc::new(resolver),
+        dns: client::Dns {
+            resolver,
+            connect_to: opts.connect_to,
+        },
         timeout: opts.timeout.map(|d| d.into()),
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
-        connect_to: Arc::new(opts.connect_to),
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {
             Some(0) | None => {
-                client::work_until(
-                    client_builder,
-                    result_tx,
-                    start + duration.into(),
-                    opts.n_workers,
-                )
-                .await
+                client::work_until(client, result_tx, start + duration.into(), opts.n_workers).await
             }
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_until_with_qps_latency_correction(
-                        client_builder,
+                        client,
                         result_tx,
                         qps,
                         start,
@@ -437,7 +432,7 @@ async fn main() -> anyhow::Result<()> {
                     .await
                 } else {
                     client::work_until_with_qps(
-                        client_builder,
+                        client,
                         result_tx,
                         qps,
                         start,
@@ -451,12 +446,12 @@ async fn main() -> anyhow::Result<()> {
     } else {
         match opts.query_per_second {
             Some(0) | None => {
-                client::work(client_builder, result_tx, opts.n_requests, opts.n_workers).await
+                client::work(client, result_tx, opts.n_requests, opts.n_workers).await
             }
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_with_qps_latency_correction(
-                        client_builder,
+                        client,
                         result_tx,
                         qps,
                         opts.n_requests,
@@ -464,14 +459,8 @@ async fn main() -> anyhow::Result<()> {
                     )
                     .await
                 } else {
-                    client::work_with_qps(
-                        client_builder,
-                        result_tx,
-                        qps,
-                        opts.n_requests,
-                        opts.n_workers,
-                    )
-                    .await
+                    client::work_with_qps(client, result_tx, qps, opts.n_requests, opts.n_workers)
+                        .await
                 }
             }
         }
