@@ -402,7 +402,7 @@ async fn main() -> anyhow::Result<()> {
         method: opts.method,
         headers,
         body,
-        dns: client::DNS {
+        dns: client::Dns {
             resolver,
             connect_to: opts.connect_to,
         },

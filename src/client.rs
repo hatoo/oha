@@ -39,8 +39,7 @@ impl RequestResult {
     }
 }
 
-#[allow(clippy::upper_case_acronyms)]
-pub struct DNS {
+pub struct Dns {
     pub connect_to: Vec<ConnectToEntry>,
     pub resolver: trust_dns_resolver::AsyncResolver<
         trust_dns_resolver::name_server::GenericConnection,
@@ -50,7 +49,7 @@ pub struct DNS {
     >,
 }
 
-impl DNS {
+impl Dns {
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
     async fn lookup<R: Rng>(
         &self,
@@ -153,7 +152,7 @@ pub struct Client {
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
-    pub dns: DNS,
+    pub dns: Dns,
     // client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     pub timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
