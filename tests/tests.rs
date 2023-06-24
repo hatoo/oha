@@ -101,6 +101,33 @@ async fn get_query(p: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
+async fn get_path_rand_regex(p: &'static str) -> String {
+    let (tx, rx) = flume::unbounded();
+    let report_headers = warp::path!(String).map(move |path: String| {
+        tx.send(path).unwrap();
+        "Hello World"
+    });
+
+    let _guard = PORT_LOCK.lock().await;
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(["-n", "1", "--no-tui", "--rand-regex-url"])
+            .arg(format!(r"http://127.0.0.1:{port}/{p}"))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
+}
+
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = flume::unbounded();
     let _guard = PORT_LOCK.lock().await;
@@ -385,6 +412,16 @@ async fn test_query() {
         get_query("index?a=b&c=d").await,
         "index?a=b&c=d".to_string()
     );
+}
+
+#[tokio::test]
+async fn test_query_rand_regex() {
+    let query = get_path_rand_regex("[a-z][0-9][a-z]").await;
+    let chars = query.chars().collect::<Vec<char>>();
+    assert_eq!(chars.len(), 3);
+    assert!(chars[0].is_ascii_lowercase());
+    assert!(chars[1].is_ascii_digit());
+    assert!(chars[2].is_ascii_lowercase());
 }
 
 #[tokio::test]

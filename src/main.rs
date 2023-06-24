@@ -3,15 +3,20 @@ use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
+use http::Uri;
 use printer::PrintMode;
+use rand::prelude::*;
+use rand_regex::Regex;
 use std::sync::Arc;
 use std::{io::Read, str::FromStr};
+use url_generator::UrlGenerator;
 
 mod client;
 mod histogram;
 mod monitor;
 mod printer;
 mod timescale;
+mod url_generator;
 
 #[cfg(all(target_env = "musl", target_pointer_width = "64"))]
 #[global_allocator]
@@ -23,7 +28,7 @@ use client::{ClientError, RequestResult};
 #[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
 struct Opts {
     #[clap(help = "Target URL.")]
-    url: http::Uri,
+    url: String,
     #[structopt(
         help = "Number of requests to run.",
         short = 'n',
@@ -44,6 +49,18 @@ Examples: -z 10s -z 3m.",
     duration: Option<humantime::Duration>,
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
+    #[clap(
+        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
+        default_value = "false",
+        long
+    )]
+    rand_regex_url: bool,
+    #[clap(
+        help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
+        default_value = "4",
+        long
+    )]
+    max_repeat: u32,
     #[clap(
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
@@ -179,6 +196,26 @@ async fn main() -> anyhow::Result<()> {
         http::Version::HTTP_11
     };
 
+    let url_generator = if opts.rand_regex_url {
+        // Almost URL has dot in domain, so disable dot in regex for convenience.
+        let dot_disabled: String = opts
+            .url
+            .chars()
+            .map(|c| {
+                if c == '.' {
+                    regex_syntax::escape(".")
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect();
+        UrlGenerator::new_dynamic(Regex::compile(&dot_disabled, opts.max_repeat)?)
+    } else {
+        UrlGenerator::new_static(Uri::from_str(&opts.url)?)
+    };
+
+    let url = url_generator.generate(&mut thread_rng())?;
+
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
 
@@ -199,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
         headers.insert(
             http::header::HOST,
             http::header::HeaderValue::from_str(
-                opts.url.authority().context("get authority")?.as_str(),
+                url.authority().context("get authority")?.as_str(),
             )?,
         );
 
@@ -366,7 +403,7 @@ async fn main() -> anyhow::Result<()> {
     // client_builder builds client for each workers
     let client_builder = client::ClientBuilder {
         http_version,
-        url: opts.url,
+        url_generator,
         method: opts.method,
         headers,
         body,

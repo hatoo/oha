@@ -10,6 +10,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable, beta, nightly]
+        additional_args: ["", "--no-default-features --features rustls"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -20,6 +21,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+          args: ${{ matrix.additional_args }}
 
   test:
     name: Test Suite
@@ -28,6 +30,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable, beta, nightly]
+        additional_args: ["", "--no-default-features --features rustls"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -38,6 +41,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: ${{ matrix.additional_args }}
 
   fmt:
     name: Rustfmt
