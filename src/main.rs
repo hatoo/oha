@@ -247,8 +247,7 @@ async fn main() -> anyhow::Result<()> {
                     let value = HeaderValue::from_str(header[1].trim_start_matches(' '))?;
                     Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
                 })
-                .collect::<anyhow::Result<Vec<_>>>()?
-                .into_iter(),
+                .collect::<anyhow::Result<Vec<_>>>()?,
         );
 
         if let Some(h) = opts.accept_header {
