@@ -31,7 +31,7 @@ libc = "0.2.147"
 serde = {version = "1.0.142", features = ["derive"]}
 serde_json = "1.0"
 thiserror = "1.0.16"
-tokio = {version = "1.14.0", features = ["full"]}
+tokio = {version = "1.29.1", features = ["full"]}
 tui = {package = "ratatui", version = "0.21", default-features = false, features = ["crossterm"]}
 
 http = "0.2"
