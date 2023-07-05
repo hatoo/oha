@@ -35,7 +35,7 @@ tokio = {version = "1.14.0", features = ["full"]}
 tui = {package = "ratatui", version = "0.21", default-features = false, features = ["crossterm"]}
 
 http = "0.2"
-hyper = {version = "0.14.13", features = ["full"]}
+hyper = {version = "0.14.27", features = ["full"]}
 
 # native-tls
 native-tls = {version = "0.2.11", optional = true}
