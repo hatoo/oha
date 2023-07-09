@@ -279,7 +279,7 @@ impl Client {
 
     fn request(&self, url: &Url) -> Result<http::Request<hyper::Body>, ClientError> {
         let mut builder = http::Request::builder()
-            .uri(url.as_str())
+            .uri(&url[url::Position::BeforePath..])
             .method(self.method.clone())
             .version(self.http_version);
 
