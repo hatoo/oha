@@ -1,5 +1,7 @@
 # Unreleased
 
+- Fix sending HTTP uri #255
+
 # 0.6.0 (2023-06-24)
 
 - Support IDNA #236
