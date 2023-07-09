@@ -250,6 +250,14 @@ async fn main() -> anyhow::Result<()> {
                 .collect::<anyhow::Result<Vec<_>>>()?,
         );
 
+        // User agent
+        headers
+            .entry(http::header::USER_AGENT)
+            .or_insert(HeaderValue::from_static(concat!(
+                "oha/",
+                env!("CARGO_PKG_VERSION")
+            )));
+
         if let Some(h) = opts.accept_header {
             headers.insert(http::header::ACCEPT, HeaderValue::from_bytes(h.as_bytes())?);
         }
