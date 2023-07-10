@@ -16,6 +16,7 @@ mod monitor;
 mod printer;
 mod timescale;
 mod url_generator;
+mod db;
 
 #[cfg(unix)]
 #[global_allocator]
@@ -136,6 +137,8 @@ Examples: -z 10s -z 3m.",
         long = "unix-socket"
     )]
     unix_socket: Option<std::path::PathBuf>,
+    #[clap(help = "sqlite datebase url E.G test.db", long = "db-url")]
+    db_url: Option<String>
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -472,6 +475,10 @@ async fn main() -> anyhow::Result<()> {
     let res: Vec<Result<RequestResult, ClientError>> = data_collector.await??;
 
     printer::print_result(&mut std::io::stdout(), print_mode, start, &res, duration)?;
+
+    if let Some(db_url) = opts.db_url{
+        let _ = db::store(&db_url, opts.url, res);
+    }
 
     Ok(())
 }
