@@ -17,6 +17,7 @@ use url::Url;
 use url_generator::UrlGenerator;
 
 mod client;
+mod db;
 mod histogram;
 mod monitor;
 mod printer;
@@ -188,6 +189,8 @@ Note: If qps is specified, burst will be ignored",
         long = "stats-success-breakdown"
     )]
     stats_success_breakdown: bool,
+    #[clap(help = "sqlite datebase url E.G test.db", long = "db-url")]
+    db_url: Option<String>,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -653,6 +656,10 @@ async fn main() -> anyhow::Result<()> {
         opts.disable_color,
         opts.stats_success_breakdown,
     )?;
+
+    if let Some(db_url) = opts.db_url {
+        let _ = db::store(&db_url, opts.url, res.success());
+    }
 
     Ok(())
 }
