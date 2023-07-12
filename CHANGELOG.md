@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.6.1 (2023-07-12)
+
 - Fix sending HTTP uri #255
 - Add default user agent header #257
 
