@@ -19,7 +19,7 @@ rustls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-native-certs"]
 
 [dependencies]
 anyhow = "1.0.38"
-average = "0.13.0"
+average = "0.14.1"
 byte-unit = "4.0.8"
 clap = {version = "4.1.4", features = ["derive"]}
 crossterm = "0.26"
