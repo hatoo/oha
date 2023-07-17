@@ -59,7 +59,7 @@ rlimit = "0.10.0"
 jemallocator = "0.5.0"
 
 [dev-dependencies]
-assert_cmd = "2.0.2"
+assert_cmd = "2.0.12"
 bytes = "1.0"
 get-port = "4.0.0"
 http = "0.2"
