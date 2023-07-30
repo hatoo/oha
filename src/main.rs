@@ -3,6 +3,7 @@ use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
+use humantime::Duration;
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
@@ -45,8 +46,28 @@ struct Opts {
 Examples: -z 10s -z 3m.",
         short = 'z'
     )]
-    duration: Option<humantime::Duration>,
-    #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
+    duration: Option<Duration>,
+    #[arg(
+        help = "Introduce delay between a predefined number of requests.
+Group: Burst
+Note: If burst is specified, query_per_second will be discarded",
+        long = "burst-delay",
+        group = "burst"
+    )]
+    burst_duration: Option<Duration>,
+    #[arg(
+        help = "Rates of requests for burst
+Group: Burst
+Note: If burst is specified, query_per_second will be discarded",
+        long = "burst-rate",
+        group = "burst"
+    )]
+    burst_requests: Option<usize>,
+    #[clap(
+        help = "Rate limit for all, in queries per second (QPS)
+Note: Query per second will be discarded if burst is specified",
+        short = 'q'
+    )]
     query_per_second: Option<usize>,
     #[clap(
         help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
