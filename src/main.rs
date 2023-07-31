@@ -58,7 +58,7 @@ Note: If qps is specified, burst will be ignored",
     )]
     burst_duration: Option<Duration>,
     #[arg(
-        help = "Rates of requests for burst
+        help = "Rates of requests for burst. Default is 1
 Group: Burst
 Note: If qps is specified, burst will be ignored",
         long = "burst-rate",
