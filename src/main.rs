@@ -446,13 +446,13 @@ async fn main() -> anyhow::Result<()> {
                     client::work_until(client, result_tx, start + duration.into(), opts.n_workers)
                         .await
                 }
-                Some(duration) => {
+                Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_until_with_qps_latency_correction(
                             client,
                             result_tx,
                             client::QueryLimit::Burst(
-                                duration.into(),
+                                burst_duration.into(),
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             start,
@@ -465,7 +465,7 @@ async fn main() -> anyhow::Result<()> {
                             client,
                             result_tx,
                             client::QueryLimit::Burst(
-                                duration.into(),
+                                burst_duration.into(),
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             start,
@@ -504,13 +504,13 @@ async fn main() -> anyhow::Result<()> {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => client::work(client, result_tx, opts.n_requests, opts.n_workers).await,
-                Some(duration) => {
+                Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_with_qps_latency_correction(
                             client,
                             result_tx,
                             client::QueryLimit::Burst(
-                                duration.into(),
+                                burst_duration.into(),
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             opts.n_requests,
@@ -522,7 +522,7 @@ async fn main() -> anyhow::Result<()> {
                             client,
                             result_tx,
                             client::QueryLimit::Burst(
-                                duration.into(),
+                                burst_duration.into(),
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             opts.n_requests,

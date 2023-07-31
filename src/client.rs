@@ -779,7 +779,7 @@ pub async fn work_until_with_qps(
             let (tx, rx) = flume::unbounded();
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
-                loop {
+                for _ in 0.. {
                     if std::time::Instant::now() > dead_line {
                         break;
                     }
