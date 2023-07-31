@@ -489,8 +489,14 @@ async fn main() -> anyhow::Result<()> {
                     )
                     .await
                 } else {
-                    client::work_with_qps(client, result_tx, qps, opts.n_requests, opts.n_workers)
-                        .await
+                    client::work_with_qps(
+                        client,
+                        result_tx,
+                        client::QueryLimit::Qps(qps),
+                        opts.n_requests,
+                        opts.n_workers,
+                    )
+                    .await
                 }
             }
         }
