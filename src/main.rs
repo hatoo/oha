@@ -483,7 +483,7 @@ async fn main() -> anyhow::Result<()> {
                     client::work_with_qps_latency_correction(
                         client,
                         result_tx,
-                        qps,
+                        client::QueryLimit::Qps(qps),
                         opts.n_requests,
                         opts.n_workers,
                     )

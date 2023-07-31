@@ -641,23 +641,49 @@ pub async fn work_with_qps(
 pub async fn work_with_qps_latency_correction(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-    qps: usize,
+    burst: QueryLimit,
     n_tasks: usize,
     n_workers: usize,
 ) {
     let (tx, rx) = flume::unbounded();
 
-    tokio::spawn(async move {
-        let start = std::time::Instant::now();
-        for i in 0..n_tasks {
-            tx.send_async(std::time::Instant::now()).await.unwrap();
-            tokio::time::sleep_until(
-                (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
-            )
-            .await;
+    match burst {
+        QueryLimit::Qps(qps) => {
+            tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                for i in 0..n_tasks {
+                    tx.send_async(std::time::Instant::now()).await.unwrap();
+                    tokio::time::sleep_until(
+                        (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+                    )
+                    .await;
+                }
+                // tx gone
+            });
         }
-        // tx gone
-    });
+        QueryLimit::Burst(duration, rate) => {
+            tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                let mut n = 0;
+                // Handle via rate till n_tasks out of bound
+                while n < n_tasks {
+                    tokio::time::sleep(duration).await;
+                    for i in 0..rate {
+                        tx.send_async(std::time::Instant::now()).await.unwrap();
+                    }
+                    n += rate;
+                }
+                // Handle the remaining tasks
+                if n - n_tasks < rate {
+                    tokio::time::sleep(duration).await;
+                    for i in 0..n_tasks - n {
+                        tx.send_async(std::time::Instant::now()).await.unwrap();
+                    }
+                }
+                // tx gone
+            });
+        }
+    }
 
     let client = Arc::new(client);
 
