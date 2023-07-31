@@ -454,7 +454,7 @@ async fn main() -> anyhow::Result<()> {
                     client::work_until_with_qps_latency_correction(
                         client,
                         result_tx,
-                        qps,
+                        client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
                         opts.n_workers,
