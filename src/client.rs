@@ -599,7 +599,7 @@ pub async fn work_with_qps(
                     n += rate;
                 }
                 // Handle the remaining tasks
-                if n - n_tasks < rate {
+                if n - n_tasks < rate && n - n_tasks > 0 {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
                         tx.send_async(()).await.unwrap();
@@ -672,7 +672,7 @@ pub async fn work_with_qps_latency_correction(
                     n += rate;
                 }
                 // Handle the remaining tasks
-                if n - n_tasks < rate {
+                if n - n_tasks < rate && n - n_tasks > 0 {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
                         tx.send_async(std::time::Instant::now()).await.unwrap();
