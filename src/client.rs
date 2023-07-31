@@ -589,12 +589,11 @@ pub async fn work_with_qps(
         }
         QueryLimit::Burst(duration, rate) => {
             tokio::spawn(async move {
-                let start = std::time::Instant::now();
                 let mut n = 0;
                 // Handle via rate till n_tasks out of bound
                 while n < n_tasks {
                     tokio::time::sleep(duration).await;
-                    for i in 0..rate {
+                    for _ in 0..rate {
                         tx.send_async(()).await.unwrap();
                     }
                     n += rate;
@@ -602,7 +601,7 @@ pub async fn work_with_qps(
                 // Handle the remaining tasks
                 if n - n_tasks < rate {
                     tokio::time::sleep(duration).await;
-                    for i in 0..n_tasks - n {
+                    for _ in 0..n_tasks - n {
                         tx.send_async(()).await.unwrap();
                     }
                 }
@@ -663,12 +662,11 @@ pub async fn work_with_qps_latency_correction(
         }
         QueryLimit::Burst(duration, rate) => {
             tokio::spawn(async move {
-                let start = std::time::Instant::now();
                 let mut n = 0;
                 // Handle via rate till n_tasks out of bound
                 while n < n_tasks {
                     tokio::time::sleep(duration).await;
-                    for i in 0..rate {
+                    for _ in 0..rate {
                         tx.send_async(std::time::Instant::now()).await.unwrap();
                     }
                     n += rate;
@@ -676,7 +674,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle the remaining tasks
                 if n - n_tasks < rate {
                     tokio::time::sleep(duration).await;
-                    for i in 0..n_tasks - n {
+                    for _ in 0..n_tasks - n {
                         tx.send_async(std::time::Instant::now()).await.unwrap();
                     }
                 }
@@ -752,28 +750,50 @@ pub async fn work_until(
 pub async fn work_until_with_qps(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-    qps: usize,
+    burst: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let (tx, rx) = flume::bounded(qps);
-
-    tokio::spawn(async move {
-        for i in 0.. {
-            if std::time::Instant::now() > dead_line {
-                break;
-            }
-            tokio::time::sleep_until(
-                (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
-            )
-            .await;
-            if tx.send_async(()).await.is_err() {
-                break;
-            }
+    let rx = match burst {
+        QueryLimit::Qps(qps) => {
+            let (tx, rx) = flume::bounded(qps);
+            tokio::spawn(async move {
+                for i in 0.. {
+                    if std::time::Instant::now() > dead_line {
+                        break;
+                    }
+                    tokio::time::sleep_until(
+                        (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+                    )
+                    .await;
+                    if tx.send_async(()).await.is_err() {
+                        break;
+                    }
+                }
+                // tx gone
+            });
+            rx
         }
-        // tx gone
-    });
+        QueryLimit::Burst(duration, rate) => {
+            let (tx, rx) = flume::unbounded();
+            tokio::spawn(async move {
+                // Handle via rate till deadline is reached
+                loop {
+                    if std::time::Instant::now() > dead_line {
+                        break;
+                    }
+
+                    tokio::time::sleep(duration).await;
+                    for _ in 0..rate {
+                        tx.send_async(()).await.unwrap();
+                    }
+                }
+                // tx gone
+            });
+            rx
+        }
+    };
 
     let client = Arc::new(client);
 
