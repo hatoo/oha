@@ -567,13 +567,13 @@ pub async fn work(
 pub async fn work_with_qps(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-    burst: QueryLimit,
+    query_limit: QueryLimit,
     n_tasks: usize,
     n_workers: usize,
 ) {
     let (tx, rx) = flume::unbounded();
 
-    match burst {
+    match query_limit {
         QueryLimit::Qps(qps) => {
             tokio::spawn(async move {
                 let start = std::time::Instant::now();
@@ -591,7 +591,7 @@ pub async fn work_with_qps(
             tokio::spawn(async move {
                 let mut n = 0;
                 // Handle via rate till n_tasks out of bound
-                while n < n_tasks {
+                while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
                         tx.send_async(()).await.unwrap();
@@ -599,7 +599,7 @@ pub async fn work_with_qps(
                     n += rate;
                 }
                 // Handle the remaining tasks
-                if n - n_tasks < rate && n - n_tasks > 0 {
+                if n_tasks > n {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
                         tx.send_async(()).await.unwrap();
@@ -640,13 +640,13 @@ pub async fn work_with_qps(
 pub async fn work_with_qps_latency_correction(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-    burst: QueryLimit,
+    query_limit: QueryLimit,
     n_tasks: usize,
     n_workers: usize,
 ) {
     let (tx, rx) = flume::unbounded();
 
-    match burst {
+    match query_limit {
         QueryLimit::Qps(qps) => {
             tokio::spawn(async move {
                 let start = std::time::Instant::now();
@@ -750,12 +750,12 @@ pub async fn work_until(
 pub async fn work_until_with_qps(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-    burst: QueryLimit,
+    query_limit: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
-    let rx = match burst {
+    let rx = match query_limit {
         QueryLimit::Qps(qps) => {
             let (tx, rx) = flume::bounded(qps);
             tokio::spawn(async move {
@@ -826,24 +826,24 @@ pub async fn work_until_with_qps(
 pub async fn work_until_with_qps_latency_correction(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-    burst: QueryLimit,
+    query_limit: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
     n_workers: usize,
 ) {
     let (tx, rx) = flume::unbounded();
-    match burst {
+    match query_limit {
         QueryLimit::Qps(qps) => {
             tokio::spawn(async move {
                 for i in 0.. {
-                    let now = std::time::Instant::now();
-                    if now > dead_line {
-                        break;
-                    }
                     tokio::time::sleep_until(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
+                    let now = std::time::Instant::now();
+                    if now > dead_line {
+                        break;
+                    }
                     if tx.send_async(now).await.is_err() {
                         break;
                     }
@@ -855,12 +855,12 @@ pub async fn work_until_with_qps_latency_correction(
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
                 loop {
+                    tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     if now > dead_line {
                         break;
                     }
 
-                    tokio::time::sleep(duration).await;
                     for _ in 0..rate {
                         tx.send_async(now).await.unwrap();
                     }

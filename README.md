@@ -61,6 +61,12 @@ Options:
   -z <DURATION>                      Duration of application to send requests. If duration is specified, n is ignored.
                                      Examples: -z 10s -z 3m.
   -q <QUERY_PER_SECOND>              Rate limit for all, in queries per second (QPS)
+      --burst-delay <BURST_DURATION> Introduce delay between a predefined number of requests.
+                                     Group: Burst
+                                     Note: If qps is specified, burst will be ignored
+      --burst-rate <BURST_REQUESTS>  Rates of requests for burst. Default is 1
+                                     Group: Burst
+                                     Note: If qps is specified, burst will be ignored
       --rand-regex-url               Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
       --max-repeat <MAX_REPEAT>      A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become. [default: 4]
       --latency-correction           Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.
@@ -108,6 +114,17 @@ oha <-z or -n> -c <number of concurrent connections> -q <query per seconds> --la
 - --latency-correction
 
     You can avoid `Coordinated Omission Problem` by using `--latency-correction`.
+
+## Burst feature
+
+You can use `--burst-delay` along with `--burst-rate` option to introduce delay between a defined number of requests.
+
+```sh
+oha -n 10 --burst-delay 2s --burst-rate 4
+```
+
+In this particular scenario, every 2 seconds, 4 requests will be processed, and after 6s the total of 10 requests will be processed. 
+*NOTE: If you don't set `--burst-rate` option, the amount is default to 1*
 
 ## Dynamic url feature
 
