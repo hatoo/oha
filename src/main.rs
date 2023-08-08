@@ -3,6 +3,7 @@ use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
 use http::header::{HeaderName, HeaderValue};
+use humantime::Duration;
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
@@ -45,9 +46,22 @@ struct Opts {
 Examples: -z 10s -z 3m.",
         short = 'z'
     )]
-    duration: Option<humantime::Duration>,
+    duration: Option<Duration>,
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
+    #[arg(
+        help = "Introduce delay between a predefined number of requests.
+Note: If qps is specified, burst will be ignored",
+        long = "burst-delay"
+    )]
+    burst_duration: Option<Duration>,
+    #[arg(
+        help = "Rates of requests for burst. Default is 1
+Note: If qps is specified, burst will be ignored",
+        long = "burst-rate"
+    )]
+    burst_requests: Option<usize>,
+
     #[clap(
         help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
         default_value = "false",
@@ -425,15 +439,47 @@ async fn main() -> anyhow::Result<()> {
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {
-            Some(0) | None => {
-                client::work_until(client, result_tx, start + duration.into(), opts.n_workers).await
-            }
+            Some(0) | None => match opts.burst_duration {
+                None => {
+                    client::work_until(client, result_tx, start + duration.into(), opts.n_workers)
+                        .await
+                }
+                Some(burst_duration) => {
+                    if opts.latency_correction {
+                        client::work_until_with_qps_latency_correction(
+                            client,
+                            result_tx,
+                            client::QueryLimit::Burst(
+                                burst_duration.into(),
+                                opts.burst_requests.unwrap_or(1),
+                            ),
+                            start,
+                            start + duration.into(),
+                            opts.n_workers,
+                        )
+                        .await
+                    } else {
+                        client::work_until_with_qps(
+                            client,
+                            result_tx,
+                            client::QueryLimit::Burst(
+                                burst_duration.into(),
+                                opts.burst_requests.unwrap_or(1),
+                            ),
+                            start,
+                            start + duration.into(),
+                            opts.n_workers,
+                        )
+                        .await
+                    }
+                }
+            },
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_until_with_qps_latency_correction(
                         client,
                         result_tx,
-                        qps,
+                        client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
                         opts.n_workers,
@@ -443,7 +489,7 @@ async fn main() -> anyhow::Result<()> {
                     client::work_until_with_qps(
                         client,
                         result_tx,
-                        qps,
+                        client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
                         opts.n_workers,
@@ -454,22 +500,55 @@ async fn main() -> anyhow::Result<()> {
         }
     } else {
         match opts.query_per_second {
-            Some(0) | None => {
-                client::work(client, result_tx, opts.n_requests, opts.n_workers).await
-            }
+            Some(0) | None => match opts.burst_duration {
+                None => client::work(client, result_tx, opts.n_requests, opts.n_workers).await,
+                Some(burst_duration) => {
+                    if opts.latency_correction {
+                        client::work_with_qps_latency_correction(
+                            client,
+                            result_tx,
+                            client::QueryLimit::Burst(
+                                burst_duration.into(),
+                                opts.burst_requests.unwrap_or(1),
+                            ),
+                            opts.n_requests,
+                            opts.n_workers,
+                        )
+                        .await
+                    } else {
+                        client::work_with_qps(
+                            client,
+                            result_tx,
+                            client::QueryLimit::Burst(
+                                burst_duration.into(),
+                                opts.burst_requests.unwrap_or(1),
+                            ),
+                            opts.n_requests,
+                            opts.n_workers,
+                        )
+                        .await
+                    }
+                }
+            },
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_with_qps_latency_correction(
                         client,
                         result_tx,
-                        qps,
+                        client::QueryLimit::Qps(qps),
                         opts.n_requests,
                         opts.n_workers,
                     )
                     .await
                 } else {
-                    client::work_with_qps(client, result_tx, qps, opts.n_requests, opts.n_workers)
-                        .await
+                    client::work_with_qps(
+                        client,
+                        result_tx,
+                        client::QueryLimit::Qps(qps),
+                        opts.n_requests,
+                        opts.n_workers,
+                    )
+                    .await
                 }
             }
         }

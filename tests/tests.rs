@@ -1,4 +1,4 @@
-use std::net::Ipv6Addr;
+use std::{net::Ipv6Addr, sync::Arc};
 
 use assert_cmd::Command;
 use get_port::Ops;
@@ -309,6 +309,56 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
+async fn burst_10_req_delay_2s_rate_4(
+    iteration: u8,
+    args: &[&str],
+    responses: &Arc<Mutex<Vec<String>>>,
+) {
+    let (tx, rx) = flume::unbounded();
+    let report_requests = warp::any()
+        .and(warp::header::headers_cloned())
+        .and(warp::filters::body::bytes())
+        .map(move |_: HeaderMap, _: bytes::Bytes| {
+            tx.send("Success".into()).unwrap();
+            "Success"
+        });
+
+    let _guard = PORT_LOCK.lock().await;
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    tokio::spawn(warp::serve(report_requests).run(([127, 0, 0, 1], port)));
+    // It's not guaranteed that the port is used here.
+    // So we can't drop guard here.
+
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args([
+                "-n",
+                iteration.to_string().as_str(),
+                "--no-tui",
+                "--burst-delay",
+                "2s",
+                "--burst-rate",
+                "4",
+            ])
+            .args(args)
+            .arg(format!("http://127.0.0.1:{port}"))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    let responses_clone = Arc::clone(responses);
+    let receiver = tokio::spawn(async move {
+        for _ in 0..iteration {
+            responses_clone.lock().await.push(rx.try_recv().unwrap())
+        }
+    });
+    receiver.await.expect("Failed to receive responses");
+}
+
 #[tokio::test]
 async fn test_enable_compression_default() {
     let header = get_header_body(&[]).await.0;
@@ -497,4 +547,11 @@ async fn test_ipv6() {
     .unwrap();
 
     rx.try_recv().unwrap();
+}
+
+#[tokio::test]
+async fn test_query_limit() {
+    let responses: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let _ = burst_10_req_delay_2s_rate_4(10, &[], &responses).await;
+    assert_eq!(responses.lock().await.len(), 10);
 }
