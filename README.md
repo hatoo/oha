@@ -62,10 +62,8 @@ Options:
                                      Examples: -z 10s -z 3m.
   -q <QUERY_PER_SECOND>              Rate limit for all, in queries per second (QPS)
       --burst-delay <BURST_DURATION> Introduce delay between a predefined number of requests.
-                                     Group: Burst
                                      Note: If qps is specified, burst will be ignored
       --burst-rate <BURST_REQUESTS>  Rates of requests for burst. Default is 1
-                                     Group: Burst
                                      Note: If qps is specified, burst will be ignored
       --rand-regex-url               Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
       --max-repeat <MAX_REPEAT>      A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become. [default: 4]

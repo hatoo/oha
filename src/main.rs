@@ -51,14 +51,12 @@ Examples: -z 10s -z 3m.",
     query_per_second: Option<usize>,
     #[arg(
         help = "Introduce delay between a predefined number of requests.
-Group: Burst
 Note: If qps is specified, burst will be ignored",
         long = "burst-delay"
     )]
     burst_duration: Option<Duration>,
     #[arg(
         help = "Rates of requests for burst. Default is 1
-Group: Burst
 Note: If qps is specified, burst will be ignored",
         long = "burst-rate"
     )]

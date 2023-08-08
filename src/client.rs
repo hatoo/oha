@@ -651,11 +651,11 @@ pub async fn work_with_qps_latency_correction(
             tokio::spawn(async move {
                 let start = std::time::Instant::now();
                 for i in 0..n_tasks {
-                    tx.send_async(std::time::Instant::now()).await.unwrap();
                     tokio::time::sleep_until(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
+                    tx.send_async(std::time::Instant::now()).await.unwrap();
                 }
                 // tx gone
             });
@@ -664,7 +664,7 @@ pub async fn work_with_qps_latency_correction(
             tokio::spawn(async move {
                 let mut n = 0;
                 // Handle via rate till n_tasks out of bound
-                while n < n_tasks {
+                while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
                         tx.send_async(std::time::Instant::now()).await.unwrap();
@@ -672,7 +672,7 @@ pub async fn work_with_qps_latency_correction(
                     n += rate;
                 }
                 // Handle the remaining tasks
-                if n - n_tasks < rate && n - n_tasks > 0 {
+                if n_tasks > n {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
                         tx.send_async(std::time::Instant::now()).await.unwrap();
