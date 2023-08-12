@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.6.2 (2023-08-12)
+
+- Support Burst feature #276
+
 # 0.6.1 (2023-07-12)
 
 - Fix sending HTTP uri #255
