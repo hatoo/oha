@@ -666,16 +666,18 @@ pub async fn work_with_qps_latency_correction(
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
+                    let now = std::time::Instant::now();
                     for _ in 0..rate {
-                        tx.send_async(std::time::Instant::now()).await.unwrap();
+                        tx.send_async(now).await.unwrap();
                     }
                     n += rate;
                 }
                 // Handle the remaining tasks
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
+                    let now = std::time::Instant::now();
                     for _ in 0..n_tasks - n {
-                        tx.send_async(std::time::Instant::now()).await.unwrap();
+                        tx.send_async(now).await.unwrap();
                     }
                 }
                 // tx gone
