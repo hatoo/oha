@@ -111,7 +111,7 @@ Note: If qps is specified, burst will be ignored",
     proxy: Option<String>,
     */
     #[clap(
-        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2.",
+        help = "HTTP version. Available values 0.9, 1.0, 1.1.",
         long = "http-version"
     )]
     http_version: Option<String>,
@@ -203,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
             "1.1" => http::Version::HTTP_11,
             "2.0" | "2" => anyhow::bail!("HTTP/2 is not supported yet."),
             "3.0" | "3" => anyhow::bail!("HTTP/3 is not supported yet."),
-            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2, 3."),
+            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1."),
         }
     } else {
         http::Version::HTTP_11
