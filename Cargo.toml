@@ -29,7 +29,7 @@ byte-unit = "4.0.8"
 clap = { version = "4.1.4", features = ["derive"] }
 crossterm = "0.26"
 float-ord = "0.3.1"
-flume = "0.10"
+flume = "0.11"
 futures = "0.3.12"
 humantime = "2.0.0"
 libc = "0.2.147"

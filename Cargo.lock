@@ -429,14 +429,13 @@ checksum = "8ce81f49ae8a0482e4c55ea62ebbd7e5a686af544c00b9d090bba3ff9be97b3d"
 
 [[package]]
 name = "flume"
-version = "0.10.14"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1657b4441c3403d9f7b3409e47575237dac27b1b5726df654a6ecbf92f0f7577"
+checksum = "55ac459de2512911e4b674ce33cf20befaba382d05b62b008afc1c8b57cbf181"
 dependencies = [
  "futures-core",
  "futures-sink",
  "nanorand",
- "pin-project",
  "spin 0.9.8",
 ]
 
