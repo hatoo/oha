@@ -41,12 +41,8 @@ impl RequestResult {
 
 pub struct Dns {
     pub connect_to: Vec<ConnectToEntry>,
-    pub resolver: trust_dns_resolver::AsyncResolver<
-        trust_dns_resolver::name_server::GenericConnection,
-        trust_dns_resolver::name_server::GenericConnectionProvider<
-            trust_dns_resolver::name_server::TokioRuntime,
-        >,
-    >,
+    pub resolver:
+        trust_dns_resolver::AsyncResolver<trust_dns_resolver::name_server::TokioConnectionProvider>,
 }
 
 impl Dns {

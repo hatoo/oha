@@ -58,7 +58,7 @@ tokio-rustls = { version = "0.24.0", optional = true }
 base64 = "0.21.0"
 lazy_static = "1.4.0"
 rand = "0.8"
-trust-dns-resolver = "0.22.0"
+trust-dns-resolver = "0.23.0"
 rand_regex = "0.16.0"
 regex-syntax = "0.7.4"
 url = "2.4.0"

@@ -417,7 +417,7 @@ async fn main() -> anyhow::Result<()> {
         .context("DNS: failed to load /etc/resolv.conf")?;
     let mut resolver_opts = trust_dns_resolver::config::ResolverOpts::default();
     resolver_opts.ip_strategy = ip_strategy;
-    let resolver = trust_dns_resolver::AsyncResolver::tokio(config, resolver_opts)?;
+    let resolver = trust_dns_resolver::AsyncResolver::tokio(config, resolver_opts);
 
     // client_builder builds client for each workers
     let client = client::Client {
