@@ -16,13 +16,13 @@ struct StyleScheme {
     color_enabled: bool,
 }
 impl StyleScheme {
-    fn no_color(self, text: String) -> StyledContent<String> {
+    fn no_color(self, text: &str) -> StyledContent<&str> {
         text.reset()
     }
-    fn heading(self, text: String) -> StyledContent<String> {
+    fn heading(self, text: &str) -> StyledContent<&str> {
         text.bold().underlined()
     }
-    fn success_rate(self, text: String, success_rate: f64) -> StyledContent<String> {
+    fn success_rate(self, text: &str, success_rate: f64) -> StyledContent<&str> {
         if self.color_enabled {
             if success_rate >= 100.0 {
                 text.green().bold()
@@ -35,21 +35,21 @@ impl StyleScheme {
             self.no_color(text).bold()
         }
     }
-    fn fastest(self, text: String) -> StyledContent<String> {
+    fn fastest(self, text: &str) -> StyledContent<&str> {
         if self.color_enabled {
             text.green()
         } else {
             self.no_color(text)
         }
     }
-    fn slowest(self, text: String) -> StyledContent<String> {
+    fn slowest(self, text: &str) -> StyledContent<&str> {
         if self.color_enabled {
             text.yellow()
         } else {
             self.no_color(text)
         }
     }
-    fn average(self, text: String) -> StyledContent<String> {
+    fn average(self, text: &str) -> StyledContent<&str> {
         if self.color_enabled {
             text.cyan()
         } else {
@@ -57,7 +57,7 @@ impl StyleScheme {
         }
     }
 
-    fn latency_distribution(self, text: String, label: f64) -> StyledContent<String> {
+    fn latency_distribution(self, text: &str, label: f64) -> StyledContent<&str> {
         if self.color_enabled {
             if label <= 0.3 {
                 text.green()
@@ -71,7 +71,7 @@ impl StyleScheme {
         }
     }
 
-    fn status_distribution(self, text: String, status: StatusCode) -> StyledContent<String> {
+    fn status_distribution(self, text: &str, status: StatusCode) -> StyledContent<&str> {
         if self.color_enabled {
             if status.is_success() {
                 text.green()
@@ -360,13 +360,13 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     let style = StyleScheme {
         color_enabled: !disable_color,
     };
-    writeln!(w, "{}", style.heading("Summary:".to_owned()))?;
+    writeln!(w, "{}", style.heading("Summary:"))?;
     let success_rate = 100.0 * res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64;
     writeln!(
         w,
         "{}",
         style.success_rate(
-            format!("  Success rate:\t{:.2}%", success_rate),
+            &format!("  Success rate:\t{:.2}%", success_rate),
             success_rate
         )
     )?;
@@ -374,7 +374,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "{}",
-        style.slowest(format!(
+        style.slowest(&format!(
             "  Slowest:\t{:.4} secs",
             res.iter()
                 .filter_map(|r| r.as_ref().ok())
@@ -386,7 +386,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "{}",
-        style.fastest(format!(
+        style.fastest(&format!(
             "  Fastest:\t{:.4} secs",
             res.iter()
                 .filter_map(|r| r.as_ref().ok())
@@ -398,7 +398,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "{}",
-        style.average(format!(
+        style.average(&format!(
             "  Average:\t{:.4} secs",
             res.iter()
                 .filter_map(|r| r.as_ref().ok())
@@ -454,19 +454,11 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
 
-    writeln!(
-        w,
-        "{}",
-        style.heading("Response time histogram:".to_owned())
-    )?;
+    writeln!(w, "{}", style.heading("Response time histogram:"))?;
 
     print_histogram(w, &durations, style)?;
     writeln!(w)?;
-    writeln!(
-        w,
-        "{}",
-        style.heading("Response time distribution:".to_owned())
-    )?;
+    writeln!(w, "{}", style.heading("Response time distribution:"))?;
 
     print_distribution(w, &durations, style)?;
     writeln!(w)?;
@@ -479,7 +471,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "{}",
-        style.heading("Details (average, fastest, slowest):".to_owned())
+        style.heading("Details (average, fastest, slowest):")
     )?;
 
     writeln!(
@@ -531,18 +523,14 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-    writeln!(
-        w,
-        "{}",
-        style.heading("Status code distribution:".to_owned())
-    )?;
+    writeln!(w, "{}", style.heading("Status code distribution:"))?;
 
     for (status, count) in status_v {
         writeln!(
             w,
             "{}",
             style.status_distribution(
-                format!("  [{}] {} responses", status.as_str(), count),
+                &format!("  [{}] {} responses", status.as_str(), count),
                 status
             )
         )?;
@@ -593,7 +581,7 @@ fn print_histogram<W: Write>(w: &mut W, values: &[f64], style: StyleScheme) -> s
             w,
             "{}",
             style.latency_distribution(
-                format!(
+                &format!(
                     "  {:>width$.3} [{}]{} |",
                     label,
                     b,
@@ -614,7 +602,7 @@ fn bar<W: Write>(w: &mut W, ratio: f64, style: StyleScheme, label: f64) -> std::
     // TODO: Use more block element code to show more precise bar
     let width = 32;
     for _ in 0..(width as f64 * ratio) as usize {
-        write!(w, "{}", style.latency_distribution("■".to_owned(), label))?;
+        write!(w, "{}", style.latency_distribution("■", label))?;
     }
     Ok(())
 }
@@ -634,7 +622,7 @@ fn print_distribution<W: Write>(
             w,
             "{}",
             style.latency_distribution(
-                format!(
+                &format!(
                     "  {}% in {:.4} secs",
                     p,
                     buf.get(i).unwrap_or(&std::f64::NAN)
