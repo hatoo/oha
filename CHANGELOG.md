@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add style and colors to the summary view #64
+
 # 0.6.2 (2023-08-12)
 
 - Support Burst feature #276
