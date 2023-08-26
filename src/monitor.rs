@@ -26,7 +26,6 @@ pub enum EndLine {
 struct ColorScheme {
     light_blue: Option<Color>,
     green: Option<Color>,
-    orange: Option<Color>,
     yellow: Option<Color>,
 }
 
@@ -35,7 +34,6 @@ impl ColorScheme {
         ColorScheme {
             light_blue: None,
             green: None,
-            orange: None,
             yellow: None,
         }
     }
@@ -43,7 +41,6 @@ impl ColorScheme {
     fn set_colors(&mut self) {
         self.light_blue = Some(Color::Cyan);
         self.green = Some(Color::Green);
-        self.orange = Some(Color::LightMagenta);
         self.yellow = Some(Color::Yellow);
     }
 }
@@ -252,7 +249,7 @@ impl Monitor {
                                 .map(|d| d.as_secs_f64())
                                 .unwrap_or(std::f64::NAN)
                         ),
-                        Style::default().fg(colors.orange.unwrap_or(Color::Reset)),
+                        Style::default().fg(colors.yellow.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(vec![Span::styled(
                         format!(
@@ -454,6 +451,7 @@ impl Monitor {
                             self.start,
                             &all,
                             now - self.start,
+                            self.disable_color,
                         );
                         std::process::exit(libc::EXIT_SUCCESS);
                     }

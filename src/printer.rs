@@ -4,10 +4,89 @@ use crate::histogram::histogram;
 use average::Max;
 use average::Variance;
 use byte_unit::Byte;
+use crossterm::style::{StyledContent, Stylize};
+use http::StatusCode;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::Duration;
 use std::time::Instant;
+
+#[derive(Clone, Copy)]
+struct StyleScheme {
+    color_enabled: bool,
+}
+impl StyleScheme {
+    fn no_color(self, text: &str) -> StyledContent<&str> {
+        text.reset()
+    }
+    fn heading(self, text: &str) -> StyledContent<&str> {
+        text.bold().underlined()
+    }
+    fn success_rate(self, text: &str, success_rate: f64) -> StyledContent<&str> {
+        if self.color_enabled {
+            if success_rate >= 100.0 {
+                text.green().bold()
+            } else if success_rate >= 99.0 {
+                text.yellow().bold()
+            } else {
+                text.red().bold()
+            }
+        } else {
+            self.no_color(text).bold()
+        }
+    }
+    fn fastest(self, text: &str) -> StyledContent<&str> {
+        if self.color_enabled {
+            text.green()
+        } else {
+            self.no_color(text)
+        }
+    }
+    fn slowest(self, text: &str) -> StyledContent<&str> {
+        if self.color_enabled {
+            text.yellow()
+        } else {
+            self.no_color(text)
+        }
+    }
+    fn average(self, text: &str) -> StyledContent<&str> {
+        if self.color_enabled {
+            text.cyan()
+        } else {
+            self.no_color(text)
+        }
+    }
+
+    fn latency_distribution(self, text: &str, label: f64) -> StyledContent<&str> {
+        if self.color_enabled {
+            if label <= 0.3 {
+                text.green()
+            } else if label <= 0.8 {
+                text.yellow()
+            } else {
+                text.red()
+            }
+        } else {
+            self.no_color(text)
+        }
+    }
+
+    fn status_distribution(self, text: &str, status: StatusCode) -> StyledContent<&str> {
+        if self.color_enabled {
+            if status.is_success() {
+                text.green()
+            } else if status.is_client_error() {
+                text.yellow()
+            } else if status.is_server_error() {
+                text.red()
+            } else {
+                text.white()
+            }
+        } else {
+            self.no_color(text)
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub enum PrintMode {
@@ -21,9 +100,10 @@ pub fn print_result<W: Write, E: std::fmt::Display>(
     start: Instant,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
+    disable_color: bool,
 ) -> anyhow::Result<()> {
     match mode {
-        PrintMode::Text => print_summary(w, res, total_duration)?,
+        PrintMode::Text => print_summary(w, res, total_duration, disable_color)?,
         PrintMode::Json => print_json(w, start, res, total_duration)?,
     }
     Ok(())
@@ -275,40 +355,57 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     w: &mut W,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
+    disable_color: bool,
 ) -> std::io::Result<()> {
-    writeln!(w, "Summary:")?;
+    let style = StyleScheme {
+        color_enabled: !disable_color,
+    };
+    writeln!(w, "{}", style.heading("Summary:"))?;
+    let success_rate = 100.0 * res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64;
     writeln!(
         w,
-        "  Success rate:\t{:.2}%",
-        100.0 * res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64
+        "{}",
+        style.success_rate(
+            &format!("  Success rate:\t{:.2}%", success_rate),
+            success_rate
+        )
     )?;
     writeln!(w, "  Total:\t{:.4} secs", total_duration.as_secs_f64())?;
     writeln!(
         w,
-        "  Slowest:\t{:.4} secs",
-        res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<average::Max>()
-            .max()
+        "{}",
+        style.slowest(&format!(
+            "  Slowest:\t{:.4} secs",
+            res.iter()
+                .filter_map(|r| r.as_ref().ok())
+                .map(|r| r.duration().as_secs_f64())
+                .collect::<average::Max>()
+                .max()
+        ))
     )?;
     writeln!(
         w,
-        "  Fastest:\t{:.4} secs",
-        res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<average::Min>()
-            .min()
+        "{}",
+        style.fastest(&format!(
+            "  Fastest:\t{:.4} secs",
+            res.iter()
+                .filter_map(|r| r.as_ref().ok())
+                .map(|r| r.duration().as_secs_f64())
+                .collect::<average::Min>()
+                .min()
+        ))
     )?;
     writeln!(
         w,
-        "  Average:\t{:.4} secs",
-        res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<average::Mean>()
-            .mean()
+        "{}",
+        style.average(&format!(
+            "  Average:\t{:.4} secs",
+            res.iter()
+                .filter_map(|r| r.as_ref().ok())
+                .map(|r| r.duration().as_secs_f64())
+                .collect::<average::Mean>()
+                .mean()
+        ))
     )?;
     writeln!(
         w,
@@ -357,11 +454,13 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
 
-    writeln!(w, "Response time histogram:")?;
-    print_histogram(w, &durations)?;
+    writeln!(w, "{}", style.heading("Response time histogram:"))?;
+
+    print_histogram(w, &durations, style)?;
     writeln!(w)?;
-    writeln!(w, "Response time distribution:")?;
-    print_distribution(w, &durations)?;
+    writeln!(w, "{}", style.heading("Response time distribution:"))?;
+
+    print_distribution(w, &durations, style)?;
     writeln!(w)?;
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> = res
@@ -369,7 +468,12 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         .filter_map(|r| r.as_ref().ok())
         .filter_map(|r| r.connection_time.clone().map(|c| (r.start, c)))
         .collect();
-    writeln!(w, "Details (average, fastest, slowest):")?;
+    writeln!(
+        w,
+        "{}",
+        style.heading("Details (average, fastest, slowest):")
+    )?;
+
     writeln!(
         w,
         "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
@@ -419,9 +523,17 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-    writeln!(w, "Status code distribution:")?;
+    writeln!(w, "{}", style.heading("Status code distribution:"))?;
+
     for (status, count) in status_v {
-        writeln!(w, "  [{}] {} responses", status.as_str(), count)?;
+        writeln!(
+            w,
+            "{}",
+            style.status_distribution(
+                &format!("  [{}] {} responses", status.as_str(), count),
+                status
+            )
+        )?;
     }
 
     let mut error_dist: BTreeMap<String, usize> = Default::default();
@@ -445,7 +557,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
 
 /// Print histogram of series of f64 data.
 /// This is used to print histogram of response time.
-fn print_histogram<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
+fn print_histogram<W: Write>(w: &mut W, values: &[f64], style: StyleScheme) -> std::io::Result<()> {
     // TODO: Use better algorithm.
     // Is there any common and good algorithm?
     if values.is_empty() {
@@ -467,30 +579,40 @@ fn print_histogram<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
         let indent = str_len_max - b.to_string().len();
         write!(
             w,
-            "  {:>width$.3} [{}]{} |",
-            label,
-            b,
-            " ".repeat(indent),
-            width = width
+            "{}",
+            style.latency_distribution(
+                &format!(
+                    "  {:>width$.3} [{}]{} |",
+                    label,
+                    b,
+                    " ".repeat(indent),
+                    width = width
+                ),
+                *label
+            )
         )?;
-        bar(w, *b as f64 / max_bar as f64)?;
+        bar(w, *b as f64 / max_bar as f64, style, *label)?;
         writeln!(w)?;
     }
     Ok(())
 }
 
 // Print Bar like ■■■■■■■■■
-fn bar<W: Write>(w: &mut W, ratio: f64) -> std::io::Result<()> {
+fn bar<W: Write>(w: &mut W, ratio: f64, style: StyleScheme, label: f64) -> std::io::Result<()> {
     // TODO: Use more block element code to show more precise bar
     let width = 32;
     for _ in 0..(width as f64 * ratio) as usize {
-        write!(w, "■")?;
+        write!(w, "{}", style.latency_distribution("■", label))?;
     }
     Ok(())
 }
 
 /// Print distribution of collection of f64
-fn print_distribution<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()> {
+fn print_distribution<W: Write>(
+    w: &mut W,
+    values: &[f64],
+    style: StyleScheme,
+) -> std::io::Result<()> {
     let mut buf = values.to_vec();
     float_ord::sort(&mut buf);
 
@@ -498,9 +620,15 @@ fn print_distribution<W: Write>(w: &mut W, values: &[f64]) -> std::io::Result<()
         let i = (f64::from(p) / 100.0 * buf.len() as f64) as usize;
         writeln!(
             w,
-            "  {}% in {:.4} secs",
-            p,
-            buf.get(i).unwrap_or(&std::f64::NAN)
+            "{}",
+            style.latency_distribution(
+                &format!(
+                    "  {}% in {:.4} secs",
+                    p,
+                    buf.get(i).unwrap_or(&std::f64::NAN)
+                ),
+                *buf.get(i).unwrap_or(&std::f64::NAN)
+            )
         )?;
     }
 
