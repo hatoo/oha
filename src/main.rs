@@ -17,6 +17,7 @@ mod monitor;
 mod printer;
 mod timescale;
 mod url_generator;
+mod db;
 
 #[cfg(unix)]
 #[global_allocator]
@@ -150,6 +151,8 @@ Note: If qps is specified, burst will be ignored",
         long = "unix-socket"
     )]
     unix_socket: Option<std::path::PathBuf>,
+    #[clap(help = "sqlite datebase url E.G test.db", long = "db-url")]
+    db_url: Option<String>
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -566,6 +569,10 @@ async fn main() -> anyhow::Result<()> {
         duration,
         opts.disable_color,
     )?;
+
+    if let Some(db_url) = opts.db_url{
+        let _ = db::store(&db_url, opts.url, res);
+    }
 
     Ok(())
 }

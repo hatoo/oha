@@ -62,6 +62,7 @@ trust-dns-resolver = "0.23.0"
 rand_regex = "0.16.0"
 regex-syntax = "0.7.4"
 url = "2.4.0"
+rusqlite = "0.29.0"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.10.0"
