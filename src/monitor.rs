@@ -55,6 +55,7 @@ pub struct Monitor {
     // Frame per scond of TUI
     pub fps: usize,
     pub disable_color: bool,
+    pub success_stats_only: bool,
 }
 
 impl Monitor {
@@ -452,6 +453,7 @@ impl Monitor {
                             &all,
                             now - self.start,
                             self.disable_color,
+                            self.success_stats_only,
                         );
                         std::process::exit(libc::EXIT_SUCCESS);
                     }

@@ -150,6 +150,11 @@ Note: If qps is specified, burst will be ignored",
         long = "unix-socket"
     )]
     unix_socket: Option<std::path::PathBuf>,
+    #[clap(
+        help = "Count only 2xx status codes for the response time histogram and distribution statistics.",
+        long = "success-stats-only"
+    )]
+    success_stats_only: bool,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -367,7 +372,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         _ = ctrl_c_rx.recv_async() => {
                             // User pressed ctrl-c.
-                            let _ = printer::print_result(&mut std::io::stdout(),print_mode,start, &all, start.elapsed(), opts.disable_color);
+                            let _ = printer::print_result(&mut std::io::stdout(),print_mode,start, &all, start.elapsed(), opts.disable_color, opts.success_stats_only);
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
@@ -390,6 +395,7 @@ async fn main() -> anyhow::Result<()> {
                 start,
                 fps: opts.fps,
                 disable_color: opts.disable_color,
+                success_stats_only: opts.success_stats_only,
             }
             .monitor(),
         )
@@ -565,6 +571,7 @@ async fn main() -> anyhow::Result<()> {
         &res,
         duration,
         opts.disable_color,
+        opts.success_stats_only,
     )?;
 
     Ok(())

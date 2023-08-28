@@ -101,10 +101,13 @@ pub fn print_result<W: Write, E: std::fmt::Display>(
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
     disable_color: bool,
+    success_stats_only: bool,
 ) -> anyhow::Result<()> {
     match mode {
-        PrintMode::Text => print_summary(w, res, total_duration, disable_color)?,
-        PrintMode::Json => print_json(w, start, res, total_duration)?,
+        PrintMode::Text => {
+            print_summary(w, res, total_duration, disable_color, success_stats_only)?
+        }
+        PrintMode::Json => print_json(w, start, res, total_duration, success_stats_only)?,
     }
     Ok(())
 }
@@ -115,6 +118,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
     start: Instant,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
+    success_stats_only: bool,
 ) -> serde_json::Result<()> {
     use serde::Serialize;
     #[derive(Serialize)]
@@ -224,6 +228,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
     let mut durations = res
         .iter()
         .filter_map(|r| r.as_ref().ok())
+        .filter(|r| !success_stats_only || r.status.is_success())
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
     float_ord::sort(&mut durations);
@@ -356,6 +361,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
     disable_color: bool,
+    success_stats_only: bool,
 ) -> std::io::Result<()> {
     let style = StyleScheme {
         color_enabled: !disable_color,
@@ -451,14 +457,24 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     let durations = res
         .iter()
         .filter_map(|r| r.as_ref().ok())
+        .filter(|r| !success_stats_only || r.status.is_success())
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
 
-    writeln!(w, "{}", style.heading("Response time histogram:"))?;
+    let resp_heading_histogram;
+    let resp_heading_distribution;
+    if success_stats_only {
+        resp_heading_histogram = "Response time histogram (2xx only):";
+        resp_heading_distribution = "Response time distribution (2xx only):";
+    } else {
+        resp_heading_histogram = "Response time histogram:";
+        resp_heading_distribution = "Response time distribution:";
+    }
+    writeln!(w, "{}", style.heading(resp_heading_histogram))?;
 
     print_histogram(w, &durations, style)?;
     writeln!(w)?;
-    writeln!(w, "{}", style.heading("Response time distribution:"))?;
+    writeln!(w, "{}", style.heading(resp_heading_distribution))?;
 
     print_distribution(w, &durations, style)?;
     writeln!(w)?;
