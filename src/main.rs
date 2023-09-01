@@ -151,10 +151,10 @@ Note: If qps is specified, burst will be ignored",
     )]
     unix_socket: Option<std::path::PathBuf>,
     #[clap(
-        help = "Count only 2xx status codes for the response time histogram and distribution statistics.",
-        long = "success-stats-only"
+        help = "Include a response status code successful or not successful breakdown for the time histogram and distribution statistics",
+        long = "stats-success-breakdown"
     )]
-    success_stats_only: bool,
+    stats_success_breakdown: bool,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -372,7 +372,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                         _ = ctrl_c_rx.recv_async() => {
                             // User pressed ctrl-c.
-                            let _ = printer::print_result(&mut std::io::stdout(),print_mode,start, &all, start.elapsed(), opts.disable_color, opts.success_stats_only);
+                            let _ = printer::print_result(&mut std::io::stdout(),print_mode,start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
                             std::process::exit(libc::EXIT_SUCCESS);
                         }
                     }
@@ -395,7 +395,7 @@ async fn main() -> anyhow::Result<()> {
                 start,
                 fps: opts.fps,
                 disable_color: opts.disable_color,
-                success_stats_only: opts.success_stats_only,
+                stats_success_breakdown: opts.stats_success_breakdown,
             }
             .monitor(),
         )
@@ -571,7 +571,7 @@ async fn main() -> anyhow::Result<()> {
         &res,
         duration,
         opts.disable_color,
-        opts.success_stats_only,
+        opts.stats_success_breakdown,
     )?;
 
     Ok(())

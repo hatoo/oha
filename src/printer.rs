@@ -101,13 +101,17 @@ pub fn print_result<W: Write, E: std::fmt::Display>(
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
     disable_color: bool,
-    success_stats_only: bool,
+    stats_success_breakdown: bool,
 ) -> anyhow::Result<()> {
     match mode {
-        PrintMode::Text => {
-            print_summary(w, res, total_duration, disable_color, success_stats_only)?
-        }
-        PrintMode::Json => print_json(w, start, res, total_duration, success_stats_only)?,
+        PrintMode::Text => print_summary(
+            w,
+            res,
+            total_duration,
+            disable_color,
+            stats_success_breakdown,
+        )?,
+        PrintMode::Json => print_json(w, start, res, total_duration, stats_success_breakdown)?,
     }
     Ok(())
 }
@@ -118,7 +122,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
     start: Instant,
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
-    success_stats_only: bool,
+    stats_success_breakdown: bool,
 ) -> serde_json::Result<()> {
     use serde::Serialize;
     #[derive(Serialize)]
@@ -169,6 +173,26 @@ fn print_json<W: Write, E: std::fmt::Display>(
         response_time_histogram: BTreeMap<String, usize>,
         #[serde(rename = "latencyPercentiles")]
         latency_percentiles: BTreeMap<String, f64>,
+        #[serde(
+            rename = "responseTimeHistogramSuccessful",
+            skip_serializing_if = "Option::is_none"
+        )]
+        response_time_histogram_successful: Option<BTreeMap<String, usize>>,
+        #[serde(
+            rename = "latencyPercentilesSuccessful",
+            skip_serializing_if = "Option::is_none"
+        )]
+        latency_percentiles_successful: Option<BTreeMap<String, f64>>,
+        #[serde(
+            rename = "responseTimeHistogramNotSuccessful",
+            skip_serializing_if = "Option::is_none"
+        )]
+        response_time_histogram_not_successful: Option<BTreeMap<String, usize>>,
+        #[serde(
+            rename = "latencyPercentilesNotSuccessful",
+            skip_serializing_if = "Option::is_none"
+        )]
+        latency_percentiles_not_successful: Option<BTreeMap<String, f64>>,
         #[serde(rename = "rps")]
         rps: Rps,
         details: Details,
@@ -224,11 +248,10 @@ fn print_json<W: Write, E: std::fmt::Display>(
             .sum::<u128>() as f64
             / total_duration.as_secs_f64()),
     };
+    let durations_base = res.iter().filter_map(|r| r.as_ref().ok());
 
-    let mut durations = res
-        .iter()
-        .filter_map(|r| r.as_ref().ok())
-        .filter(|r| !success_stats_only || r.status.is_success())
+    let mut durations = durations_base
+        .clone()
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
     float_ord::sort(&mut durations);
@@ -238,7 +261,52 @@ fn print_json<W: Write, E: std::fmt::Display>(
         .map(|(k, v)| (k.to_string(), v))
         .collect();
 
-    let latency_percentiles = percentiles(&durations, &[10, 25, 50, 75, 90, 95, 99]);
+    let latency_percentile_buckets = &[10, 25, 50, 75, 90, 95, 99];
+    let latency_percentiles = percentiles(&durations, latency_percentile_buckets);
+
+    let mut response_time_histogram_successful: Option<BTreeMap<String, usize>> = None;
+    let mut latency_percentiles_successful: Option<BTreeMap<String, f64>> = None;
+    let mut response_time_histogram_not_successful: Option<BTreeMap<String, usize>> = None;
+    let mut latency_percentiles_not_successful: Option<BTreeMap<String, f64>> = None;
+
+    if stats_success_breakdown {
+        let mut durations_successful = durations_base
+            .clone()
+            .filter(|r| r.status.is_success())
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+        float_ord::sort(&mut durations_successful);
+
+        response_time_histogram_successful = Some(
+            histogram(&durations_successful, 11)
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        );
+
+        latency_percentiles_successful = Some(percentiles(
+            &durations_successful,
+            latency_percentile_buckets,
+        ));
+
+        let mut durations_not_successful = durations_base
+            .filter(|r| r.status.is_client_error() || r.status.is_server_error())
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+        float_ord::sort(&mut durations_not_successful);
+
+        response_time_histogram_not_successful = Some(
+            histogram(&durations_not_successful, 11)
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        );
+
+        latency_percentiles_not_successful = Some(percentiles(
+            &durations_not_successful,
+            latency_percentile_buckets,
+        ));
+    }
 
     let mut ends = res
         .iter()
@@ -344,6 +412,10 @@ fn print_json<W: Write, E: std::fmt::Display>(
             summary,
             response_time_histogram,
             latency_percentiles,
+            response_time_histogram_successful,
+            latency_percentiles_successful,
+            response_time_histogram_not_successful,
+            latency_percentiles_not_successful,
             rps,
             details,
             status_code_distribution: status_code_distribution
@@ -361,7 +433,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     res: &[Result<RequestResult, E>],
     total_duration: Duration,
     disable_color: bool,
-    success_stats_only: bool,
+    stats_success_breakdown: bool,
 ) -> std::io::Result<()> {
     let style = StyleScheme {
         color_enabled: !disable_color,
@@ -454,29 +526,67 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         .get_appropriate_unit(true)
     )?;
     writeln!(w)?;
-    let durations = res
-        .iter()
-        .filter_map(|r| r.as_ref().ok())
-        .filter(|r| !success_stats_only || r.status.is_success())
+
+    let durations_base = res.iter().filter_map(|r| r.as_ref().ok());
+    let durations = durations_base
+        .clone()
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
 
-    let resp_heading_histogram;
-    let resp_heading_distribution;
-    if success_stats_only {
-        resp_heading_histogram = "Response time histogram (2xx only):";
-        resp_heading_distribution = "Response time distribution (2xx only):";
-    } else {
-        resp_heading_histogram = "Response time histogram:";
-        resp_heading_distribution = "Response time distribution:";
-    }
-    writeln!(w, "{}", style.heading(resp_heading_histogram))?;
-
+    writeln!(w, "{}", style.heading("Response time histogram:"))?;
     print_histogram(w, &durations, style)?;
     writeln!(w)?;
-    writeln!(w, "{}", style.heading(resp_heading_distribution))?;
 
+    writeln!(w, "{}", style.heading("Response time distribution:"))?;
     print_distribution(w, &durations, style)?;
+    writeln!(w)?;
+
+    if stats_success_breakdown {
+        let mut durations_successful = durations_base
+            .clone()
+            .filter(|r| r.status.is_success())
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+        float_ord::sort(&mut durations_successful);
+
+        writeln!(
+            w,
+            "{}",
+            style.heading("Response time histogram (2xx only):")
+        )?;
+        print_histogram(w, &durations_successful, style)?;
+        writeln!(w)?;
+
+        writeln!(
+            w,
+            "{}",
+            style.heading("Response time distribution (2xx only):")
+        )?;
+        print_distribution(w, &durations_successful, style)?;
+        writeln!(w)?;
+
+        let mut durations_not_successful = durations_base
+            .filter(|r| r.status.is_client_error() || r.status.is_server_error())
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+        float_ord::sort(&mut durations_not_successful);
+
+        writeln!(
+            w,
+            "{}",
+            style.heading("Response time histogram (4xx + 5xx only):")
+        )?;
+        print_histogram(w, &durations_not_successful, style)?;
+        writeln!(w)?;
+
+        writeln!(
+            w,
+            "{}",
+            style.heading("Response time distribution (4xx + 5xx only):")
+        )?;
+        print_distribution(w, &durations_not_successful, style)?;
+        writeln!(w)?;
+    }
     writeln!(w)?;
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> = res
@@ -651,8 +761,8 @@ fn print_distribution<W: Write>(
     Ok(())
 }
 
-fn percentiles(values: &[f64], pecents: &[i32]) -> BTreeMap<String, f64> {
-    pecents
+fn percentiles(values: &[f64], percents: &[i32]) -> BTreeMap<String, f64> {
+    percents
         .iter()
         .map(|&p| {
             let i = (f64::from(p) / 100.0 * values.len() as f64) as usize;
