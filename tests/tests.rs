@@ -1,29 +1,65 @@
-use std::{net::Ipv6Addr, sync::Arc};
+use std::{
+    convert::Infallible,
+    net::{Ipv6Addr, SocketAddr},
+    sync::{Mutex, OnceLock},
+};
 
 use assert_cmd::Command;
+use axum::{
+    extract::{Path, RawBody},
+    response::Redirect,
+    routing::{any, get},
+    Router,
+};
 use get_port::Ops;
-use tokio::sync::Mutex;
-use warp::{http::HeaderMap, Filter};
+use http::{HeaderMap, Response};
+use hyper::{
+    body::to_bytes,
+    server::conn::AddrIncoming,
+    service::{make_service_fn, service_fn},
+    Body,
+};
 
-lazy_static::lazy_static! {
-    static ref PORT_LOCK: Mutex<()> = Mutex::new(());
+static PORT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+// get_port only check ipv4 port and it seems that port for ipv6 is independent to ipv4
+// so we chose to serialize runs for ipv6
+static IPV6_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn bind_port() -> (hyper::server::Builder<AddrIncoming>, u16) {
+    let _guard = PORT_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+
+    (axum::Server::bind(&addr), port)
+}
+
+fn bind_port_ipv6() -> (hyper::server::Builder<AddrIncoming>, u16) {
+    let _guard = PORT_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    let addr = SocketAddr::new(std::net::IpAddr::V6(Ipv6Addr::LOCALHOST), port);
+
+    (axum::Server::bind(&addr), port)
 }
 
 async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
     let (tx, rx) = flume::unbounded();
-    let report_headers = warp::any()
-        .and(warp::header::headers_cloned())
-        .and(warp::filters::body::bytes())
-        .map(move |headers: HeaderMap, body: bytes::Bytes| {
-            tx.send((headers, body)).unwrap();
-            "Hello World"
-        });
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let app = Router::new().route(
+        "/",
+        get(|header: HeaderMap, RawBody(body): RawBody| async move {
+            tx.send((header, to_bytes(body).await.unwrap())).unwrap();
+            "Hello World"
+        }),
+    );
+
+    let (server, port) = bind_port();
+
+    tokio::spawn(async {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
@@ -43,20 +79,22 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
 
 async fn get_method(args: &[&str]) -> http::method::Method {
     let (tx, rx) = flume::unbounded();
-    let report_headers = warp::any().and(warp::filters::method::method()).map(
-        move |method: http::method::Method| {
+    let app = Router::new().route(
+        "/",
+        any(|method: http::method::Method| async move {
             tx.send(method).unwrap();
             "Hello World"
-        },
+        }),
     );
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let (server, port) = bind_port();
+
+    tokio::spawn(async {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
@@ -73,25 +111,34 @@ async fn get_method(args: &[&str]) -> http::method::Method {
 }
 
 async fn get_query(p: &'static str) -> String {
+    use hyper::Error;
     let (tx, rx) = flume::unbounded();
-    let report_headers = warp::path!(String).and(warp::filters::query::raw()).map(
-        move |path: String, query: String| {
-            tx.send(path + "?" + &query).unwrap();
-            "Hello World"
-        },
-    );
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let make_svc = make_service_fn(move |_| {
+        let tx = tx.clone();
+        async move {
+            Ok::<_, Error>(service_fn(move |req| {
+                let tx = tx.clone();
+                async move {
+                    let (parts, _) = req.into_parts();
+                    tx.send(parts.uri.to_string()).unwrap();
+                    Ok::<_, Error>(Response::new(Body::from("Hello World")))
+                }
+            }))
+        }
+    });
+
+    let (server, port) = bind_port();
+
+    tokio::spawn(async move {
+        server.serve(make_svc).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
             .args(["-n", "1", "--no-tui"])
-            .arg(format!("http://127.0.0.1:{port}/{p}"))
+            .arg(format!("http://127.0.0.1:{port}{p}"))
             .assert()
             .success();
     })
@@ -102,23 +149,34 @@ async fn get_query(p: &'static str) -> String {
 }
 
 async fn get_path_rand_regex(p: &'static str) -> String {
+    use hyper::Error;
+
     let (tx, rx) = flume::unbounded();
-    let report_headers = warp::path!(String).map(move |path: String| {
-        tx.send(path).unwrap();
-        "Hello World"
+    let make_svc = make_service_fn(move |_| {
+        let tx = tx.clone();
+        async move {
+            Ok::<_, Error>(service_fn(move |req| {
+                let tx = tx.clone();
+                async move {
+                    let (parts, _) = req.into_parts();
+                    tx.send(parts.uri.to_string()).unwrap();
+                    Ok::<_, Error>(Response::new(Body::from("Hello World")))
+                }
+            }))
+        }
     });
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_headers).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let (server, port) = bind_port();
+
+    tokio::spawn(async move {
+        server.serve(make_svc).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
             .args(["-n", "1", "--no-tui", "--rand-regex-url"])
-            .arg(format!(r"http://127.0.0.1:{port}/{p}"))
+            .arg(format!(r"http://127.0.0.1:{port}{p}"))
             .assert()
             .success();
     })
@@ -130,31 +188,26 @@ async fn get_path_rand_regex(p: &'static str) -> String {
 
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = flume::unbounded();
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
 
-    let route = warp::path!(usize).map(move |x| {
-        if x == n {
-            tx.send(()).unwrap();
-            http::Response::builder().status(200).body("OK").unwrap()
-        } else if is_relative {
-            http::Response::builder()
-                .status(301)
-                .header("Location", format!("/{}", x + 1))
-                .body("OK")
-                .unwrap()
-        } else {
-            http::Response::builder()
-                .status(301)
-                .header("Location", format!("http://localhost:{}/{}", port, x + 1))
-                .body("OK")
-                .unwrap()
-        }
+    let (server, port) = bind_port();
+
+    let app = Router::new().route(
+        "/:n",
+        get(move |Path(x): Path<usize>| async move {
+            Ok::<_, Infallible>(if x == n {
+                tx.send(()).unwrap();
+                Redirect::permanent("/end")
+            } else if is_relative {
+                Redirect::permanent(&format!("/{}", x + 1))
+            } else {
+                Redirect::permanent(&format!("http://localhost:{}/{}", port, x + 1))
+            })
+        }),
+    );
+
+    tokio::spawn(async move {
+        server.serve(app.into_make_service()).await.unwrap();
     });
-
-    tokio::spawn(warp::serve(route).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -173,19 +226,20 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
 
 async fn get_host_with_connect_to(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
-    let report_host =
-        warp::get()
-            .and(warp::filters::header::header("host"))
-            .map(move |host: String| {
-                tx.send(host).unwrap();
-                "Hello World"
-            });
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_host).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let app = Router::new().route(
+        "/",
+        get(|header: HeaderMap| async move {
+            tx.send(header.get("host").unwrap().to_str().unwrap().to_string())
+                .unwrap();
+            "Hello World"
+        }),
+    );
+
+    let (server, port) = bind_port();
+    tokio::spawn(async move {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -205,22 +259,20 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
 
 async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
-    let report_host =
-        warp::get()
-            .and(warp::filters::header::header("host"))
-            .map(move |host: String| {
-                tx.send(host).unwrap();
-                "Hello World"
-            });
+    let app = Router::new().route(
+        "/",
+        get(|header: HeaderMap| async move {
+            tx.send(header.get("host").unwrap().to_str().unwrap().to_string())
+                .unwrap();
+            "Hello World"
+        }),
+    );
 
-    let _guard = PORT_LOCK.lock().await;
-    // sic. the `get_port` crate doesn't support IpV6 addresses, so we check
-    // with 127.0.0.1 even though we bind on ::1 later.
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    let addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
-    tokio::spawn(warp::serve(report_host).run((addr, port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let _guard = IPV6_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let (server, port) = bind_port_ipv6();
+    tokio::spawn(async move {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -228,7 +280,7 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
             .args(["-n", "1", "--no-tui"])
             .arg(format!("http://{host}/"))
             .arg("--connect-to")
-            .arg(format!("{host}:80:[{addr}]:{port}"))
+            .arg(format!("{host}:80:[::1]:{port}"))
             .assert()
             .success();
     })
@@ -240,21 +292,19 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
 
 async fn get_host_with_connect_to_ipv6_requested() -> String {
     let (tx, rx) = flume::unbounded();
-    let report_host =
-        warp::get()
-            .and(warp::filters::header::header("host"))
-            .map(move |host: String| {
-                tx.send(host).unwrap();
-                "Hello World"
-            });
+    let app = Router::new().route(
+        "/",
+        get(|header: HeaderMap| async move {
+            tx.send(header.get("host").unwrap().to_str().unwrap().to_string())
+                .unwrap();
+            "Hello World"
+        }),
+    );
 
-    let _guard = PORT_LOCK.lock().await;
-    // sic. the `get_port` crate doesn't support IpV6 addresses, so we check
-    // with 127.0.0.1 even though we bind on ::1 later.
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_host).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let (server, port) = bind_port();
+    tokio::spawn(async move {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -274,24 +324,24 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
 
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
-    let redirect = warp::get().and(warp::path!("source")).map(move || {
-        let uri = http::Uri::try_from(format!("http://{host}/destination")).unwrap();
-        warp::redirect(uri)
-    });
-    let report_host = warp::get()
-        .and(warp::path!("destination"))
-        .and(warp::filters::header::header("host"))
-        .map(move |host: String| {
-            tx.send(host).unwrap();
-            "Hello World"
-        });
-    let routes = redirect.or(report_host);
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let app = Router::new()
+        .route(
+            "/source",
+            get(move || async move { Redirect::permanent(&format!("http://{host}/destination")) }),
+        )
+        .route(
+            "/destination",
+            get(move || async move {
+                tx.send(host.to_string()).unwrap();
+                "Hello World"
+            }),
+        );
+
+    let (server, port) = bind_port();
+    tokio::spawn(async move {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -309,25 +359,21 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-async fn burst_10_req_delay_2s_rate_4(
-    iteration: u8,
-    args: &[&str],
-    responses: &Arc<Mutex<Vec<String>>>,
-) {
+async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
     let (tx, rx) = flume::unbounded();
-    let report_requests = warp::any()
-        .and(warp::header::headers_cloned())
-        .and(warp::filters::body::bytes())
-        .map(move |_: HeaderMap, _: bytes::Bytes| {
-            tx.send("Success".into()).unwrap();
-            "Success"
-        });
 
-    let _guard = PORT_LOCK.lock().await;
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    tokio::spawn(warp::serve(report_requests).run(([127, 0, 0, 1], port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let app = Router::new().route(
+        "/",
+        get(|| async move {
+            tx.send(()).unwrap();
+            "Success"
+        }),
+    );
+
+    let (service, port) = bind_port();
+    tokio::spawn(async move {
+        service.serve(app.into_make_service()).await.unwrap();
+    });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
@@ -350,13 +396,11 @@ async fn burst_10_req_delay_2s_rate_4(
     .await
     .unwrap();
 
-    let responses_clone = Arc::clone(responses);
-    let receiver = tokio::spawn(async move {
-        for _ in 0..iteration {
-            responses_clone.lock().await.push(rx.try_recv().unwrap())
-        }
-    });
-    receiver.await.expect("Failed to receive responses");
+    let mut count = 0;
+    while let Ok(()) = rx.try_recv() {
+        count += 1;
+    }
+    count
 }
 
 #[tokio::test]
@@ -459,19 +503,31 @@ async fn test_setting_method() {
 #[tokio::test]
 async fn test_query() {
     assert_eq!(
-        get_query("index?a=b&c=d").await,
-        "index?a=b&c=d".to_string()
+        get_query("/index?a=b&c=d").await,
+        "/index?a=b&c=d".to_string()
     );
 }
 
 #[tokio::test]
 async fn test_query_rand_regex() {
-    let query = get_path_rand_regex("[a-z][0-9][a-z]").await;
-    let chars = query.chars().collect::<Vec<char>>();
+    let query = get_path_rand_regex("/[a-z][0-9][a-z]").await;
+    let chars = query.trim_start_matches('/').chars().collect::<Vec<char>>();
     assert_eq!(chars.len(), 3);
     assert!(chars[0].is_ascii_lowercase());
     assert!(chars[1].is_ascii_digit());
     assert!(chars[2].is_ascii_lowercase());
+}
+
+#[tokio::test]
+async fn test_redirect() {
+    for n in 1..=5 {
+        assert!(redirect(n, true, 10).await);
+        assert!(redirect(n, false, 10).await);
+    }
+    for n in 11..=15 {
+        assert!(!redirect(n, true, 10).await);
+        assert!(!redirect(n, false, 10).await);
+    }
 }
 
 #[tokio::test]
@@ -504,36 +560,22 @@ async fn test_connect_to_redirect() {
 }
 
 #[tokio::test]
-async fn test_redirect() {
-    for n in 1..=5 {
-        assert!(redirect(n, true, 10).await);
-        assert!(redirect(n, false, 10).await);
-    }
-    for n in 11..=15 {
-        assert!(!redirect(n, true, 10).await);
-        assert!(!redirect(n, false, 10).await);
-    }
-}
-
-#[tokio::test]
 async fn test_ipv6() {
     let (tx, rx) = flume::unbounded();
-    let report_host =
-        warp::get()
-            .and(warp::filters::header::header("host"))
-            .map(move |host: String| {
-                tx.send(host).unwrap();
-                "Hello World"
-            });
 
-    let _guard = PORT_LOCK.lock().await;
-    // sic. the `get_port` crate doesn't support IpV6 addresses, so we check
-    // with 127.0.0.1 even though we bind on ::1 later.
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
-    let addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
-    tokio::spawn(warp::serve(report_host).run((addr, port)));
-    // It's not guaranteed that the port is used here.
-    // So we can't drop guard here.
+    let app = Router::new().route(
+        "/",
+        get(|| async move {
+            tx.send(()).unwrap();
+            "Hello World"
+        }),
+    );
+
+    let _guard = IPV6_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let (service, port) = bind_port_ipv6();
+    tokio::spawn(async move {
+        service.serve(app.into_make_service()).await.unwrap();
+    });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -551,7 +593,5 @@ async fn test_ipv6() {
 
 #[tokio::test]
 async fn test_query_limit() {
-    let responses: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let _ = burst_10_req_delay_2s_rate_4(10, &[], &responses).await;
-    assert_eq!(responses.lock().await.len(), 10);
+    assert_eq!(burst_10_req_delay_2s_rate_4(10, &[],).await, 10);
 }
