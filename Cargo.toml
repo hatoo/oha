@@ -61,7 +61,7 @@ rand = "0.8"
 trust-dns-resolver = "0.23.0"
 rand_regex = "0.16.0"
 regex-syntax = "0.7.4"
-url = "2.4.0"
+url = "2.4.1"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.10.0"
