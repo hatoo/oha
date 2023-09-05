@@ -1,6 +1,7 @@
 # Unreleased
 
 - Add style and colors to the summary view #64
+- Added a stats-success-breakdown flag for more detailed status code specific response statistics #212
 
 # 0.6.2 (2023-08-12)
 
