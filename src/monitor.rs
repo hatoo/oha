@@ -59,9 +59,7 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub async fn monitor(
-        self,
-    ) -> Result<Vec<Result<RequestResult, ClientError>>, crossterm::ErrorKind> {
+    pub async fn monitor(self) -> Result<Vec<Result<RequestResult, ClientError>>, std::io::Error> {
         crossterm::terminal::enable_raw_mode()?;
         io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
         io::stdout().execute(crossterm::cursor::Hide)?;

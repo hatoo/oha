@@ -13,7 +13,7 @@ license = "MIT"
 name = "oha"
 readme = "README.md"
 repository = "https://github.com/hatoo/oha"
-version = "0.6.2"
+version = "0.6.3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -27,7 +27,7 @@ anyhow = "1.0.38"
 average = "0.14.1"
 byte-unit = "4.0.8"
 clap = { version = "4.1.4", features = ["derive"] }
-crossterm = "0.26"
+crossterm = "0.27"
 float-ord = "0.3.1"
 flume = "0.11"
 futures = "0.3.12"
@@ -37,7 +37,7 @@ serde = { version = "1.0.142", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0.16"
 tokio = { version = "1.14.0", features = ["full"] }
-tui = { package = "ratatui", version = "0.22", default-features = false, features = [
+tui = { package = "ratatui", version = "0.23", default-features = false, features = [
     "crossterm",
 ] }
 
