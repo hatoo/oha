@@ -1,7 +1,7 @@
 use std::{
     convert::Infallible,
     net::{Ipv6Addr, SocketAddr},
-    sync::{Mutex, OnceLock},
+    sync::atomic::AtomicU16,
 };
 
 use assert_cmd::Command;
@@ -11,7 +11,6 @@ use axum::{
     routing::{any, get},
     Router,
 };
-use get_port::Ops;
 use http::{HeaderMap, Response};
 use hyper::{
     body::to_bytes,
@@ -20,25 +19,18 @@ use hyper::{
     Body,
 };
 
-static PORT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-// get_port only check ipv4 port and it seems that port for ipv6 is independent to ipv4
-// so we chose to serialize runs for ipv6
-static IPV6_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+// Port 5111- is reserved for testing
+static PORT: AtomicU16 = AtomicU16::new(5111);
 
 fn bind_port() -> (hyper::server::Builder<AddrIncoming>, u16) {
-    let _guard = PORT_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
 
     (axum::Server::bind(&addr), port)
 }
 
 fn bind_port_ipv6() -> (hyper::server::Builder<AddrIncoming>, u16) {
-    let _guard = PORT_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-
-    let port = get_port::tcp::TcpPort::any("127.0.0.1").unwrap();
+    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::new(std::net::IpAddr::V6(Ipv6Addr::LOCALHOST), port);
 
     (axum::Server::bind(&addr), port)
@@ -268,7 +260,6 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
         }),
     );
 
-    let _guard = IPV6_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let (server, port) = bind_port_ipv6();
     tokio::spawn(async move {
         server.serve(app.into_make_service()).await.unwrap();
@@ -571,7 +562,6 @@ async fn test_ipv6() {
         }),
     );
 
-    let _guard = IPV6_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let (service, port) = bind_port_ipv6();
     tokio::spawn(async move {
         service.serve(app.into_make_service()).await.unwrap();
