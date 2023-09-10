@@ -770,3 +770,26 @@ fn percentiles(values: &[f64], percents: &[i32]) -> BTreeMap<String, f64> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_percentiles() {
+        let values: [f64; 40] = [
+            5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0, 10.0, 11.0, 11.0, 11.0, 11.0, 11.0,
+            11.0, 11.0, 11.0, 11.0, 11.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0,
+            12.0, 15.0, 15.0, 15.0, 15.0, 15.0, 20.0, 20.0, 20.0, 25.0, 30.0,
+        ];
+        let percents: [i32; 7] = [10, 25, 50, 75, 90, 95, 99];
+        let result = percentiles(&values, &percents);
+        assert_eq!(result["p10"], 5 as f64);
+        assert_eq!(result["p25"], 11 as f64);
+        assert_eq!(result["p50"], 12 as f64);
+        assert_eq!(result["p75"], 15 as f64);
+        assert_eq!(result["p90"], 20 as f64);
+        assert_eq!(result["p95"], 25 as f64);
+        assert_eq!(result["p99"], 30 as f64);
+    }
+}
