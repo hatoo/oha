@@ -792,4 +792,28 @@ mod tests {
         assert_eq!(result["p95"], 25 as f64);
         assert_eq!(result["p99"], 30 as f64);
     }
+
+    #[tokio::test]
+    async fn test_print_distribution() {
+        let style = StyleScheme {
+            color_enabled: !false,
+        };
+        let values: [f64; 2] = [10.0, 100.0];
+        let mut output: Vec<u8> = Vec::new();
+        let res = print_distribution(&mut output, &values, style);
+        assert!(res.is_ok());
+        let output_string = String::from_utf8(output).unwrap();
+        let expected_strings = [
+            "10% in 10.0000 secs",
+            "25% in 10.0000 sec",
+            "50% in 100.0000 sec",
+            "75% in 100.0000 sec",
+            "90% in 100.0000 sec",
+            "95% in 100.0000 sec",
+            "99% in 100.0000 sec",
+        ];
+        for string in expected_strings.iter() {
+            assert!(output_string.contains(string));
+        }
+    }
 }
