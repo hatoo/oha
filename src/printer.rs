@@ -203,32 +203,11 @@ fn print_json<W: Write, E: std::fmt::Display>(
     }
 
     let summary = Summary {
-        success_rate: res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64,
+        success_rate: calculate_success_rate(res),
         total: total_duration.as_secs_f64(),
-        slowest: res
-            .iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<average::Max>()
-            .max(),
-        fastest: res
-            .iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<average::Min>()
-            .min(),
-        average: {
-            let mean = res
-                .iter()
-                .filter_map(|r| r.as_ref().ok())
-                .map(|r| r.duration().as_secs_f64())
-                .collect::<average::Mean>();
-            if mean.is_empty() {
-                f64::NAN
-            } else {
-                mean.mean()
-            }
-        },
+        slowest: calculate_slowest_request(res),
+        fastest: calculate_fastest_request(res),
+        average: calculate_average_request(res),
         requests_per_sec: res.len() as f64 / total_duration.as_secs_f64(),
         total_data: res
             .iter()
@@ -428,7 +407,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         color_enabled: !disable_color,
     };
     writeln!(w, "{}", style.heading("Summary:"))?;
-    let success_rate = 100.0 * res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64;
+    let success_rate = 100.0 * calculate_success_rate(res);
     writeln!(
         w,
         "{}",
@@ -443,11 +422,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         "{}",
         style.slowest(&format!(
             "  Slowest:\t{:.4} secs",
-            res.iter()
-                .filter_map(|r| r.as_ref().ok())
-                .map(|r| r.duration().as_secs_f64())
-                .collect::<average::Max>()
-                .max()
+            calculate_slowest_request(res)
         ))
     )?;
     writeln!(
@@ -455,11 +430,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         "{}",
         style.fastest(&format!(
             "  Fastest:\t{:.4} secs",
-            res.iter()
-                .filter_map(|r| r.as_ref().ok())
-                .map(|r| r.duration().as_secs_f64())
-                .collect::<average::Min>()
-                .min()
+            calculate_fastest_request(res)
         ))
     )?;
     writeln!(
@@ -467,11 +438,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         "{}",
         style.average(&format!(
             "  Average:\t{:.4} secs",
-            res.iter()
-                .filter_map(|r| r.as_ref().ok())
-                .map(|r| r.duration().as_secs_f64())
-                .collect::<average::Mean>()
-                .mean()
+            calculate_average_request(res)
         ))
     )?;
     writeln!(
@@ -752,37 +719,95 @@ fn percentiles(values: &mut [f64]) -> BTreeMap<String, f64> {
         .collect()
 }
 
+fn calculate_success_rate<E>(res: &[Result<RequestResult, E>]) -> f64 {
+    res.iter().filter(|r| r.is_ok()).count() as f64 / res.len() as f64
+}
+
+fn calculate_slowest_request<E>(res: &[Result<RequestResult, E>]) -> f64 {
+    res.iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<average::Max>()
+        .max()
+}
+
+fn calculate_fastest_request<E>(res: &[Result<RequestResult, E>]) -> f64 {
+    res.iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<average::Min>()
+        .min()
+}
+
+fn calculate_average_request<E>(res: &[Result<RequestResult, E>]) -> f64 {
+    let mean = res
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<average::Mean>();
+    if mean.is_empty() {
+        f64::NAN
+    } else {
+        mean.mean()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::{ClientError, RequestResult};
+    use std::time::Duration;
 
-    #[tokio::test]
-    async fn test_percentiles() {
-        let values: [f64; 40] = [
+    fn build_mock_request_result(
+        status: StatusCode,
+        request_time: Option<u64>,
+    ) -> Result<RequestResult, ClientError> {
+        let now = Instant::now();
+        Ok(RequestResult {
+            start_latency_correction: None,
+            start: now,
+            connection_time: None,
+            end: Instant::now()
+                .checked_add(Duration::from_secs(request_time.unwrap_or(0)))
+                .unwrap_or(Instant::now()),
+            status,
+            len_bytes: 0,
+        })
+    }
+
+    fn build_mock_request_result_vec() -> Vec<Result<RequestResult, ClientError>> {
+        let mut res: Vec<Result<RequestResult, ClientError>> = Vec::new();
+        res.push(build_mock_request_result(StatusCode::OK, Some(1)));
+        res.push(build_mock_request_result(StatusCode::OK, Some(1000)));
+        res.push(build_mock_request_result(StatusCode::OK, Some(100)));
+        res
+    }
+
+    #[test]
+    fn test_percentile_iter() {
+        let mut values: [f64; 40] = [
             5.0, 5.0, 5.0, 5.0, 5.0, 10.0, 10.0, 10.0, 10.0, 10.0, 11.0, 11.0, 11.0, 11.0, 11.0,
             11.0, 11.0, 11.0, 11.0, 11.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0,
             12.0, 15.0, 15.0, 15.0, 15.0, 15.0, 20.0, 20.0, 20.0, 25.0, 30.0,
         ];
-        let percents: [i32; 7] = [10, 25, 50, 75, 90, 95, 99];
-        let result = percentiles(&values, &percents);
-        assert_eq!(result["p10"], 5 as f64);
-        assert_eq!(result["p25"], 11 as f64);
-        assert_eq!(result["p50"], 12 as f64);
-        assert_eq!(result["p75"], 15 as f64);
-        assert_eq!(result["p90"], 20 as f64);
-        assert_eq!(result["p95"], 25 as f64);
-        assert_eq!(result["p99"], 30 as f64);
+        let result: Vec<(i32, f64)> = percentile_iter(&mut values).collect();
+        assert_eq!(result[0], (10 as i32, 5 as f64));
+        assert_eq!(result[1], (25 as i32, 11 as f64));
+        assert_eq!(result[2], (50 as i32, 12 as f64));
+        assert_eq!(result[3], (75 as i32, 15 as f64));
+        assert_eq!(result[4], (90 as i32, 20 as f64));
+        assert_eq!(result[5], (95 as i32, 25 as f64));
+        assert_eq!(result[6], (99 as i32, 30 as f64));
     }
 
-    #[tokio::test]
-    async fn test_print_distribution() {
+    #[test]
+    fn test_print_distribution() {
         let style = StyleScheme {
-            color_enabled: !false,
+            color_enabled: true,
         };
-        let values: [f64; 2] = [10.0, 100.0];
+        let mut values: [f64; 2] = [10.0, 100.0];
         let mut output: Vec<u8> = Vec::new();
-        let res = print_distribution(&mut output, &values, style);
-        assert!(res.is_ok());
+        let _ = print_distribution(&mut output, &mut values, style).unwrap();
         let output_string = String::from_utf8(output).unwrap();
         let expected_strings = [
             "10% in 10.0000 secs",
@@ -796,5 +821,38 @@ mod tests {
         for string in expected_strings.iter() {
             assert!(output_string.contains(string));
         }
+    }
+
+    #[test]
+    fn test_calculate_success_rate() {
+        let res = build_mock_request_result_vec();
+        assert_eq!(calculate_success_rate(&res), 1.0);
+    }
+
+    #[test]
+    fn test_calculate_slowest_request() {
+        let res = build_mock_request_result_vec();
+        // Calculate the slowest request and round to 6 decimal places to remove the floating point imprecision
+        let slowest_request_rounded =
+            (calculate_slowest_request(&res) * 1000000.0).round() / 1000000.0;
+        assert_eq!(slowest_request_rounded, 1000 as f64);
+    }
+
+    #[test]
+    fn test_calculate_fastest_request() {
+        let res = build_mock_request_result_vec();
+        // Calculate the slowest request and round to 6 decimal places to remove the floating point imprecision
+        let fastest_request_rounded =
+            (calculate_fastest_request(&res) * 1000000.0).round() / 1000000.0;
+        assert_eq!(fastest_request_rounded, 1 as f64);
+    }
+
+    #[test]
+    fn test_calculate_average_request() {
+        let res = build_mock_request_result_vec();
+        // Calculate the slowest request and round to 6 decimal places to remove the floating point imprecision
+        let fastest_request_rounded =
+            (calculate_average_request(&res) * 1000000.0).round() / 1000000.0;
+        assert_eq!(fastest_request_rounded, 367 as f64);
     }
 }
