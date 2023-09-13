@@ -254,15 +254,13 @@ fn print_json<W: Write, E: std::fmt::Display>(
         .clone()
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
-    float_ord::sort(&mut durations);
 
     let response_time_histogram = histogram(&durations, 11)
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
 
-    let latency_percentile_buckets = &[10, 25, 50, 75, 90, 95, 99];
-    let latency_percentiles = percentiles(&durations, latency_percentile_buckets);
+    let latency_percentiles = percentiles(&mut durations);
 
     let mut response_time_histogram_successful: Option<BTreeMap<String, usize>> = None;
     let mut latency_percentiles_successful: Option<BTreeMap<String, f64>> = None;
@@ -275,7 +273,6 @@ fn print_json<W: Write, E: std::fmt::Display>(
             .filter(|r| r.status.is_success())
             .map(|r| r.duration().as_secs_f64())
             .collect::<Vec<_>>();
-        float_ord::sort(&mut durations_successful);
 
         response_time_histogram_successful = Some(
             histogram(&durations_successful, 11)
@@ -284,16 +281,12 @@ fn print_json<W: Write, E: std::fmt::Display>(
                 .collect(),
         );
 
-        latency_percentiles_successful = Some(percentiles(
-            &durations_successful,
-            latency_percentile_buckets,
-        ));
+        latency_percentiles_successful = Some(percentiles(&mut durations_successful));
 
         let mut durations_not_successful = durations_base
             .filter(|r| r.status.is_client_error() || r.status.is_server_error())
             .map(|r| r.duration().as_secs_f64())
             .collect::<Vec<_>>();
-        float_ord::sort(&mut durations_not_successful);
 
         response_time_histogram_not_successful = Some(
             histogram(&durations_not_successful, 11)
@@ -302,10 +295,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
                 .collect(),
         );
 
-        latency_percentiles_not_successful = Some(percentiles(
-            &durations_not_successful,
-            latency_percentile_buckets,
-        ));
+        latency_percentiles_not_successful = Some(percentiles(&mut durations_not_successful));
     }
 
     let mut ends = res
@@ -341,8 +331,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
         rps.push(n as f64 / t);
     }
 
-    float_ord::sort(&mut rps);
-    let rps_percentiles = percentiles(&rps, &[10, 25, 50, 75, 90, 95, 99]);
+    let rps_percentiles = percentiles(&mut rps);
 
     let variance = rps.iter().collect::<Variance>();
     let rps = Rps {
@@ -528,7 +517,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w)?;
 
     let durations_base = res.iter().filter_map(|r| r.as_ref().ok());
-    let durations = durations_base
+    let mut durations = durations_base
         .clone()
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>();
@@ -538,7 +527,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w)?;
 
     writeln!(w, "{}", style.heading("Response time distribution:"))?;
-    print_distribution(w, &durations, style)?;
+    print_distribution(w, &mut durations, style)?;
     writeln!(w)?;
 
     if stats_success_breakdown {
@@ -547,7 +536,6 @@ fn print_summary<W: Write, E: std::fmt::Display>(
             .filter(|r| r.status.is_success())
             .map(|r| r.duration().as_secs_f64())
             .collect::<Vec<_>>();
-        float_ord::sort(&mut durations_successful);
 
         writeln!(
             w,
@@ -562,14 +550,13 @@ fn print_summary<W: Write, E: std::fmt::Display>(
             "{}",
             style.heading("Response time distribution (2xx only):")
         )?;
-        print_distribution(w, &durations_successful, style)?;
+        print_distribution(w, &mut durations_successful, style)?;
         writeln!(w)?;
 
         let mut durations_not_successful = durations_base
             .filter(|r| r.status.is_client_error() || r.status.is_server_error())
             .map(|r| r.duration().as_secs_f64())
             .collect::<Vec<_>>();
-        float_ord::sort(&mut durations_not_successful);
 
         writeln!(
             w,
@@ -584,7 +571,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
             "{}",
             style.heading("Response time distribution (4xx + 5xx only):")
         )?;
-        print_distribution(w, &durations_not_successful, style)?;
+        print_distribution(w, &mut durations_not_successful, style)?;
         writeln!(w)?;
     }
     writeln!(w)?;
@@ -733,41 +720,35 @@ fn bar<W: Write>(w: &mut W, ratio: f64, style: StyleScheme, label: f64) -> std::
     Ok(())
 }
 
+fn percentile_iter(values: &mut [f64]) -> impl Iterator<Item = (i32, f64)> + '_ {
+    float_ord::sort(values);
+
+    [10, 25, 50, 75, 90, 95, 99].iter().map(move |&p| {
+        let i = (f64::from(p) / 100.0 * values.len() as f64) as usize;
+        (p, *values.get(i).unwrap_or(&std::f64::NAN))
+    })
+}
+
 /// Print distribution of collection of f64
 fn print_distribution<W: Write>(
     w: &mut W,
-    values: &[f64],
+    values: &mut [f64],
     style: StyleScheme,
 ) -> std::io::Result<()> {
-    let mut buf = values.to_vec();
-    float_ord::sort(&mut buf);
-
-    for &p in &[10, 25, 50, 75, 90, 95, 99] {
-        let i = (f64::from(p) / 100.0 * buf.len() as f64) as usize;
+    for (p, v) in percentile_iter(values) {
         writeln!(
             w,
             "{}",
-            style.latency_distribution(
-                &format!(
-                    "  {}% in {:.4} secs",
-                    p,
-                    buf.get(i).unwrap_or(&std::f64::NAN)
-                ),
-                *buf.get(i).unwrap_or(&std::f64::NAN)
-            )
+            style.latency_distribution(&format!("  {}% in {:.4} secs", p, v), v)
         )?;
     }
 
     Ok(())
 }
 
-fn percentiles(values: &[f64], percents: &[i32]) -> BTreeMap<String, f64> {
-    percents
-        .iter()
-        .map(|&p| {
-            let i = (f64::from(p) / 100.0 * values.len() as f64) as usize;
-            (format!("p{p}"), *values.get(i).unwrap_or(&std::f64::NAN))
-        })
+fn percentiles(values: &mut [f64]) -> BTreeMap<String, f64> {
+    percentile_iter(values)
+        .map(|(p, v)| (format!("p{p}"), v))
         .collect()
 }
 
