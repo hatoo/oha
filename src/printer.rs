@@ -803,8 +803,18 @@ mod tests {
     fn build_mock_request_result_vec() -> Vec<Result<RequestResult, ClientError>> {
         let mut res: Vec<Result<RequestResult, ClientError>> = Vec::new();
         res.push(build_mock_request_result(StatusCode::OK, 1000, 200, 50));
-        res.push(build_mock_request_result(StatusCode::BAD_REQUEST, 100000, 250, 100));
-        res.push(build_mock_request_result(StatusCode::INTERNAL_SERVER_ERROR, 1000000, 300, 150));
+        res.push(build_mock_request_result(
+            StatusCode::BAD_REQUEST,
+            100000,
+            250,
+            100,
+        ));
+        res.push(build_mock_request_result(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            1000000,
+            300,
+            150,
+        ));
         res
     }
 
