@@ -208,31 +208,18 @@ fn print_json<W: Write, E: std::fmt::Display>(
         slowest: calculate_slowest_request(res),
         fastest: calculate_fastest_request(res),
         average: calculate_average_request(res),
-        requests_per_sec: res.len() as f64 / total_duration.as_secs_f64(),
-        total_data: res
-            .iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes as u128)
-            .sum::<u128>(),
+        requests_per_sec: calculate_requests_per_sec(res, total_duration),
+        total_data: calculate_total_data(res),
         size_per_request: res
             .iter()
             .filter_map(|r| r.as_ref().ok())
             .map(|r| r.len_bytes as u128)
             .sum::<u128>() as f64
             / res.iter().filter(|r| r.is_ok()).count() as f64,
-        size_per_sec: (res
-            .iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes as u128)
-            .sum::<u128>() as f64
-            / total_duration.as_secs_f64()),
+        size_per_sec: (calculate_size_per_sec(res, total_duration)),
     };
-    let durations_base = res.iter().filter_map(|r| r.as_ref().ok());
 
-    let mut durations = durations_base
-        .clone()
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<Vec<_>>();
+    let mut durations = get_durations_all(res);
 
     let response_time_histogram = histogram(&durations, 11)
         .into_iter()
@@ -247,11 +234,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
     let mut latency_percentiles_not_successful: Option<BTreeMap<String, f64>> = None;
 
     if stats_success_breakdown {
-        let mut durations_successful = durations_base
-            .clone()
-            .filter(|r| r.status.is_success())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<Vec<_>>();
+        let mut durations_successful = get_durations_successful(res);
 
         response_time_histogram_successful = Some(
             histogram(&durations_successful, 11)
@@ -262,10 +245,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
 
         latency_percentiles_successful = Some(percentiles(&mut durations_successful));
 
-        let mut durations_not_successful = durations_base
-            .filter(|r| r.status.is_client_error() || r.status.is_server_error())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<Vec<_>>();
+        let mut durations_not_successful = get_durations_not_successful(res);
 
         response_time_histogram_not_successful = Some(
             histogram(&durations_not_successful, 11)
@@ -331,46 +311,18 @@ fn print_json<W: Write, E: std::fmt::Display>(
         *error_distribution.entry(e.to_string()).or_default() += 1;
     }
 
-    let connection_times: Vec<(std::time::Instant, ConnectionTime)> = res
-        .iter()
-        .filter_map(|r| r.as_ref().ok())
-        .filter_map(|r| r.connection_time.clone().map(|c| (r.start, c)))
-        .collect();
+    let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
+        calcuate_connection_times_base(res);
     let details = Details {
         dns_dialup: Triple {
-            average: connection_times
-                .iter()
-                .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-                .collect::<average::Mean>()
-                .mean(),
-
-            fastest: connection_times
-                .iter()
-                .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-                .collect::<average::Min>()
-                .min(),
-            slowest: connection_times
-                .iter()
-                .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-                .collect::<average::Max>()
-                .max(),
+            average: calculate_connection_times_dns_dialup_average(&connection_times),
+            fastest: calculate_connection_times_dns_dialup_fastest(&connection_times),
+            slowest: calculate_connection_times_dns_dialup_slowest(&connection_times),
         },
         dns_lookup: Triple {
-            average: connection_times
-                .iter()
-                .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-                .collect::<average::Mean>()
-                .mean(),
-            fastest: connection_times
-                .iter()
-                .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-                .collect::<average::Min>()
-                .min(),
-            slowest: connection_times
-                .iter()
-                .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-                .collect::<average::Max>()
-                .max(),
+            average: calculate_connection_times_dns_lookup_average(&connection_times),
+            fastest: calculate_connection_times_dns_lookup_fastest(&connection_times),
+            slowest: calculate_connection_times_dns_lookup_slowest(&connection_times),
         },
     };
 
@@ -444,19 +396,13 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "  Requests/sec:\t{:.4}",
-        res.len() as f64 / total_duration.as_secs_f64()
+        calculate_requests_per_sec(res, total_duration)
     )?;
     writeln!(w)?;
     writeln!(
         w,
         "  Total data:\t{}",
-        Byte::from_bytes(
-            res.iter()
-                .filter_map(|r| r.as_ref().ok())
-                .map(|r| r.len_bytes as u128)
-                .sum::<u128>()
-        )
-        .get_appropriate_unit(true)
+        Byte::from_bytes(calculate_total_data(res)).get_appropriate_unit(true)
     )?;
     writeln!(
         w,
@@ -472,22 +418,12 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "  Size/sec:\t{}",
-        Byte::from_bytes(
-            (res.iter()
-                .filter_map(|r| r.as_ref().ok())
-                .map(|r| r.len_bytes as u128)
-                .sum::<u128>() as f64
-                / total_duration.as_secs_f64()) as u128
-        )
-        .get_appropriate_unit(true)
+        Byte::from_bytes((calculate_size_per_sec(res, total_duration)) as u128)
+            .get_appropriate_unit(true)
     )?;
     writeln!(w)?;
 
-    let durations_base = res.iter().filter_map(|r| r.as_ref().ok());
-    let mut durations = durations_base
-        .clone()
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<Vec<_>>();
+    let mut durations = get_durations_all(res);
 
     writeln!(w, "{}", style.heading("Response time histogram:"))?;
     print_histogram(w, &durations, style)?;
@@ -498,11 +434,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w)?;
 
     if stats_success_breakdown {
-        let mut durations_successful = durations_base
-            .clone()
-            .filter(|r| r.status.is_success())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<Vec<_>>();
+        let mut durations_successful = get_durations_successful(res);
 
         writeln!(
             w,
@@ -520,10 +452,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
         print_distribution(w, &mut durations_successful, style)?;
         writeln!(w)?;
 
-        let mut durations_not_successful = durations_base
-            .filter(|r| r.status.is_client_error() || r.status.is_server_error())
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<Vec<_>>();
+        let mut durations_not_successful = get_durations_not_successful(res);
 
         writeln!(
             w,
@@ -543,11 +472,8 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     }
     writeln!(w)?;
 
-    let connection_times: Vec<(std::time::Instant, ConnectionTime)> = res
-        .iter()
-        .filter_map(|r| r.as_ref().ok())
-        .filter_map(|r| r.connection_time.clone().map(|c| (r.start, c)))
-        .collect();
+    let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
+        calcuate_connection_times_base(res);
     writeln!(
         w,
         "{}",
@@ -557,40 +483,16 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        connection_times
-            .iter()
-            .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-            .collect::<average::Mean>()
-            .mean(),
-        connection_times
-            .iter()
-            .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-            .collect::<average::Min>()
-            .min(),
-        connection_times
-            .iter()
-            .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-            .collect::<average::Max>()
-            .max()
+        calculate_connection_times_dns_dialup_average(&connection_times),
+        calculate_connection_times_dns_dialup_fastest(&connection_times),
+        calculate_connection_times_dns_dialup_slowest(&connection_times),
     )?;
     writeln!(
         w,
         "  DNS-lookup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        connection_times
-            .iter()
-            .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-            .collect::<average::Mean>()
-            .mean(),
-        connection_times
-            .iter()
-            .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-            .collect::<average::Min>()
-            .min(),
-        connection_times
-            .iter()
-            .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-            .collect::<average::Max>()
-            .max()
+        calculate_connection_times_dns_lookup_average(&connection_times),
+        calculate_connection_times_dns_lookup_fastest(&connection_times),
+        calculate_connection_times_dns_lookup_slowest(&connection_times),
     )?;
     writeln!(w)?;
 
@@ -752,6 +654,120 @@ fn calculate_average_request<E>(res: &[Result<RequestResult, E>]) -> f64 {
     }
 }
 
+fn calculate_requests_per_sec<E>(
+    res: &[Result<RequestResult, E>],
+    total_duration: Duration,
+) -> f64 {
+    res.len() as f64 / total_duration.as_secs_f64()
+}
+
+fn calculate_total_data<E>(res: &[Result<RequestResult, E>]) -> u128 {
+    res.iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.len_bytes as u128)
+        .sum::<u128>()
+}
+
+fn calculate_size_per_sec<E>(res: &[Result<RequestResult, E>], total_duration: Duration) -> f64 {
+    res.iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.len_bytes as u128)
+        .sum::<u128>() as f64
+        / total_duration.as_secs_f64()
+}
+
+fn calcuate_connection_times_base<E>(
+    res: &[Result<RequestResult, E>],
+) -> Vec<(Instant, ConnectionTime)> {
+    res.iter()
+        .filter_map(|r| r.as_ref().ok())
+        .filter_map(|r| r.connection_time.clone().map(|c| (r.start, c)))
+        .collect()
+}
+
+fn calculate_connection_times_dns_dialup_average(
+    connection_times: &[(Instant, ConnectionTime)],
+) -> f64 {
+    connection_times
+        .iter()
+        .map(|(s, c)| (c.dialup - *s).as_secs_f64())
+        .collect::<average::Mean>()
+        .mean()
+}
+
+fn calculate_connection_times_dns_dialup_fastest(
+    connection_times: &[(Instant, ConnectionTime)],
+) -> f64 {
+    connection_times
+        .iter()
+        .map(|(s, c)| (c.dialup - *s).as_secs_f64())
+        .collect::<average::Min>()
+        .min()
+}
+
+fn calculate_connection_times_dns_dialup_slowest(
+    connection_times: &[(Instant, ConnectionTime)],
+) -> f64 {
+    connection_times
+        .iter()
+        .map(|(s, c)| (c.dialup - *s).as_secs_f64())
+        .collect::<average::Max>()
+        .max()
+}
+
+fn calculate_connection_times_dns_lookup_average(
+    connection_times: &[(Instant, ConnectionTime)],
+) -> f64 {
+    connection_times
+        .iter()
+        .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
+        .collect::<average::Mean>()
+        .mean()
+}
+
+fn calculate_connection_times_dns_lookup_fastest(
+    connection_times: &[(Instant, ConnectionTime)],
+) -> f64 {
+    connection_times
+        .iter()
+        .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
+        .collect::<average::Min>()
+        .min()
+}
+
+fn calculate_connection_times_dns_lookup_slowest(
+    connection_times: &[(Instant, ConnectionTime)],
+) -> f64 {
+    connection_times
+        .iter()
+        .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
+        .collect::<average::Max>()
+        .max()
+}
+
+fn get_durations_all<E>(res: &[Result<RequestResult, E>]) -> Vec<f64> {
+    res.iter()
+        .filter_map(|r: &Result<RequestResult, E>| r.as_ref().ok())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<Vec<_>>()
+}
+
+fn get_durations_successful<E>(res: &[Result<RequestResult, E>]) -> Vec<f64> {
+    res.iter()
+        .filter_map(|r: &Result<RequestResult, E>| r.as_ref().ok())
+        .filter(|r| r.status.is_success())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<Vec<_>>()
+}
+
+fn get_durations_not_successful<E>(res: &[Result<RequestResult, E>]) -> Vec<f64> {
+    res.iter()
+        .filter_map(|r: &Result<RequestResult, E>| r.as_ref().ok())
+        .filter(|r| r.status.is_client_error() || r.status.is_server_error())
+        .map(|r| r.duration().as_secs_f64())
+        .collect::<Vec<_>>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -760,27 +776,42 @@ mod tests {
 
     fn build_mock_request_result(
         status: StatusCode,
-        request_time: Option<u64>,
+        request_time: u64,
+        connection_time_dns_lookup: u64,
+        connection_time_dialup: u64,
     ) -> Result<RequestResult, ClientError> {
         let now = Instant::now();
         Ok(RequestResult {
             start_latency_correction: None,
             start: now,
-            connection_time: None,
+            connection_time: Some(ConnectionTime {
+                dns_lookup: Instant::now()
+                    .checked_add(Duration::from_millis(connection_time_dns_lookup))
+                    .unwrap(),
+                dialup: Instant::now()
+                    .checked_add(Duration::from_millis(connection_time_dialup))
+                    .unwrap(),
+            }),
             end: Instant::now()
-                .checked_add(Duration::from_secs(request_time.unwrap_or(0)))
-                .unwrap_or(Instant::now()),
+                .checked_add(Duration::from_millis(request_time))
+                .unwrap(),
             status,
-            len_bytes: 0,
+            len_bytes: 1,
         })
     }
 
     fn build_mock_request_result_vec() -> Vec<Result<RequestResult, ClientError>> {
         let mut res: Vec<Result<RequestResult, ClientError>> = Vec::new();
-        res.push(build_mock_request_result(StatusCode::OK, Some(1)));
-        res.push(build_mock_request_result(StatusCode::OK, Some(1000)));
-        res.push(build_mock_request_result(StatusCode::OK, Some(100)));
+        res.push(build_mock_request_result(StatusCode::OK, 1000, 200, 50));
+        res.push(build_mock_request_result(StatusCode::BAD_REQUEST, 100000, 250, 100));
+        res.push(build_mock_request_result(StatusCode::INTERNAL_SERVER_ERROR, 1000000, 300, 150));
         res
+    }
+
+    fn fp_round(value: f64, places: f64) -> f64 {
+        let base: f64 = 10.0;
+        let multiplier = base.powf(places);
+        (value * multiplier).round() / multiplier
     }
 
     #[test]
@@ -831,28 +862,176 @@ mod tests {
 
     #[test]
     fn test_calculate_slowest_request() {
-        let res = build_mock_request_result_vec();
-        // Calculate the slowest request and round to 6 decimal places to remove the floating point imprecision
-        let slowest_request_rounded =
-            (calculate_slowest_request(&res) * 1000000.0).round() / 1000000.0;
-        assert_eq!(slowest_request_rounded, 1000 as f64);
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_slowest_request(&build_mock_request_result_vec()),
+                4.0
+            ),
+            1000 as f64
+        );
     }
 
     #[test]
     fn test_calculate_fastest_request() {
-        let res = build_mock_request_result_vec();
-        // Calculate the slowest request and round to 6 decimal places to remove the floating point imprecision
-        let fastest_request_rounded =
-            (calculate_fastest_request(&res) * 1000000.0).round() / 1000000.0;
-        assert_eq!(fastest_request_rounded, 1 as f64);
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_fastest_request(&build_mock_request_result_vec()),
+                4.0
+            ),
+            1 as f64
+        );
     }
 
     #[test]
     fn test_calculate_average_request() {
-        let res = build_mock_request_result_vec();
-        // Calculate the slowest request and round to 6 decimal places to remove the floating point imprecision
-        let fastest_request_rounded =
-            (calculate_average_request(&res) * 1000000.0).round() / 1000000.0;
-        assert_eq!(fastest_request_rounded, 367 as f64);
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_average_request(&build_mock_request_result_vec()),
+                4.0
+            ),
+            367 as f64
+        );
+    }
+
+    #[test]
+    fn test_calculate_requests_per_sec() {
+        assert_eq!(
+            calculate_requests_per_sec(&build_mock_request_result_vec(), Duration::from_secs(1)),
+            3.0
+        );
+    }
+
+    #[test]
+    fn test_calculate_total_data() {
+        assert_eq!(calculate_total_data(&build_mock_request_result_vec()), 3);
+    }
+
+    #[test]
+    fn test_calculate_size_per_sec() {
+        assert_eq!(
+            (calculate_size_per_sec(&build_mock_request_result_vec(), Duration::from_secs(1))),
+            3.0
+        );
+    }
+
+    #[test]
+    fn test_calcuate_connection_times_base() {
+        assert_eq!(
+            calcuate_connection_times_base(&build_mock_request_result_vec()).len(),
+            3
+        );
+    }
+
+    #[test]
+    fn test_calculate_connection_times_dns_dialup_average() {
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_connection_times_dns_dialup_average(&calcuate_connection_times_base(
+                    &build_mock_request_result_vec()
+                )),
+                4.0
+            ),
+            0.1
+        );
+    }
+
+    #[test]
+    fn test_calculate_connection_times_dns_dialup_fastest() {
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_connection_times_dns_dialup_fastest(&calcuate_connection_times_base(
+                    &build_mock_request_result_vec()
+                )),
+                4.0
+            ),
+            0.05
+        );
+    }
+
+    #[test]
+    fn test_calculate_connection_times_dns_dialup_slowest() {
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_connection_times_dns_dialup_slowest(&calcuate_connection_times_base(
+                    &build_mock_request_result_vec()
+                )),
+                4.0
+            ),
+            0.15
+        );
+    }
+
+    #[test]
+    fn test_calculate_connection_times_dns_lookup_average() {
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_connection_times_dns_lookup_average(&calcuate_connection_times_base(
+                    &build_mock_request_result_vec()
+                )),
+                4.0
+            ),
+            0.25
+        );
+    }
+
+    #[test]
+    fn test_calculate_connection_times_dns_lookup_fastest() {
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_connection_times_dns_lookup_fastest(&calcuate_connection_times_base(
+                    &build_mock_request_result_vec()
+                )),
+                4.0
+            ),
+            0.2
+        );
+    }
+
+    #[test]
+    fn test_calculate_connection_times_dns_lookup_slowest() {
+        assert_eq!(
+            // Round the calculation to 4 decimal places to remove imprecision
+            fp_round(
+                calculate_connection_times_dns_lookup_slowest(&calcuate_connection_times_base(
+                    &build_mock_request_result_vec()
+                )),
+                4.0
+            ),
+            0.3
+        );
+    }
+
+    #[test]
+    fn test_get_durations_all() {
+        let durations = get_durations_all(&build_mock_request_result_vec());
+        // Round the calculations to 4 decimal places to remove imprecision
+        assert_eq!(fp_round(durations[0], 4.0), 1.0);
+        assert_eq!(fp_round(durations[1], 4.0), 100.0);
+        assert_eq!(fp_round(durations[2], 4.0), 1000.0);
+    }
+
+    #[test]
+    fn test_get_durations_successful() {
+        let durations = get_durations_successful(&build_mock_request_result_vec());
+        // Round the calculations to 4 decimal places to remove imprecision
+        assert_eq!(fp_round(durations[0], 4.0), 1.0);
+        assert_eq!(durations.get(1), None);
+    }
+
+    #[test]
+    fn test_get_durations_not_successful() {
+        let durations = get_durations_not_successful(&build_mock_request_result_vec());
+        // Round the calculations to 4 decimal places to remove imprecision
+        assert_eq!(fp_round(durations[0], 4.0), 100.0);
+        assert_eq!(fp_round(durations[1], 4.0), 1000.0);
+        assert_eq!(durations.get(2), None);
     }
 }
