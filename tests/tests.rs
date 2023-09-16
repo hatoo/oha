@@ -421,6 +421,8 @@ async fn test_setting_custom_header() {
 async fn test_setting_accept_header() {
     let header = get_header_body(&["-A", "text/html"]).await.0;
     assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
+    let header = get_header_body(&["-H", "accept:text/html"]).await.0;
+    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
 }
 
 #[tokio::test]
@@ -439,6 +441,11 @@ async fn test_setting_content_type_header() {
         header.get("content-type").unwrap().to_str().unwrap(),
         "text/html"
     );
+    let header = get_header_body(&["-H", "content-type:text/html"]).await.0;
+    assert_eq!(
+        header.get("content-type").unwrap().to_str().unwrap(),
+        "text/html"
+    );
 }
 
 #[tokio::test]
@@ -453,6 +460,9 @@ async fn test_setting_basic_auth() {
 #[tokio::test]
 async fn test_setting_host() {
     let header = get_header_body(&["--host", "hatoo.io"]).await.0;
+    assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
+
+    let header = get_header_body(&["-H", "host:hatoo.io"]).await.0;
     assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
 }
 
