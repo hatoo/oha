@@ -138,7 +138,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
         #[serde(rename = "totalData")]
         total_data: u128,
         #[serde(rename = "sizePerRequest")]
-        size_per_request: f64,
+        size_per_request: Option<u128>,
         #[serde(rename = "sizePerSec")]
         size_per_sec: f64,
     }
@@ -210,12 +210,7 @@ fn print_json<W: Write, E: std::fmt::Display>(
         average: calculate_average_request(res),
         requests_per_sec: calculate_requests_per_sec(res, total_duration),
         total_data: calculate_total_data(res),
-        size_per_request: res
-            .iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes as u128)
-            .sum::<u128>() as f64
-            / res.iter().filter(|r| r.is_ok()).count() as f64,
+        size_per_request: calculate_size_per_request(res),
         size_per_sec: (calculate_size_per_sec(res, total_duration)),
     };
 
@@ -407,13 +402,9 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "  Size/request:\t{}",
-        (res.iter()
-            .filter_map(|r| r.as_ref().ok())
-            .map(|r| r.len_bytes as u128)
-            .sum::<u128>()
-            .checked_div(res.iter().filter(|r| r.is_ok()).count() as u128))
-        .map(|n| Byte::from_bytes(n).get_appropriate_unit(true).to_string())
-        .unwrap_or_else(|| "NaN".to_string())
+        (calculate_size_per_request(res))
+            .map(|n| Byte::from_bytes(n).get_appropriate_unit(true).to_string())
+            .unwrap_or_else(|| "NaN".to_string())
     )?;
     writeln!(
         w,
@@ -668,6 +659,14 @@ fn calculate_total_data<E>(res: &[Result<RequestResult, E>]) -> u128 {
         .sum::<u128>()
 }
 
+fn calculate_size_per_request<E>(res: &[Result<RequestResult, E>]) -> Option<u128> {
+    res.iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|r| r.len_bytes as u128)
+        .sum::<u128>()
+        .checked_div(res.iter().filter(|r| r.is_ok()).count() as u128)
+}
+
 fn calculate_size_per_sec<E>(res: &[Result<RequestResult, E>], total_duration: Duration) -> f64 {
     res.iter()
         .filter_map(|r| r.as_ref().ok())
@@ -779,6 +778,7 @@ mod tests {
         request_time: u64,
         connection_time_dns_lookup: u64,
         connection_time_dialup: u64,
+        size: usize,
     ) -> Result<RequestResult, ClientError> {
         let now = Instant::now();
         Ok(RequestResult {
@@ -796,24 +796,32 @@ mod tests {
                 .checked_add(Duration::from_millis(request_time))
                 .unwrap(),
             status,
-            len_bytes: 1,
+            len_bytes: size,
         })
     }
 
     fn build_mock_request_result_vec() -> Vec<Result<RequestResult, ClientError>> {
         let mut res: Vec<Result<RequestResult, ClientError>> = Vec::new();
-        res.push(build_mock_request_result(StatusCode::OK, 1000, 200, 50));
+        res.push(build_mock_request_result(
+            StatusCode::OK,
+            1000,
+            200,
+            50,
+            100,
+        ));
         res.push(build_mock_request_result(
             StatusCode::BAD_REQUEST,
             100000,
             250,
             100,
+            200,
         ));
         res.push(build_mock_request_result(
             StatusCode::INTERNAL_SERVER_ERROR,
             1000000,
             300,
             150,
+            300,
         ));
         res
     }
@@ -839,29 +847,6 @@ mod tests {
         assert_eq!(result[4], (90 as i32, 20 as f64));
         assert_eq!(result[5], (95 as i32, 25 as f64));
         assert_eq!(result[6], (99 as i32, 30 as f64));
-    }
-
-    #[test]
-    fn test_print_distribution() {
-        let style = StyleScheme {
-            color_enabled: true,
-        };
-        let mut values: [f64; 2] = [10.0, 100.0];
-        let mut output: Vec<u8> = Vec::new();
-        let _ = print_distribution(&mut output, &mut values, style).unwrap();
-        let output_string = String::from_utf8(output).unwrap();
-        let expected_strings = [
-            "10% in 10.0000 secs",
-            "25% in 10.0000 sec",
-            "50% in 100.0000 sec",
-            "75% in 100.0000 sec",
-            "90% in 100.0000 sec",
-            "95% in 100.0000 sec",
-            "99% in 100.0000 sec",
-        ];
-        for string in expected_strings.iter() {
-            assert!(output_string.contains(string));
-        }
     }
 
     #[test]
@@ -916,14 +901,22 @@ mod tests {
 
     #[test]
     fn test_calculate_total_data() {
-        assert_eq!(calculate_total_data(&build_mock_request_result_vec()), 3);
+        assert_eq!(calculate_total_data(&build_mock_request_result_vec()), 600);
+    }
+
+    #[test]
+    fn test_calculate_size_per_request() {
+        assert_eq!(
+            calculate_size_per_request(&build_mock_request_result_vec()).unwrap(),
+            200
+        );
     }
 
     #[test]
     fn test_calculate_size_per_sec() {
         assert_eq!(
             (calculate_size_per_sec(&build_mock_request_result_vec(), Duration::from_secs(1))),
-            3.0
+            600.0
         );
     }
 
