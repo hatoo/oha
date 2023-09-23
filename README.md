@@ -8,7 +8,7 @@
 
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
 
-This program is written in Rust and powered by [tokio](https://github.com/tokio-rs/tokio) and beautiful tui by [tui-rs](https://github.com/fdehau/tui-rs).
+This program is written in Rust and powered by [tokio](https://github.com/tokio-rs/tokio) and beautiful tui by [ratatui](https://github.com/ratatui-org/ratatui).
 
 ![demo](demo.gif)
 
@@ -122,7 +122,7 @@ You can use `--burst-delay` along with `--burst-rate` option to introduce delay 
 oha -n 10 --burst-delay 2s --burst-rate 4
 ```
 
-In this particular scenario, every 2 seconds, 4 requests will be processed, and after 6s the total of 10 requests will be processed. 
+In this particular scenario, every 2 seconds, 4 requests will be processed, and after 6s the total of 10 requests will be processed.
 *NOTE: If you don't set `--burst-rate` option, the amount is default to 1*
 
 ## Dynamic url feature
