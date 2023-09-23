@@ -580,13 +580,15 @@ fn bar<W: Write>(w: &mut W, ratio: f64, style: StyleScheme, label: f64) -> std::
     Ok(())
 }
 
-fn percentile_iter(values: &mut [f64]) -> impl Iterator<Item = (i32, f64)> + '_ {
+fn percentile_iter(values: &mut [f64]) -> impl Iterator<Item = (f64, f64)> + '_ {
     float_ord::sort(values);
 
-    [10, 25, 50, 75, 90, 95, 99].iter().map(move |&p| {
-        let i = (f64::from(p) / 100.0 * values.len() as f64) as usize;
-        (p, *values.get(i).unwrap_or(&std::f64::NAN))
-    })
+    [10.0, 25.0, 50.0, 75.0, 90.0, 95.0, 99.0, 99.9, 99.99]
+        .iter()
+        .map(move |&p| {
+            let i = (p / 100.0 * values.len() as f64) as usize;
+            (p, *values.get(i).unwrap_or(&std::f64::NAN))
+        })
 }
 
 /// Print distribution of collection of f64
@@ -599,7 +601,7 @@ fn print_distribution<W: Write>(
         writeln!(
             w,
             "{}",
-            style.latency_distribution(&format!("  {}% in {:.4} secs", p, v), v)
+            style.latency_distribution(&format!("  {:.2}% in {:.4} secs", p, v), v)
         )?;
     }
 
@@ -801,29 +803,11 @@ mod tests {
     }
 
     fn build_mock_request_result_vec() -> Vec<Result<RequestResult, ClientError>> {
-        let mut res: Vec<Result<RequestResult, ClientError>> = Vec::new();
-        res.push(build_mock_request_result(
-            StatusCode::OK,
-            1000,
-            200,
-            50,
-            100,
-        ));
-        res.push(build_mock_request_result(
-            StatusCode::BAD_REQUEST,
-            100000,
-            250,
-            100,
-            200,
-        ));
-        res.push(build_mock_request_result(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            1000000,
-            300,
-            150,
-            300,
-        ));
-        res
+        vec![
+            build_mock_request_result(StatusCode::OK, 1000, 200, 50, 100),
+            build_mock_request_result(StatusCode::BAD_REQUEST, 100000, 250, 100, 200),
+            build_mock_request_result(StatusCode::INTERNAL_SERVER_ERROR, 1000000, 300, 150, 300),
+        ]
     }
 
     fn fp_round(value: f64, places: f64) -> f64 {
@@ -839,14 +823,16 @@ mod tests {
             11.0, 11.0, 11.0, 11.0, 11.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0,
             12.0, 15.0, 15.0, 15.0, 15.0, 15.0, 20.0, 20.0, 20.0, 25.0, 30.0,
         ];
-        let result: Vec<(i32, f64)> = percentile_iter(&mut values).collect();
-        assert_eq!(result[0], (10 as i32, 5 as f64));
-        assert_eq!(result[1], (25 as i32, 11 as f64));
-        assert_eq!(result[2], (50 as i32, 12 as f64));
-        assert_eq!(result[3], (75 as i32, 15 as f64));
-        assert_eq!(result[4], (90 as i32, 20 as f64));
-        assert_eq!(result[5], (95 as i32, 25 as f64));
-        assert_eq!(result[6], (99 as i32, 30 as f64));
+        let result: Vec<(f64, f64)> = percentile_iter(&mut values).collect();
+        assert_eq!(result[0], (10.0, 5_f64));
+        assert_eq!(result[1], (25.0, 11_f64));
+        assert_eq!(result[2], (50.0, 12_f64));
+        assert_eq!(result[3], (75.0, 15_f64));
+        assert_eq!(result[4], (90.0, 20_f64));
+        assert_eq!(result[5], (95.0, 25_f64));
+        assert_eq!(result[6], (99.0, 30_f64));
+        assert_eq!(result[7], (99.9, 30_f64));
+        assert_eq!(result[8], (99.99, 30_f64));
     }
 
     #[test]
@@ -863,7 +849,7 @@ mod tests {
                 calculate_slowest_request(&build_mock_request_result_vec()),
                 4.0
             ),
-            1000 as f64
+            1000_f64
         );
     }
 
@@ -875,7 +861,7 @@ mod tests {
                 calculate_fastest_request(&build_mock_request_result_vec()),
                 4.0
             ),
-            1 as f64
+            1_f64
         );
     }
 
@@ -887,7 +873,7 @@ mod tests {
                 calculate_average_request(&build_mock_request_result_vec()),
                 4.0
             ),
-            367 as f64
+            367_f64
         );
     }
 
