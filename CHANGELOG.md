@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.6.4 (2023-09-24)
+
 - Fix -H option to overwrite default value #309
 - feat: display 99.90- and 99.99-percentile latency #315 
 
