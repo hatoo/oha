@@ -49,7 +49,7 @@ jobs:
           command: build
           args: --release --target ${{ matrix.target }} --locked --no-default-features --features rustls
       - uses: svenstaro/upx-action@v2
-        if: matrix.target != 'aarch64-unknown-linux-musl'
+        if: matrix.target != 'aarch64-unknown-linux-musl' && matrix.target != 'aarch64-apple-darwin'
         with:
           file: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
       - name: Upload binaries to release
