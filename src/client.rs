@@ -185,15 +185,6 @@ struct ClientStateHttp2 {
     send_request: SendRequestHttp2,
 }
 
-impl ClientStateHttp2 {
-    fn new(send_request: SendRequestHttp2) -> Self {
-        Self {
-            rng: StdRng::from_entropy(),
-            send_request,
-        }
-    }
-}
-
 impl Clone for ClientStateHttp2 {
     fn clone(&self) -> Self {
         Self {
@@ -637,6 +628,16 @@ fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
         .unwrap_or(false)
 }
 
+async fn setup_http2(client: &Client) -> (ConnectionTime, ClientStateHttp2) {
+    let mut rng = StdRng::from_entropy();
+    let url = client.url_generator.generate(&mut rng).unwrap();
+    let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await.unwrap();
+
+    let client_state = ClientStateHttp2 { rng, send_request };
+
+    (connection_time, client_state)
+}
+
 /// Run n tasks by m workers
 pub async fn work(
     client: Client,
@@ -657,18 +658,13 @@ pub async fn work(
                 let counter = counter.clone();
                 let client = client.clone();
                 tokio::spawn(async move {
-                    let mut rng = StdRng::from_entropy();
-                    let url = client.url_generator.generate(&mut rng).unwrap();
-                    let (connection_time, send_request) =
-                        client.connect_http2(&url, &mut rng).await.unwrap();
-
-                    let client_state = ClientStateHttp2::new(send_request);
-
+                    let (connection_time, client_state) = setup_http2(&client).await;
                     let futures = (0..n_http2_parallel)
-                        .map(|_| {
+                        .map(move |_| {
                             let report_tx = report_tx.clone();
                             let counter = counter.clone();
                             let client = client.clone();
+
                             let mut client_state = client_state.clone();
                             tokio::spawn(async move {
                                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
@@ -724,6 +720,7 @@ pub async fn work_with_qps(
     query_limit: QueryLimit,
     n_tasks: usize,
     n_workers: usize,
+    n_http2_parallel: usize,
 ) {
     let (tx, rx) = flume::unbounded();
 
@@ -766,24 +763,61 @@ pub async fn work_with_qps(
 
     let client = Arc::new(client);
 
-    let futures = (0..n_workers)
-        .map(|_| {
-            let report_tx = report_tx.clone();
-            let rx = rx.clone();
-            let client = client.clone();
-            tokio::spawn(async move {
-                let mut client_state = ClientStateHttp1::default();
-                while let Ok(()) = rx.recv_async().await {
-                    let res = client.work_http1(&mut client_state).await;
-                    let is_cancel = is_too_many_open_files(&res);
-                    report_tx.send_async(res).await.unwrap();
-                    if is_cancel {
-                        break;
+    let futures = if client.is_http2() {
+        (0..n_workers)
+            .map(|_| {
+                let report_tx = report_tx.clone();
+                let rx = rx.clone();
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let (connection_time, client_state) = setup_http2(&client).await;
+                    let futures = (0..n_http2_parallel)
+                        .map(|_| {
+                            let report_tx = report_tx.clone();
+                            let rx = rx.clone();
+                            let client = client.clone();
+                            let mut client_state = client_state.clone();
+                            tokio::spawn(async move {
+                                while let Ok(()) = rx.recv_async().await {
+                                    let mut res = client.work_http2(&mut client_state).await;
+                                    let is_cancel = is_too_many_open_files(&res);
+                                    if let Ok(ref mut res) = res {
+                                        res.connection_time = Some(connection_time);
+                                    }
+                                    report_tx.send_async(res).await.unwrap();
+                                    if is_cancel {
+                                        break;
+                                    }
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    for f in futures {
+                        let _ = f.await;
                     }
-                }
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    } else {
+        (0..n_workers)
+            .map(|_| {
+                let report_tx = report_tx.clone();
+                let rx = rx.clone();
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let mut client_state = ClientStateHttp1::default();
+                    while let Ok(()) = rx.recv_async().await {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_too_many_open_files(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    };
 
     for f in futures {
         let _ = f.await;

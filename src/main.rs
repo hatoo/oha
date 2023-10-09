@@ -552,6 +552,7 @@ async fn main() -> anyhow::Result<()> {
                             ),
                             opts.n_requests,
                             opts.n_workers,
+                            opts.n_http2_parallel,
                         )
                         .await
                     }
@@ -574,6 +575,7 @@ async fn main() -> anyhow::Result<()> {
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
                         opts.n_workers,
+                        opts.n_http2_parallel,
                     )
                     .await
                 }
