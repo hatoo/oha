@@ -14,6 +14,8 @@ use crate::url_generator::{UrlGenerator, UrlGeneratorError};
 use crate::ConnectToEntry;
 
 type SendRequest = SendRequestX<Full<&'static [u8]>>;
+type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<&'static [u8]>>;
+type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<&'static [u8]>>;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionTime {
@@ -163,16 +165,30 @@ pub struct Client {
     pub unix_socket: Option<std::path::PathBuf>,
 }
 
-struct ClientState {
+struct ClientStateHttp1 {
     rng: StdRng,
-    send_request: Option<SendRequest>,
+    send_request: Option<SendRequestHttp1>,
 }
 
-impl Default for ClientState {
+impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
             rng: StdRng::from_entropy(),
             send_request: None,
+        }
+    }
+}
+
+struct ClientStateHttp2 {
+    rng: StdRng,
+    send_request: SendRequestHttp2,
+}
+
+impl ClientStateHttp2 {
+    fn new(send_request: SendRequestHttp2) -> Self {
+        Self {
+            rng: StdRng::from_entropy(),
+            send_request,
         }
     }
 }
@@ -339,7 +355,23 @@ impl Client {
         }
     }
 
-    async fn work(&self, client_state: &mut ClientState) -> Result<RequestResult, ClientError> {
+    async fn connect<R: Rng>(
+        &self,
+        url: &Url,
+        rng: &mut R,
+    ) -> Result<(ConnectionTime, SendRequest), ClientError> {
+        let addr = self.dns.lookup(url, rng).await?;
+        let dns_lookup = std::time::Instant::now();
+        let send_request = self.client(addr, url).await?;
+        let dialup = std::time::Instant::now();
+
+        Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+    }
+
+    async fn work_http1(
+        &self,
+        client_state: &mut ClientStateHttp1,
+    ) -> Result<RequestResult, ClientError> {
         let timeout = if let Some(timeout) = self.timeout {
             tokio::time::sleep(timeout).boxed()
         } else {
@@ -360,7 +392,7 @@ impl Client {
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
-                send_request
+                send_request.http1().unwrap()
             };
             while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
                 .await
@@ -369,7 +401,7 @@ impl Client {
                 start = std::time::Instant::now();
                 let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
                 let dns_lookup = std::time::Instant::now();
-                send_request = self.client(addr, &url).await?;
+                send_request = self.client(addr, &url).await?.http1().unwrap();
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
@@ -409,6 +441,63 @@ impl Client {
                     client_state.send_request = Some(send_request);
                     Err(e.into())
                 }
+            }
+        };
+
+        tokio::select! {
+            res = do_req => {
+                res
+            }
+            _ = timeout => {
+                Err(ClientError::Timeout)
+            }
+        }
+    }
+
+    async fn work_http2(
+        &self,
+        client_state: &mut ClientStateHttp2,
+    ) -> Result<RequestResult, ClientError> {
+        let timeout = if let Some(timeout) = self.timeout {
+            tokio::time::sleep(timeout).boxed()
+        } else {
+            std::future::pending().boxed()
+        };
+
+        let do_req = async {
+            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let start = std::time::Instant::now();
+            let connection_time: Option<ConnectionTime> = None;
+
+            let request = self.request(&url)?;
+            match client_state.send_request.send_request(request).await {
+                Ok(res) => {
+                    let (parts, mut stream) = res.into_parts();
+                    let status = parts.status;
+
+                    let mut len_sum = 0;
+                    while let Some(chunk) = futures::future::poll_fn(|cx| {
+                        Incoming::poll_frame(Pin::new(&mut stream), cx)
+                    })
+                    .await
+                    {
+                        len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
+                    }
+
+                    let end = std::time::Instant::now();
+
+                    let result = RequestResult {
+                        start_latency_correction: None,
+                        start,
+                        end,
+                        status,
+                        len_bytes: len_sum,
+                        connection_time,
+                    };
+
+                    Ok::<_, ClientError>(result)
+                }
+                Err(e) => Err(e.into()),
             }
         };
 
@@ -477,30 +566,61 @@ pub async fn work(
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_workers: usize,
+    n_http2_parallel: usize,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
     let client = Arc::new(client);
 
-    let futures = (0..n_workers)
-        .map(|_| {
-            let report_tx = report_tx.clone();
-            let counter = counter.clone();
-            let client = client.clone();
-            tokio::spawn(async move {
-                let mut client_state = ClientState::default();
-                while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                    let res = client.work(&mut client_state).await;
-                    let is_cancel = is_too_many_open_files(&res);
-                    report_tx.send_async(res).await.unwrap();
-                    if is_cancel {
-                        break;
+    let futures = if client.is_http2() {
+        (0..n_workers)
+            .map(|_| {
+                let report_tx = report_tx.clone();
+                let counter = counter.clone();
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let mut client_state = ClientStateHttp1::default();
+                    let url = client
+                        .url_generator
+                        .generate(&mut client_state.rng)
+                        .unwrap();
+                    let (connection_time, connection) =
+                        client.connect(&url, &mut client_state.rng).await.unwrap();
+
+                    let connection = connection.http2().unwrap();
+                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_too_many_open_files(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel {
+                            break;
+                        }
                     }
-                }
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>();
+        todo!()
+    } else {
+        (0..n_workers)
+            .map(|_| {
+                let report_tx = report_tx.clone();
+                let counter = counter.clone();
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let mut client_state = ClientStateHttp1::default();
+                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_too_many_open_files(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    };
 
     for f in futures {
         let _ = f.await;
@@ -562,9 +682,9 @@ pub async fn work_with_qps(
             let rx = rx.clone();
             let client = client.clone();
             tokio::spawn(async move {
-                let mut client_state = ClientState::default();
+                let mut client_state = ClientStateHttp1::default();
                 while let Ok(()) = rx.recv_async().await {
-                    let res = client.work(&mut client_state).await;
+                    let res = client.work_http1(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -634,12 +754,12 @@ pub async fn work_with_qps_latency_correction(
     let futures = (0..n_workers)
         .map(|_| {
             let client = client.clone();
-            let mut client_state = ClientState::default();
+            let mut client_state = ClientStateHttp1::default();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(start) = rx.recv_async().await {
-                    let mut res = client.work(&mut client_state).await;
+                    let mut res = client.work_http1(&mut client_state).await;
 
                     if let Ok(request_result) = &mut res {
                         request_result.start_latency_correction = Some(start);
@@ -672,10 +792,10 @@ pub async fn work_until(
         .map(|_| {
             let client = client.clone();
             let report_tx = report_tx.clone();
-            let mut client_state = ClientState::default();
+            let mut client_state = ClientStateHttp1::default();
             tokio::spawn(async move {
                 loop {
-                    let res = client.work(&mut client_state).await;
+                    let res = client.work_http1(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -746,12 +866,12 @@ pub async fn work_until_with_qps(
     let futures = (0..n_workers)
         .map(|_| {
             let client = client.clone();
-            let mut client_state = ClientState::default();
+            let mut client_state = ClientStateHttp1::default();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(()) = rx.recv_async().await {
-                    let res = client.work(&mut client_state).await;
+                    let res = client.work_http1(&mut client_state).await;
                     let is_cancel = is_too_many_open_files(&res);
                     report_tx.send_async(res).await.unwrap();
                     if is_cancel {
@@ -821,12 +941,12 @@ pub async fn work_until_with_qps_latency_correction(
     let futures = (0..n_workers)
         .map(|_| {
             let client = client.clone();
-            let mut client_state = ClientState::default();
+            let mut client_state = ClientStateHttp1::default();
             let report_tx = report_tx.clone();
             let rx = rx.clone();
             tokio::spawn(async move {
                 while let Ok(start) = rx.recv_async().await {
-                    let mut res = client.work(&mut client_state).await;
+                    let mut res = client.work_http1(&mut client_state).await;
 
                     if let Ok(request_result) = &mut res {
                         request_result.start_latency_correction = Some(start);

@@ -28,10 +28,17 @@ where
 }
 
 impl<B> SendRequestX<B> {
-    fn clone_http2(&self) -> Option<Self> {
+    pub fn http1(self) -> Option<hyper::client::conn::http1::SendRequest<B>> {
         match self {
-            Self::Http1(_) => None,
-            Self::Http2(send) => Some(Self::Http2(send.clone())),
+            SendRequestX::Http1(send) => Some(send),
+            SendRequestX::Http2(_) => None,
+        }
+    }
+
+    pub fn http2(self) -> Option<hyper::client::conn::http2::SendRequest<B>> {
+        match self {
+            SendRequestX::Http1(_) => None,
+            SendRequestX::Http2(send) => Some(send),
         }
     }
 }
