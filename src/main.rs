@@ -13,7 +13,6 @@ use url_generator::UrlGenerator;
 
 mod client;
 mod histogram;
-mod http_wrapper;
 mod monitor;
 mod printer;
 mod timescale;

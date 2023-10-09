@@ -9,12 +9,10 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
 use url::{ParseError, Url};
 
-use crate::http_wrapper::SendRequestX;
 use crate::tokiort::{TokioExecutor, TokioIo};
 use crate::url_generator::{UrlGenerator, UrlGeneratorError};
 use crate::ConnectToEntry;
 
-type SendRequest = SendRequestX<Full<&'static [u8]>>;
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<&'static [u8]>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<&'static [u8]>>;
 
@@ -206,40 +204,6 @@ impl Clone for ClientStateHttp2 {
 pub enum QueryLimit {
     Qps(usize),
     Burst(std::time::Duration, usize),
-}
-
-pub async fn handshake<T, B>(
-    http_version: http::Version,
-    io: T,
-) -> Result<SendRequestX<B>, ClientError>
-where
-    T: Read + Write + Unpin + 'static + Send,
-    B: Body + 'static + Send + Unpin,
-    B::Data: Send,
-    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
-{
-    if http_version == http::Version::HTTP_2 {
-        #[derive(Clone)]
-        /// An Executor that uses the tokio runtime.
-        pub struct TokioExecutor;
-
-        impl<F> hyper::rt::Executor<F> for TokioExecutor
-        where
-            F: std::future::Future + Send + 'static,
-            F::Output: Send + 'static,
-        {
-            fn execute(&self, fut: F) {
-                tokio::task::spawn(fut);
-            }
-        }
-        let (send, conn) = hyper::client::conn::http2::handshake(TokioExecutor, io).await?;
-        tokio::spawn(conn);
-        Ok(SendRequestX::Http2(send))
-    } else {
-        let (send, conn) = hyper::client::conn::http1::handshake(io).await?;
-        tokio::spawn(conn);
-        Ok(SendRequestX::Http1(send))
-    }
 }
 
 trait Io: Read + Write + Unpin + Send {}
@@ -609,7 +573,7 @@ pub async fn work(
                             let counter = counter.clone();
                             let client = client.clone();
                             let mut client_state = client_state.clone();
-                            async move {
+                            tokio::spawn(async move {
                                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                                     let mut res = client.work_http2(&mut client_state).await;
                                     let is_cancel = is_too_many_open_files(&res);
@@ -621,7 +585,7 @@ pub async fn work(
                                         break;
                                     }
                                 }
-                            }
+                            })
                         })
                         .collect::<Vec<_>>();
                     for f in futures {
