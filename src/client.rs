@@ -954,8 +954,8 @@ pub async fn work_until(
     n_http2_parallel: usize,
 ) {
     let client = Arc::new(client);
-    let futures = if client.is_http2() {
-        (0..n_workers)
+    if client.is_http2() {
+        let futures = (0..n_workers)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
@@ -989,9 +989,12 @@ pub async fn work_until(
                     }
                 })
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        for f in futures {
+            let _ = f.await;
+        }
     } else {
-        (0..n_workers)
+        let futures = (0..n_workers)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
@@ -1007,13 +1010,12 @@ pub async fn work_until(
                     }
                 })
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        tokio::time::sleep_until(dead_line.into()).await;
+        for f in futures {
+            f.abort();
+        }
     };
-
-    tokio::time::sleep_until(dead_line.into()).await;
-    for f in futures {
-        f.abort();
-    }
 }
 
 /// Run until dead_line by n workers limit to qps works in a second
