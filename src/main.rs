@@ -44,6 +44,12 @@ struct Opts {
     )]
     n_workers: usize,
     #[clap(
+        help = "Number of parallel requests to send on HTTP/2.",
+        short = 'p',
+        default_value = "1"
+    )]
+    n_http2_parallel: usize,
+    #[clap(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
 Examples: -z 10s -z 3m.",
         short = 'z'
@@ -511,7 +517,16 @@ async fn main() -> anyhow::Result<()> {
     } else {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
-                None => client::work(client, result_tx, opts.n_requests, opts.n_workers).await,
+                None => {
+                    client::work(
+                        client,
+                        result_tx,
+                        opts.n_requests,
+                        opts.n_workers,
+                        opts.n_http2_parallel,
+                    )
+                    .await
+                }
                 Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_with_qps_latency_correction(
