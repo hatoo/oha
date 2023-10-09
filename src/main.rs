@@ -493,6 +493,7 @@ async fn main() -> anyhow::Result<()> {
                             start,
                             start + duration.into(),
                             opts.n_workers,
+                            opts.n_http2_parallel,
                         )
                         .await
                     }
@@ -517,6 +518,7 @@ async fn main() -> anyhow::Result<()> {
                         start,
                         start + duration.into(),
                         opts.n_workers,
+                        opts.n_http2_parallel,
                     )
                     .await
                 }
