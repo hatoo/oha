@@ -425,9 +425,9 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-        let addr = self.dns.lookup(&url, rng).await?;
+        let addr = self.dns.lookup(url, rng).await?;
         let dns_lookup = std::time::Instant::now();
-        let io = self.client(addr, &url).await?;
+        let io = self.client(addr, url).await?;
         let (send_request, conn) = hyper::client::conn::http2::handshake(TokioExecutor, io).await?;
         tokio::spawn(conn);
         let dialup = std::time::Instant::now();

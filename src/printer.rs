@@ -682,7 +682,7 @@ fn calcuate_connection_times_base<E>(
 ) -> Vec<(Instant, ConnectionTime)> {
     res.iter()
         .filter_map(|r| r.as_ref().ok())
-        .filter_map(|r| r.connection_time.clone().map(|c| (r.start, c)))
+        .filter_map(|r| r.connection_time.map(|c| (r.start, c)))
         .collect()
 }
 
