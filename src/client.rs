@@ -270,7 +270,7 @@ impl Client {
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+    ) -> Result<IoBox, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
@@ -831,6 +831,7 @@ pub async fn work_with_qps_latency_correction(
     query_limit: QueryLimit,
     n_tasks: usize,
     n_workers: usize,
+    n_http2_parallel: usize,
 ) {
     let (tx, rx) = flume::unbounded();
 
@@ -875,29 +876,69 @@ pub async fn work_with_qps_latency_correction(
 
     let client = Arc::new(client);
 
-    let futures = (0..n_workers)
-        .map(|_| {
-            let client = client.clone();
-            let mut client_state = ClientStateHttp1::default();
-            let report_tx = report_tx.clone();
-            let rx = rx.clone();
-            tokio::spawn(async move {
-                while let Ok(start) = rx.recv_async().await {
-                    let mut res = client.work_http1(&mut client_state).await;
-
-                    if let Ok(request_result) = &mut res {
-                        request_result.start_latency_correction = Some(start);
+    let futures = if client.is_http2() {
+        (0..n_workers)
+            .map(|_| {
+                let report_tx = report_tx.clone();
+                let rx = rx.clone();
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let (connection_time, client_state) = setup_http2(&client).await;
+                    let futures = (0..n_http2_parallel)
+                        .map(|_| {
+                            let report_tx = report_tx.clone();
+                            let rx = rx.clone();
+                            let client = client.clone();
+                            let mut client_state = client_state.clone();
+                            tokio::spawn(async move {
+                                while let Ok(start) = rx.recv_async().await {
+                                    let mut res = client.work_http2(&mut client_state).await;
+                                    let is_cancel = is_too_many_open_files(&res);
+                                    if let Ok(ref mut res) = res {
+                                        res.connection_time = Some(connection_time);
+                                    }
+                                    if let Ok(request_result) = &mut res {
+                                        request_result.start_latency_correction = Some(start);
+                                    }
+                                    report_tx.send_async(res).await.unwrap();
+                                    if is_cancel {
+                                        break;
+                                    }
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    for f in futures {
+                        let _ = f.await;
                     }
-
-                    let is_cancel = is_too_many_open_files(&res);
-                    report_tx.send_async(res).await.unwrap();
-                    if is_cancel {
-                        break;
-                    }
-                }
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    } else {
+        (0..n_workers)
+            .map(|_| {
+                let client = client.clone();
+                let mut client_state = ClientStateHttp1::default();
+                let report_tx = report_tx.clone();
+                let rx = rx.clone();
+                tokio::spawn(async move {
+                    while let Ok(start) = rx.recv_async().await {
+                        let mut res = client.work_http1(&mut client_state).await;
+
+                        if let Ok(request_result) = &mut res {
+                            request_result.start_latency_correction = Some(start);
+                        }
+
+                        let is_cancel = is_too_many_open_files(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    };
 
     for f in futures {
         let _ = f.await;
@@ -910,25 +951,63 @@ pub async fn work_until(
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_workers: usize,
+    n_http2_parallel: usize,
 ) {
     let client = Arc::new(client);
-    let futures = (0..n_workers)
-        .map(|_| {
-            let client = client.clone();
-            let report_tx = report_tx.clone();
-            let mut client_state = ClientStateHttp1::default();
-            tokio::spawn(async move {
-                loop {
-                    let res = client.work_http1(&mut client_state).await;
-                    let is_cancel = is_too_many_open_files(&res);
-                    report_tx.send_async(res).await.unwrap();
-                    if is_cancel {
-                        break;
+    let futures = if client.is_http2() {
+        (0..n_workers)
+            .map(|_| {
+                let client = client.clone();
+                let report_tx = report_tx.clone();
+                tokio::spawn(async move {
+                    let (connection_time, client_state) = setup_http2(&client).await;
+
+                    let futures = (0..n_http2_parallel)
+                        .map(|_| {
+                            let client = client.clone();
+                            let report_tx = report_tx.clone();
+                            let mut client_state = client_state.clone();
+                            tokio::spawn(async move {
+                                loop {
+                                    let mut res = client.work_http2(&mut client_state).await;
+                                    let is_cancel = is_too_many_open_files(&res);
+                                    if let Ok(ref mut res) = res {
+                                        res.connection_time = Some(connection_time);
+                                    }
+                                    report_tx.send_async(res).await.unwrap();
+                                    if is_cancel {
+                                        break;
+                                    }
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    for f in futures {
+                        f.await;
                     }
-                }
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    } else {
+        (0..n_workers)
+            .map(|_| {
+                let client = client.clone();
+                let report_tx = report_tx.clone();
+                let mut client_state = ClientStateHttp1::default();
+                tokio::spawn(async move {
+                    loop {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_too_many_open_files(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    };
 
     tokio::time::sleep_until(dead_line.into()).await;
     for f in futures {

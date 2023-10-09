@@ -459,8 +459,14 @@ async fn main() -> anyhow::Result<()> {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => {
-                    client::work_until(client, result_tx, start + duration.into(), opts.n_workers)
-                        .await
+                    client::work_until(
+                        client,
+                        result_tx,
+                        start + duration.into(),
+                        opts.n_workers,
+                        opts.n_http2_parallel,
+                    )
+                    .await
                 }
                 Some(burst_duration) => {
                     if opts.latency_correction {
@@ -540,6 +546,7 @@ async fn main() -> anyhow::Result<()> {
                             ),
                             opts.n_requests,
                             opts.n_workers,
+                            opts.n_http2_parallel,
                         )
                         .await
                     } else {
@@ -566,6 +573,7 @@ async fn main() -> anyhow::Result<()> {
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
                         opts.n_workers,
+                        opts.n_http2_parallel,
                     )
                     .await
                 } else {
