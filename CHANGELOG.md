@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.6.5 (2023-09-04)
+
+- Fix Apple Silicon's binary release #323
+
 # 0.6.4 (2023-09-24)
 
 - Fix -H option to overwrite default value #309
