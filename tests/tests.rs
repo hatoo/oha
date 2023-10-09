@@ -1,11 +1,13 @@
 use std::{
+    convert::Infallible,
     net::{Ipv6Addr, SocketAddr},
     sync::atomic::AtomicU16,
 };
 
 use assert_cmd::Command;
 use axum::{
-    extract::RawBody,
+    extract::{Path, RawBody},
+    response::Redirect,
     routing::{any, get},
     Router,
 };
@@ -176,7 +178,6 @@ async fn get_path_rand_regex(p: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-/*
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = flume::unbounded();
 
@@ -214,7 +215,6 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
 
     rx.try_recv().is_ok()
 }
-*/
 
 async fn get_host_with_connect_to(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
@@ -313,7 +313,6 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
     rx.try_recv().unwrap()
 }
 
-/*
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let (tx, rx) = flume::unbounded();
 
@@ -350,7 +349,6 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
 
     rx.try_recv().unwrap()
 }
-*/
 
 async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
     let (tx, rx) = flume::unbounded();
@@ -521,7 +519,6 @@ async fn test_query_rand_regex() {
     assert!(chars[2].is_ascii_lowercase());
 }
 
-/*
 #[tokio::test]
 async fn test_redirect() {
     for n in 1..=5 {
@@ -533,7 +530,6 @@ async fn test_redirect() {
         assert!(!redirect(n, false, 10).await);
     }
 }
-*/
 
 #[tokio::test]
 async fn test_connect_to() {
@@ -556,7 +552,6 @@ async fn test_connect_to_ipv6_requested() {
     assert_eq!(get_host_with_connect_to_ipv6_requested().await, "[::1]")
 }
 
-/*
 #[tokio::test]
 async fn test_connect_to_redirect() {
     assert_eq!(
@@ -564,7 +559,6 @@ async fn test_connect_to_redirect() {
         "invalid.example.org"
     )
 }
-*/
 
 #[tokio::test]
 async fn test_ipv6() {
