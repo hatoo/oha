@@ -363,12 +363,10 @@ impl Client {
             } else {
                 let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
                 let dns_lookup = std::time::Instant::now();
-                let io = self.client(addr, &url).await?;
+                let send_request = self.client_http1(addr, &url).await?;
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
-                let (send_request, conn) = hyper::client::conn::http1::handshake(io).await?;
-                tokio::spawn(conn);
                 send_request
             };
             while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
@@ -378,10 +376,7 @@ impl Client {
                 start = std::time::Instant::now();
                 let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
                 let dns_lookup = std::time::Instant::now();
-                let io = self.client(addr, &url).await?;
-                let (sr, conn) = hyper::client::conn::http1::handshake(io).await?;
-                tokio::spawn(conn);
-                send_request = sr;
+                send_request = self.client_http1(addr, &url).await?;
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
