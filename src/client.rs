@@ -217,6 +217,10 @@ where
 }
 
 impl Client {
+    fn is_http2(&self) -> bool {
+        self.http_version == http::Version::HTTP_2
+    }
+
     #[cfg(unix)]
     async fn client(
         &self,
@@ -316,7 +320,11 @@ impl Client {
 
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
         let mut builder = http::Request::builder()
-            .uri(&url[..])
+            .uri(if self.is_http2() {
+                &url[..]
+            } else {
+                &url[url::Position::BeforePath..]
+            })
             .method(self.method.clone())
             .version(self.http_version);
 
