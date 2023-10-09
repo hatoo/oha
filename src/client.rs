@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::{TcpStream, UnixStream};
 use url::{ParseError, Url};
 
 use crate::tokiort::{TokioExecutor, TokioIo};
@@ -199,10 +200,61 @@ pub enum QueryLimit {
     Burst(std::time::Duration, usize),
 }
 
-trait Io: Read + Write + Unpin + Send {}
-type IoBox = Box<dyn Io>;
+enum Stream {
+    Tcp(TcpStream),
+    Tls(tokio_native_tls::TlsStream<TcpStream>),
+    Unix(UnixStream),
+}
 
-impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for TokioIo<T> {}
+impl Stream {
+    async fn handshake_http1(self) -> Result<SendRequestHttp1, ClientError> {
+        match self {
+            Stream::Tcp(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+            Stream::Tls(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+            Stream::Unix(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+        }
+    }
+    async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
+        match self {
+            Stream::Tcp(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
+                        .await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+            Stream::Tls(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
+                        .await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+            Stream::Unix(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
+                        .await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+        }
+    }
+}
 
 impl Client {
     fn is_http2(&self) -> bool {
@@ -210,19 +262,22 @@ impl Client {
     }
 
     #[cfg(unix)]
-    async fn client(&self, addr: (std::net::IpAddr, u16), url: &Url) -> Result<IoBox, ClientError> {
+    async fn client(
+        &self,
+        addr: (std::net::IpAddr, u16),
+        url: &Url,
+    ) -> Result<Stream, ClientError> {
         if url.scheme() == "https" {
             self.tls_client(addr, url).await
         } else if let Some(socket_path) = &self.unix_socket {
-            let stream = tokio::net::UnixStream::connect(socket_path).await?;
-            let io = TokioIo::new(stream);
-            Ok(Box::new(io))
+            Ok(Stream::Unix(
+                tokio::net::UnixStream::connect(socket_path).await?,
+            ))
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
             // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            let io = TokioIo::new(stream);
-            Ok(Box::new(io))
+            Ok(Stream::Tcp(stream))
         }
     }
 
@@ -244,7 +299,7 @@ impl Client {
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<IoBox, ClientError> {
+    ) -> Result<Stream, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
@@ -261,8 +316,7 @@ impl Client {
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
 
-        let io = TokioIo::new(stream);
-        Ok(Box::new(io))
+        Ok(Stream::Tls(stream))
     }
 
     #[cfg(feature = "rustls")]
@@ -301,10 +355,8 @@ impl Client {
         addr: (std::net::IpAddr, u16),
         url: &Url,
     ) -> Result<SendRequestHttp1, ClientError> {
-        let io = self.client(addr, url).await?;
-        let (send_request, conn) = hyper::client::conn::http1::handshake(io).await?;
-        tokio::spawn(conn);
-        Ok(send_request)
+        let stream = self.client(addr, url).await?;
+        stream.handshake_http1().await
     }
 
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
@@ -438,9 +490,8 @@ impl Client {
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
         let addr = self.dns.lookup(url, rng).await?;
         let dns_lookup = std::time::Instant::now();
-        let io = self.client(addr, url).await?;
-        let (send_request, conn) = hyper::client::conn::http2::handshake(TokioExecutor, io).await?;
-        tokio::spawn(conn);
+        let stream = self.client(addr, url).await?;
+        let send_request = stream.handshake_http2().await?;
         let dialup = std::time::Instant::now();
         Ok((ConnectionTime { dns_lookup, dialup }, send_request))
     }
