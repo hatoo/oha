@@ -1,12 +1,10 @@
 use futures::future::FutureExt;
 use http_body_util::Full;
 use hyper::body::{Body, Incoming};
-use hyper::rt::{Read, Write};
 use rand::prelude::*;
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpStream, UnixStream};
 use url::{ParseError, Url};
 
