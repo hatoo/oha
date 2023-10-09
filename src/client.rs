@@ -983,8 +983,9 @@ pub async fn work_until(
                         })
                         .collect::<Vec<_>>();
 
+                    tokio::time::sleep_until(dead_line.into()).await;
                     for f in futures {
-                        f.await;
+                        f.abort();
                     }
                 })
             })
