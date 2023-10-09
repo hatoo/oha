@@ -236,20 +236,15 @@ impl Client {
     }
 
     #[cfg(not(unix))]
-    async fn client(
-        &self,
-        addr: (std::net::IpAddr, u16),
-        url: &Url,
-    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+    async fn client(&self, addr: (std::net::IpAddr, u16), url: &Url) -> Result<IoBox, ClientError> {
         if url.scheme() == "https" {
             self.tls_client(addr, url).await
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
             // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            let (send, conn) = hyper::client::conn::handshake(stream).await?;
-            tokio::spawn(conn);
-            Ok(send)
+            let io = TokioIo::new(stream);
+            Ok(Box::new(io))
         }
     }
 
@@ -306,9 +301,8 @@ impl Client {
             rustls::ServerName::try_from(url.host_str().ok_or(ClientError::HostNotFound)?)?;
         let stream = connector.connect(domain, stream).await?;
 
-        let (send, conn) = hyper::client::conn::handshake(stream).await?;
-        tokio::spawn(conn);
-        Ok(send)
+        let io = TokioIo::new(stream);
+        Ok(Box::new(io))
     }
 
     async fn client_http1(
