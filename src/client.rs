@@ -1,12 +1,21 @@
 use futures::future::FutureExt;
 use futures::StreamExt;
+use http_body_util::Full;
+use hyper::body::{Body, Incoming};
+use hyper::rt::{Read, Write};
 use rand::prelude::*;
+use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::io::{AsyncRead, AsyncWrite};
 use url::{ParseError, Url};
 
+use crate::http_wrapper::SendRequestX;
+use crate::tokiort::TokioIo;
 use crate::url_generator::{UrlGenerator, UrlGeneratorError};
 use crate::ConnectToEntry;
+
+type SendRequest = SendRequestX<Full<&'static [u8]>>;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionTime {
@@ -160,7 +169,7 @@ pub struct Client {
 
 struct ClientState {
     rng: StdRng,
-    send_request: Option<hyper::client::conn::SendRequest<hyper::Body>>,
+    send_request: Option<SendRequest>,
 }
 
 impl Default for ClientState {
@@ -177,27 +186,59 @@ pub enum QueryLimit {
     Burst(std::time::Duration, usize),
 }
 
+pub async fn handshake<T, B>(
+    http_version: http::Version,
+    io: T,
+) -> Result<SendRequestX<B>, ClientError>
+where
+    T: Read + Write + Unpin + 'static + Send,
+    B: Body + 'static + Send + Unpin,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    if http_version == http::Version::HTTP_2 {
+        #[derive(Clone)]
+        /// An Executor that uses the tokio runtime.
+        pub struct TokioExecutor;
+
+        impl<F> hyper::rt::Executor<F> for TokioExecutor
+        where
+            F: std::future::Future + Send + 'static,
+            F::Output: Send + 'static,
+        {
+            fn execute(&self, fut: F) {
+                tokio::task::spawn(fut);
+            }
+        }
+        let (send, conn) = hyper::client::conn::http2::handshake(TokioExecutor, io).await?;
+        tokio::spawn(conn);
+        Ok(SendRequestX::Http2(send))
+    } else {
+        let (send, conn) = hyper::client::conn::http1::handshake(io).await?;
+        tokio::spawn(conn);
+        Ok(SendRequestX::Http1(send))
+    }
+}
+
 impl Client {
     #[cfg(unix)]
     async fn client(
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+    ) -> Result<SendRequest, ClientError> {
         if url.scheme() == "https" {
             self.tls_client(addr, url).await
         } else if let Some(socket_path) = &self.unix_socket {
             let stream = tokio::net::UnixStream::connect(socket_path).await?;
-            let (send, conn) = hyper::client::conn::handshake(stream).await?;
-            tokio::spawn(conn);
-            Ok(send)
+            let io = TokioIo::new(stream);
+            handshake(self.http_version, io).await
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
             // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            let (send, conn) = hyper::client::conn::handshake(stream).await?;
-            tokio::spawn(conn);
-            Ok(send)
+            let io = TokioIo::new(stream);
+            handshake(self.http_version, io).await
         }
     }
 
@@ -224,7 +265,7 @@ impl Client {
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<hyper::client::conn::SendRequest<hyper::Body>, ClientError> {
+    ) -> Result<SendRequest, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
@@ -241,9 +282,8 @@ impl Client {
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
 
-        let (send, conn) = hyper::client::conn::handshake(stream).await?;
-        tokio::spawn(conn);
-        Ok(send)
+        let io = TokioIo::new(stream);
+        handshake(self.http_version, io).await
     }
 
     #[cfg(feature = "rustls")]
@@ -278,7 +318,7 @@ impl Client {
         Ok(send)
     }
 
-    fn request(&self, url: &Url) -> Result<http::Request<hyper::Body>, ClientError> {
+    fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
         let mut builder = http::Request::builder()
             .uri(&url[url::Position::BeforePath..])
             .method(self.method.clone())
@@ -289,9 +329,9 @@ impl Client {
             .ok_or(ClientError::GetHeaderFromBuilderError)? = self.headers.clone();
 
         if let Some(body) = self.body {
-            Ok(builder.body(hyper::Body::from(body))?)
+            Ok(builder.body(Full::new(body))?)
         } else {
-            Ok(builder.body(hyper::Body::empty())?)
+            Ok(builder.body(Full::default())?)
         }
     }
 
@@ -333,29 +373,15 @@ impl Client {
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
-                    let mut status = parts.status;
+                    let status = parts.status;
 
                     let mut len_sum = 0;
-                    while let Some(chunk) = stream.next().await {
-                        len_sum += chunk?.len();
-                    }
-
-                    if self.redirect_limit != 0 {
-                        if let Some(location) = parts.headers.get("Location") {
-                            let (send_request_redirect, new_status, len) = self
-                                .redirect(
-                                    send_request,
-                                    &url,
-                                    location,
-                                    self.redirect_limit,
-                                    &mut client_state.rng,
-                                )
-                                .await?;
-
-                            send_request = send_request_redirect;
-                            status = new_status;
-                            len_sum = len;
-                        }
+                    while let Some(chunk) = futures::future::poll_fn(|cx| {
+                        Incoming::poll_frame(Pin::new(&mut stream), cx)
+                    })
+                    .await
+                    {
+                        len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
                     let end = std::time::Instant::now();
@@ -390,88 +416,6 @@ impl Client {
                 Err(ClientError::Timeout)
             }
         }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn redirect<'a, R: Rng + Send>(
-        &'a self,
-        send_request: hyper::client::conn::SendRequest<hyper::Body>,
-        base_url: &'a Url,
-        location: &'a http::header::HeaderValue,
-        limit: usize,
-        rng: &'a mut R,
-    ) -> futures::future::BoxFuture<
-        'a,
-        Result<
-            (
-                hyper::client::conn::SendRequest<hyper::Body>,
-                http::StatusCode,
-                usize,
-            ),
-            ClientError,
-        >,
-    > {
-        async move {
-            if limit == 0 {
-                return Err(ClientError::TooManyRedirect);
-            }
-            let url = match Url::parse(location.to_str()?) {
-                Ok(url) => url,
-                Err(ParseError::RelativeUrlWithoutBase) => Url::options()
-                    .base_url(Some(base_url))
-                    .parse(location.to_str()?)?,
-                Err(err) => Err(err)?,
-            };
-
-            let (mut send_request, send_request_base) =
-                if base_url.authority() == url.authority() && !self.disable_keepalive {
-                    // reuse connection
-                    (send_request, None)
-                } else {
-                    let addr = self.dns.lookup(&url, rng).await?;
-                    (self.client(addr, &url).await?, Some(send_request))
-                };
-
-            while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
-                .await
-                .is_err()
-            {
-                let addr = self.dns.lookup(&url, rng).await?;
-                send_request = self.client(addr, &url).await?;
-            }
-
-            let mut request = self.request(&url)?;
-            if url.authority() != base_url.authority() {
-                request.headers_mut().insert(
-                    http::header::HOST,
-                    http::HeaderValue::from_str(url.authority())?,
-                );
-            }
-            let res = send_request.send_request(request).await?;
-            let (parts, mut stream) = res.into_parts();
-            let mut status = parts.status;
-
-            let mut len_sum = 0;
-            while let Some(chunk) = stream.next().await {
-                len_sum += chunk?.len();
-            }
-
-            if let Some(location) = parts.headers.get("Location") {
-                let (send_request_redirect, new_status, len) = self
-                    .redirect(send_request, &url, location, limit - 1, rng)
-                    .await?;
-                send_request = send_request_redirect;
-                status = new_status;
-                len_sum = len;
-            }
-
-            if let Some(send_request_base) = send_request_base {
-                Ok((send_request_base, status, len_sum))
-            } else {
-                Ok((send_request, status, len_sum))
-            }
-        }
-        .boxed()
     }
 }
 

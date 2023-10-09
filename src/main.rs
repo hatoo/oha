@@ -13,9 +13,11 @@ use url_generator::UrlGenerator;
 
 mod client;
 mod histogram;
+mod http_wrapper;
 mod monitor;
 mod printer;
 mod timescale;
+mod tokiort;
 mod url_generator;
 
 #[cfg(unix)]
@@ -206,9 +208,9 @@ async fn main() -> anyhow::Result<()> {
             "0.9" => http::Version::HTTP_09,
             "1.0" => http::Version::HTTP_10,
             "1.1" => http::Version::HTTP_11,
-            "2.0" | "2" => anyhow::bail!("HTTP/2 is not supported yet."),
+            "2.0" | "2" => http::Version::HTTP_2,
             "3.0" | "3" => anyhow::bail!("HTTP/3 is not supported yet."),
-            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1."),
+            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2."),
         }
     } else {
         http::Version::HTTP_11

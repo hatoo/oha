@@ -135,8 +135,8 @@ dependencies = [
  "bytes",
  "futures-util",
  "http",
- "http-body",
- "hyper",
+ "http-body 0.4.5",
+ "hyper 0.14.27",
  "itoa",
  "matchit",
  "memchr",
@@ -165,7 +165,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "http",
- "http-body",
+ "http-body 0.4.5",
  "mime",
  "rustversion",
  "tower-layer",
@@ -634,6 +634,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-body"
+version = "1.0.0-rc.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "951dfc2e32ac02d67c90c0d65bd27009a635dc9b381a2cc7d284ab01e3a0150d"
+dependencies = [
+ "bytes",
+ "http",
+]
+
+[[package]]
+name = "http-body-util"
+version = "0.1.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08ef12f041acdd397010e5fb6433270c147d3b8b2d0a840cd7fff8e531dca5c8"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body 1.0.0-rc.2",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "httparse"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -663,7 +686,7 @@ dependencies = [
  "futures-util",
  "h2",
  "http",
- "http-body",
+ "http-body 0.4.5",
  "httparse",
  "httpdate",
  "itoa",
@@ -671,6 +694,27 @@ dependencies = [
  "socket2 0.4.9",
  "tokio",
  "tower-service",
+ "tracing",
+ "want",
+]
+
+[[package]]
+name = "hyper"
+version = "1.0.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d280a71f348bcc670fc55b02b63c53a04ac0bf2daff2980795aeaf53edae10e6"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "h2",
+ "http",
+ "http-body 1.0.0-rc.2",
+ "httparse",
+ "httpdate",
+ "itoa",
+ "pin-project-lite",
+ "tokio",
  "tracing",
  "want",
 ]
@@ -935,13 +979,17 @@ dependencies = [
  "float-ord",
  "flume",
  "futures",
+ "futures-util",
  "http",
+ "http-body-util",
  "humantime",
- "hyper",
+ "hyper 0.14.27",
+ "hyper 1.0.0-rc.4",
  "jemallocator",
  "lazy_static",
  "libc",
  "native-tls",
+ "pin-project-lite",
  "rand",
  "rand_regex",
  "ratatui",
