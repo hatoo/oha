@@ -316,7 +316,7 @@ impl Client {
 
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
         let mut builder = http::Request::builder()
-            .uri(&url[url::Position::BeforePath..])
+            .uri(&url[..])
             .method(self.method.clone())
             .version(self.http_version);
 

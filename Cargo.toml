@@ -42,7 +42,7 @@ tui = { package = "ratatui", version = "0.23", default-features = false, feature
 ] }
 
 http = "0.2"
-hyper = { version = "1.0.0-rc.4", features = ["full"] }
+hyper = { git = "https://github.com/hyperium/hyper.git", features = ["full"] }
 
 # native-tls
 native-tls = { version = "0.2.11", optional = true }

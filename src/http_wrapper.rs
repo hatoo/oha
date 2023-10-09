@@ -26,3 +26,12 @@ where
         }
     }
 }
+
+impl<B> SendRequestX<B> {
+    fn clone_http2(&self) -> Option<Self> {
+        match self {
+            Self::Http1(_) => None,
+            Self::Http2(send) => Some(Self::Http2(send.clone())),
+        }
+    }
+}
