@@ -122,6 +122,8 @@ Note: If qps is specified, burst will be ignored",
         long = "http-version"
     )]
     http_version: Option<String>,
+    #[clap(help = "Use HTTP/2. Shorthand for --http-version=2", long = "http2")]
+    http2: bool,
     #[clap(help = "HTTP Host header", long = "host")]
     host: Option<String>,
     #[clap(help = "Disable compression.", long = "disable-compression")]
@@ -208,17 +210,18 @@ impl FromStr for ConnectToEntry {
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
 
-    let http_version: http::Version = if let Some(http_version) = opts.http_version {
-        match http_version.trim() {
+    let http_version: http::Version = match (opts.http2, opts.http_version) {
+        (true, Some(_)) => anyhow::bail!("--http2 and --http-version are exclusive"),
+        (true, None) => http::Version::HTTP_2,
+        (false, Some(http_version)) => match http_version.trim() {
             "0.9" => http::Version::HTTP_09,
             "1.0" => http::Version::HTTP_10,
             "1.1" => http::Version::HTTP_11,
             "2.0" | "2" => http::Version::HTTP_2,
             "3.0" | "3" => anyhow::bail!("HTTP/3 is not supported yet."),
             _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2."),
-        }
-    } else {
-        http::Version::HTTP_11
+        },
+        (false, None) => http::Version::HTTP_11,
     };
 
     let url_generator = if opts.rand_regex_url {
