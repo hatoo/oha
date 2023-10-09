@@ -1,5 +1,4 @@
 use futures::future::FutureExt;
-use futures::StreamExt;
 use http_body_util::Full;
 use hyper::body::{Body, Incoming};
 use hyper::rt::{Read, Write};
@@ -7,7 +6,6 @@ use rand::prelude::*;
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncWrite};
 use url::{ParseError, Url};
 
 use crate::http_wrapper::SendRequestX;
@@ -109,8 +107,6 @@ pub enum ClientError {
     HostNotFound,
     #[error("No record returned from DNS")]
     DNSNoRecord,
-    #[error("Redirection limit has reached")]
-    TooManyRedirect,
     #[error(transparent)]
     // Use Box here because ResolveError is big.
     ResolveError(#[from] Box<trust_dns_resolver::error::ResolveError>),
