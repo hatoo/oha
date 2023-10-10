@@ -989,11 +989,7 @@ pub async fn work_with_qps_latency_correction(
                 tokio::spawn(async move {
                     while let Ok(start) = rx.recv_async().await {
                         let mut res = client.work_http1(&mut client_state).await;
-
-                        if let Ok(request_result) = &mut res {
-                            request_result.start_latency_correction = Some(start);
-                        }
-
+                        set_start_latency_correction(&mut res, start);
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
@@ -1299,11 +1295,7 @@ pub async fn work_until_with_qps_latency_correction(
                 tokio::spawn(async move {
                     while let Ok(start) = rx.recv_async().await {
                         let mut res = client.work_http1(&mut client_state).await;
-
-                        if let Ok(request_result) = &mut res {
-                            request_result.start_latency_correction = Some(start);
-                        }
-
+                        set_start_latency_correction(&mut res, start);
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {

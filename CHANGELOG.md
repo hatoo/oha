@@ -1,5 +1,8 @@
 # Unreleased
 
+- Support HTTP/2 #224 #201
+    - Added `-p` option to set number of HTTP/2 parallel requests
+
 # 0.6.5 (2023-09-04)
 
 - Fix Apple Silicon's binary release #323
