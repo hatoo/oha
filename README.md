@@ -57,7 +57,8 @@ Arguments:
 
 Options:
   -n <N_REQUESTS>                     Number of requests to run. [default: 200]
-  -c <N_WORKERS>                      Number of workers to run concurrently. You may should increase limit to number of open files for larger `-c`. [default: 50]
+  -c <N_CONNECTIONS>                  Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`. [default: 50]
+  -p <N_HTTP2_PARALLEL>               Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total. [default: 1]
   -z <DURATION>                       Duration of application to send requests. If duration is specified, n is ignored.
                                       Examples: -z 10s -z 3m.
   -q <QUERY_PER_SECOND>               Rate limit for all, in queries per second (QPS)
@@ -80,6 +81,7 @@ Options:
   -T <CONTENT_TYPE>                   Content-Type.
   -a <BASIC_AUTH>                     Basic authentication, username:password
       --http-version <HTTP_VERSION>   HTTP version. Available values 0.9, 1.0, 1.1.
+      --http2                         Use HTTP/2. Shorthand for --http-version=2
       --host <HOST>                   HTTP Host header
       --disable-compression           Disable compression.
   -r, --redirect <REDIRECT>           Limit for number of Redirect. Set 0 for no redirection. [default: 10]

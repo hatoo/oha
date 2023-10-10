@@ -37,13 +37,13 @@ struct Opts {
     )]
     n_requests: usize,
     #[clap(
-        help = "Number of workers to run concurrently. You may should increase limit to number of open files for larger `-c`.",
+        help = "Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`.",
         short = 'c',
         default_value = "50"
     )]
-    n_workers: usize,
+    n_connections: usize,
     #[clap(
-        help = "Number of parallel requests to send on HTTP/2.",
+        help = "Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total.",
         short = 'p',
         default_value = "1"
     )]
@@ -463,7 +463,7 @@ async fn main() -> anyhow::Result<()> {
                         client,
                         result_tx,
                         start + duration.into(),
-                        opts.n_workers,
+                        opts.n_connections,
                         opts.n_http2_parallel,
                     )
                     .await
@@ -479,7 +479,7 @@ async fn main() -> anyhow::Result<()> {
                             ),
                             start,
                             start + duration.into(),
-                            opts.n_workers,
+                            opts.n_connections,
                             opts.n_http2_parallel,
                         )
                         .await
@@ -493,7 +493,7 @@ async fn main() -> anyhow::Result<()> {
                             ),
                             start,
                             start + duration.into(),
-                            opts.n_workers,
+                            opts.n_connections,
                             opts.n_http2_parallel,
                         )
                         .await
@@ -508,7 +508,7 @@ async fn main() -> anyhow::Result<()> {
                         client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
-                        opts.n_workers,
+                        opts.n_connections,
                         opts.n_http2_parallel,
                     )
                     .await
@@ -519,7 +519,7 @@ async fn main() -> anyhow::Result<()> {
                         client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
-                        opts.n_workers,
+                        opts.n_connections,
                         opts.n_http2_parallel,
                     )
                     .await
@@ -534,7 +534,7 @@ async fn main() -> anyhow::Result<()> {
                         client,
                         result_tx,
                         opts.n_requests,
-                        opts.n_workers,
+                        opts.n_connections,
                         opts.n_http2_parallel,
                     )
                     .await
@@ -549,7 +549,7 @@ async fn main() -> anyhow::Result<()> {
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             opts.n_requests,
-                            opts.n_workers,
+                            opts.n_connections,
                             opts.n_http2_parallel,
                         )
                         .await
@@ -562,7 +562,7 @@ async fn main() -> anyhow::Result<()> {
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             opts.n_requests,
-                            opts.n_workers,
+                            opts.n_connections,
                             opts.n_http2_parallel,
                         )
                         .await
@@ -576,7 +576,7 @@ async fn main() -> anyhow::Result<()> {
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
-                        opts.n_workers,
+                        opts.n_connections,
                         opts.n_http2_parallel,
                     )
                     .await
@@ -586,7 +586,7 @@ async fn main() -> anyhow::Result<()> {
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
-                        opts.n_workers,
+                        opts.n_connections,
                         opts.n_http2_parallel,
                     )
                     .await

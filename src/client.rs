@@ -702,7 +702,7 @@ pub async fn work(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
-    n_workers: usize,
+    n_connections: usize,
     n_http2_parallel: usize,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -711,7 +711,7 @@ pub async fn work(
     let client = Arc::new(client);
 
     let futures = if client.is_http2() {
-        (0..n_workers)
+        (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
                 let counter = counter.clone();
@@ -747,7 +747,7 @@ pub async fn work(
             })
             .collect::<Vec<_>>()
     } else {
-        (0..n_workers)
+        (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
                 let counter = counter.clone();
@@ -778,7 +778,7 @@ pub async fn work_with_qps(
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
-    n_workers: usize,
+    n_connections: usize,
     n_http2_parallel: usize,
 ) {
     let (tx, rx) = flume::unbounded();
@@ -823,7 +823,7 @@ pub async fn work_with_qps(
     let client = Arc::new(client);
 
     let futures = if client.is_http2() {
-        (0..n_workers)
+        (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
@@ -858,7 +858,7 @@ pub async fn work_with_qps(
             })
             .collect::<Vec<_>>()
     } else {
-        (0..n_workers)
+        (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
@@ -889,7 +889,7 @@ pub async fn work_with_qps_latency_correction(
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
-    n_workers: usize,
+    n_connections: usize,
     n_http2_parallel: usize,
 ) {
     let (tx, rx) = flume::unbounded();
@@ -936,7 +936,7 @@ pub async fn work_with_qps_latency_correction(
     let client = Arc::new(client);
 
     let futures = if client.is_http2() {
-        (0..n_workers)
+        (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
@@ -974,7 +974,7 @@ pub async fn work_with_qps_latency_correction(
             })
             .collect::<Vec<_>>()
     } else {
-        (0..n_workers)
+        (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
@@ -1009,12 +1009,12 @@ pub async fn work_until(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
-    n_workers: usize,
+    n_connections: usize,
     n_http2_parallel: usize,
 ) {
     let client = Arc::new(client);
     if client.is_http2() {
-        let futures = (0..n_workers)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
@@ -1053,7 +1053,7 @@ pub async fn work_until(
             let _ = f.await;
         }
     } else {
-        let futures = (0..n_workers)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
@@ -1084,7 +1084,7 @@ pub async fn work_until_with_qps(
     query_limit: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
-    n_workers: usize,
+    n_connections: usize,
     n_http2_parallel: usize,
 ) {
     let rx = match query_limit {
@@ -1130,7 +1130,7 @@ pub async fn work_until_with_qps(
     let client = Arc::new(client);
 
     if client.is_http2() {
-        let futures = (0..n_workers)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
@@ -1171,7 +1171,7 @@ pub async fn work_until_with_qps(
             let _ = f.await;
         }
     } else {
-        let futures = (0..n_workers)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
@@ -1204,7 +1204,7 @@ pub async fn work_until_with_qps_latency_correction(
     query_limit: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
-    n_workers: usize,
+    n_connections: usize,
     n_http2_parallel: usize,
 ) {
     let (tx, rx) = flume::unbounded();
@@ -1249,7 +1249,7 @@ pub async fn work_until_with_qps_latency_correction(
     let client = Arc::new(client);
 
     if client.is_http2() {
-        let futures = (0..n_workers)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
@@ -1294,7 +1294,7 @@ pub async fn work_until_with_qps_latency_correction(
             let _ = f.await;
         }
     } else {
-        let futures = (0..n_workers)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
