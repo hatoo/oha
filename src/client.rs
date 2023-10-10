@@ -198,6 +198,8 @@ pub enum QueryLimit {
     Burst(std::time::Duration, usize),
 }
 
+// To avoid dynamic dispatch
+// I'm not sure how much this is effective
 enum Stream {
     Tcp(TcpStream),
     Tls(tokio_native_tls::TlsStream<TcpStream>),
@@ -280,15 +282,18 @@ impl Client {
     }
 
     #[cfg(not(unix))]
-    async fn client(&self, addr: (std::net::IpAddr, u16), url: &Url) -> Result<IoBox, ClientError> {
+    async fn client(
+        &self,
+        addr: (std::net::IpAddr, u16),
+        url: &Url,
+    ) -> Result<Stream, ClientError> {
         if url.scheme() == "https" {
             self.tls_client(addr, url).await
         } else {
             let stream = tokio::net::TcpStream::connect(addr).await?;
             stream.set_nodelay(true)?;
             // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            let io = TokioIo::new(stream);
-            Ok(Box::new(io))
+            Ok(Stream::Tcp(stream))
         }
     }
 
@@ -322,7 +327,7 @@ impl Client {
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<IoBox, ClientError> {
+    ) -> Result<Stream, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
@@ -344,8 +349,7 @@ impl Client {
             rustls::ServerName::try_from(url.host_str().ok_or(ClientError::HostNotFound)?)?;
         let stream = connector.connect(domain, stream).await?;
 
-        let io = TokioIo::new(stream);
-        Ok(Box::new(io))
+        Stream::Tls(stream)
     }
 
     async fn client_http1(
