@@ -16,6 +16,7 @@ mod histogram;
 mod monitor;
 mod printer;
 mod timescale;
+mod tokiort;
 mod url_generator;
 
 #[cfg(unix)]
@@ -36,11 +37,17 @@ struct Opts {
     )]
     n_requests: usize,
     #[clap(
-        help = "Number of workers to run concurrently. You may should increase limit to number of open files for larger `-c`.",
+        help = "Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`.",
         short = 'c',
         default_value = "50"
     )]
-    n_workers: usize,
+    n_connections: usize,
+    #[clap(
+        help = "Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total.",
+        short = 'p',
+        default_value = "1"
+    )]
+    n_http2_parallel: usize,
     #[clap(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
 Examples: -z 10s -z 3m.",
@@ -115,19 +122,21 @@ Note: If qps is specified, burst will be ignored",
         long = "http-version"
     )]
     http_version: Option<String>,
+    #[clap(help = "Use HTTP/2. Shorthand for --http-version=2", long = "http2")]
+    http2: bool,
     #[clap(help = "HTTP Host header", long = "host")]
     host: Option<String>,
     #[clap(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
     #[clap(
-        help = "Limit for number of Redirect. Set 0 for no redirection.",
+        help = "Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2.",
         default_value = "10",
         short = 'r',
         long = "redirect"
     )]
     redirect: usize,
     #[clap(
-        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
+        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
@@ -201,17 +210,18 @@ impl FromStr for ConnectToEntry {
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
 
-    let http_version: http::Version = if let Some(http_version) = opts.http_version {
-        match http_version.trim() {
+    let http_version: http::Version = match (opts.http2, opts.http_version) {
+        (true, Some(_)) => anyhow::bail!("--http2 and --http-version are exclusive"),
+        (true, None) => http::Version::HTTP_2,
+        (false, Some(http_version)) => match http_version.trim() {
             "0.9" => http::Version::HTTP_09,
             "1.0" => http::Version::HTTP_10,
             "1.1" => http::Version::HTTP_11,
-            "2.0" | "2" => anyhow::bail!("HTTP/2 is not supported yet."),
+            "2.0" | "2" => http::Version::HTTP_2,
             "3.0" | "3" => anyhow::bail!("HTTP/3 is not supported yet."),
-            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1."),
-        }
-    } else {
-        http::Version::HTTP_11
+            _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2."),
+        },
+        (false, None) => http::Version::HTTP_11,
     };
 
     let url_generator = if opts.rand_regex_url {
@@ -449,8 +459,14 @@ async fn main() -> anyhow::Result<()> {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => {
-                    client::work_until(client, result_tx, start + duration.into(), opts.n_workers)
-                        .await
+                    client::work_until(
+                        client,
+                        result_tx,
+                        start + duration.into(),
+                        opts.n_connections,
+                        opts.n_http2_parallel,
+                    )
+                    .await
                 }
                 Some(burst_duration) => {
                     if opts.latency_correction {
@@ -463,7 +479,8 @@ async fn main() -> anyhow::Result<()> {
                             ),
                             start,
                             start + duration.into(),
-                            opts.n_workers,
+                            opts.n_connections,
+                            opts.n_http2_parallel,
                         )
                         .await
                     } else {
@@ -476,7 +493,8 @@ async fn main() -> anyhow::Result<()> {
                             ),
                             start,
                             start + duration.into(),
-                            opts.n_workers,
+                            opts.n_connections,
+                            opts.n_http2_parallel,
                         )
                         .await
                     }
@@ -490,7 +508,8 @@ async fn main() -> anyhow::Result<()> {
                         client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
-                        opts.n_workers,
+                        opts.n_connections,
+                        opts.n_http2_parallel,
                     )
                     .await
                 } else {
@@ -500,7 +519,8 @@ async fn main() -> anyhow::Result<()> {
                         client::QueryLimit::Qps(qps),
                         start,
                         start + duration.into(),
-                        opts.n_workers,
+                        opts.n_connections,
+                        opts.n_http2_parallel,
                     )
                     .await
                 }
@@ -509,7 +529,16 @@ async fn main() -> anyhow::Result<()> {
     } else {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
-                None => client::work(client, result_tx, opts.n_requests, opts.n_workers).await,
+                None => {
+                    client::work(
+                        client,
+                        result_tx,
+                        opts.n_requests,
+                        opts.n_connections,
+                        opts.n_http2_parallel,
+                    )
+                    .await
+                }
                 Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_with_qps_latency_correction(
@@ -520,7 +549,8 @@ async fn main() -> anyhow::Result<()> {
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             opts.n_requests,
-                            opts.n_workers,
+                            opts.n_connections,
+                            opts.n_http2_parallel,
                         )
                         .await
                     } else {
@@ -532,7 +562,8 @@ async fn main() -> anyhow::Result<()> {
                                 opts.burst_requests.unwrap_or(1),
                             ),
                             opts.n_requests,
-                            opts.n_workers,
+                            opts.n_connections,
+                            opts.n_http2_parallel,
                         )
                         .await
                     }
@@ -545,7 +576,8 @@ async fn main() -> anyhow::Result<()> {
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
-                        opts.n_workers,
+                        opts.n_connections,
+                        opts.n_http2_parallel,
                     )
                     .await
                 } else {
@@ -554,7 +586,8 @@ async fn main() -> anyhow::Result<()> {
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
-                        opts.n_workers,
+                        opts.n_connections,
+                        opts.n_http2_parallel,
                     )
                     .await
                 }

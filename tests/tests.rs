@@ -11,8 +11,8 @@ use axum::{
     routing::{any, get},
     Router,
 };
-use http::{HeaderMap, Response};
-use hyper::{
+use http::{HeaderMap, Request, Response};
+use hyper14::{
     body::to_bytes,
     server::conn::AddrIncoming,
     service::{make_service_fn, service_fn},
@@ -22,14 +22,14 @@ use hyper::{
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
 
-fn bind_port() -> (hyper::server::Builder<AddrIncoming>, u16) {
+fn bind_port() -> (hyper14::server::Builder<AddrIncoming>, u16) {
     let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
 
     (axum::Server::bind(&addr), port)
 }
 
-fn bind_port_ipv6() -> (hyper::server::Builder<AddrIncoming>, u16) {
+fn bind_port_ipv6() -> (hyper14::server::Builder<AddrIncoming>, u16) {
     let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::new(std::net::IpAddr::V6(Ipv6Addr::LOCALHOST), port);
 
@@ -409,6 +409,39 @@ async fn test_enable_compression_default() {
     assert!(accept_encoding.contains(&"br"));
 }
 
+async fn get_http_version(args: &[&str]) -> http::Version {
+    let (tx, rx) = flume::unbounded();
+
+    let app = Router::new().route(
+        "/",
+        get(|req: Request<hyper14::Body>| async move {
+            tx.send(req.version()).unwrap();
+            "Hello World"
+        }),
+    );
+
+    let (server, port) = bind_port();
+
+    tokio::spawn(async {
+        server.serve(app.into_make_service()).await.unwrap();
+    });
+
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(["-n", "1", "--no-tui"])
+            .args(args)
+            .arg(format!("http://127.0.0.1:{port}"))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap()
+}
+
 #[tokio::test]
 async fn test_setting_custom_header() {
     let header = get_header_body(&["-H", "foo: bar", "--"]).await.0;
@@ -594,4 +627,15 @@ async fn test_ipv6() {
 #[tokio::test]
 async fn test_query_limit() {
     assert_eq!(burst_10_req_delay_2s_rate_4(10, &[],).await, 10);
+}
+
+#[tokio::test]
+async fn test_http2() {
+    // FIXME: Ideally, we need to test all of above with HTTP/2
+    assert_eq!(get_http_version(&[]).await, http::Version::HTTP_11);
+    assert_eq!(get_http_version(&["--http2"]).await, http::Version::HTTP_2);
+    assert_eq!(
+        get_http_version(&["--http-version", "2"]).await,
+        http::Version::HTTP_2
+    );
 }
