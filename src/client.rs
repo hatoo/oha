@@ -202,7 +202,10 @@ pub enum QueryLimit {
 // I'm not sure how much this is effective
 enum Stream {
     Tcp(TcpStream),
+    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
     Tls(tokio_native_tls::TlsStream<TcpStream>),
+    #[cfg(feature = "rustls")]
+    Tls(tokio_rustls::client::TlsStream<TcpStream>),
     Unix(UnixStream),
 }
 
@@ -349,7 +352,7 @@ impl Client {
             rustls::ServerName::try_from(url.host_str().ok_or(ClientError::HostNotFound)?)?;
         let stream = connector.connect(domain, stream).await?;
 
-        Stream::Tls(stream)
+        Ok(Stream::Tls(stream))
     }
 
     async fn client_http1(
