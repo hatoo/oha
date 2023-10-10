@@ -45,7 +45,7 @@ http = "0.2"
 hyper = { git = "https://github.com/hyperium/hyper.git", features = ["full"] }
 
 # native-tls
-native-tls = { version = "0.2.11", optional = true }
+native-tls = { version = "0.2.11", features = ["alpn"], optional = true }
 tokio-native-tls = { version = "0.3.0", optional = true }
 
 # rustls
