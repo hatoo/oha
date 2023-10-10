@@ -352,6 +352,9 @@ impl Client {
                 .dangerous()
                 .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
         }
+        if self.is_http2() {
+            config.alpn_protocols = vec![b"h2".to_vec()];
+        }
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
         let domain =
             rustls::ServerName::try_from(url.host_str().ok_or(ClientError::HostNotFound)?)?;
