@@ -311,15 +311,18 @@ impl Client {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
-        let connector = if self.insecure {
-            native_tls::TlsConnector::builder()
+        let mut connector_builder = native_tls::TlsConnector::builder();
+        if self.insecure {
+            connector_builder
                 .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true)
-                .build()?
-        } else {
-            native_tls::TlsConnector::new()?
-        };
-        let connector = tokio_native_tls::TlsConnector::from(connector);
+                .danger_accept_invalid_hostnames(true);
+        }
+
+        if self.is_http2() {
+            connector_builder.request_alpns(&["h2"]);
+        }
+
+        let connector = tokio_native_tls::TlsConnector::from(connector_builder.build()?);
         let stream = connector
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
