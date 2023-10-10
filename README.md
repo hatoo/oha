@@ -84,8 +84,8 @@ Options:
       --http2                         Use HTTP/2. Shorthand for --http-version=2
       --host <HOST>                   HTTP Host header
       --disable-compression           Disable compression.
-  -r, --redirect <REDIRECT>           Limit for number of Redirect. Set 0 for no redirection. [default: 10]
-      --disable-keepalive             Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.
+  -r, --redirect <REDIRECT>           Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2. [default: 10]
+      --disable-keepalive             Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.
       --ipv6                          Lookup only ipv6.
       --ipv4                          Lookup only ipv4.
       --insecure                      Accept invalid certs.
