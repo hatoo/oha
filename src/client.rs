@@ -234,26 +234,22 @@ impl Stream {
         }
     }
     async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
+        let builder = hyper::client::conn::http2::Builder::new(TokioExecutor);
+
         match self {
             Stream::Tcp(stream) => {
-                let (send_request, conn) =
-                    hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
-                        .await?;
+                let (send_request, conn) = builder.handshake(TokioIo::new(stream)).await?;
                 tokio::spawn(conn);
                 Ok(send_request)
             }
             Stream::Tls(stream) => {
-                let (send_request, conn) =
-                    hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
-                        .await?;
+                let (send_request, conn) = builder.handshake(TokioIo::new(stream)).await?;
                 tokio::spawn(conn);
                 Ok(send_request)
             }
             #[cfg(unix)]
             Stream::Unix(stream) => {
-                let (send_request, conn) =
-                    hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
-                        .await?;
+                let (send_request, conn) = builder.handshake(TokioIo::new(stream)).await?;
                 tokio::spawn(conn);
                 Ok(send_request)
             }

@@ -337,6 +337,11 @@ async fn main() -> anyhow::Result<()> {
             headers.insert(k, v);
         }
 
+        // Host header is deprecated in HTTP/2
+        if http_version == http::Version::HTTP_2 {
+            headers.remove(http::header::HOST);
+        }
+
         headers
     };
 
