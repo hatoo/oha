@@ -156,7 +156,6 @@ pub struct Client {
     pub headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
     pub dns: Dns,
-    // client: Option<hyper::client::conn::SendRequest<hyper::Body>>,
     pub timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
@@ -697,6 +696,21 @@ async fn setup_http2(client: &Client) -> (ConnectionTime, ClientStateHttp2) {
     (connection_time, client_state)
 }
 
+fn set_connection_time<E>(res: &mut Result<RequestResult, E>, connection_time: ConnectionTime) {
+    if let Ok(res) = res {
+        res.connection_time = Some(connection_time);
+    }
+}
+
+fn set_start_latency_correction<E>(
+    res: &mut Result<RequestResult, E>,
+    start_latency_correction: std::time::Instant,
+) {
+    if let Ok(res) = res {
+        res.start_latency_correction = Some(start_latency_correction);
+    }
+}
+
 /// Run n tasks by m workers
 pub async fn work(
     client: Client,
@@ -729,9 +743,7 @@ pub async fn work(
                                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                                     let mut res = client.work_http2(&mut client_state).await;
                                     let is_cancel = is_too_many_open_files(&res);
-                                    if let Ok(ref mut res) = res {
-                                        res.connection_time = Some(connection_time);
-                                    }
+                                    set_connection_time(&mut res, connection_time);
                                     report_tx.send_async(res).await.unwrap();
                                     if is_cancel {
                                         break;
@@ -840,9 +852,7 @@ pub async fn work_with_qps(
                                 while let Ok(()) = rx.recv_async().await {
                                     let mut res = client.work_http2(&mut client_state).await;
                                     let is_cancel = is_too_many_open_files(&res);
-                                    if let Ok(ref mut res) = res {
-                                        res.connection_time = Some(connection_time);
-                                    }
+                                    set_connection_time(&mut res, connection_time);
                                     report_tx.send_async(res).await.unwrap();
                                     if is_cancel {
                                         break;
@@ -953,12 +963,8 @@ pub async fn work_with_qps_latency_correction(
                                 while let Ok(start) = rx.recv_async().await {
                                     let mut res = client.work_http2(&mut client_state).await;
                                     let is_cancel = is_too_many_open_files(&res);
-                                    if let Ok(ref mut res) = res {
-                                        res.connection_time = Some(connection_time);
-                                    }
-                                    if let Ok(request_result) = &mut res {
-                                        request_result.start_latency_correction = Some(start);
-                                    }
+                                    set_connection_time(&mut res, connection_time);
+                                    set_start_latency_correction(&mut res, start);
                                     report_tx.send_async(res).await.unwrap();
                                     if is_cancel {
                                         break;
@@ -1030,9 +1036,7 @@ pub async fn work_until(
                                 loop {
                                     let mut res = client.work_http2(&mut client_state).await;
                                     let is_cancel = is_too_many_open_files(&res);
-                                    if let Ok(ref mut res) = res {
-                                        res.connection_time = Some(connection_time);
-                                    }
+                                    set_connection_time(&mut res, connection_time);
                                     report_tx.send_async(res).await.unwrap();
                                     if is_cancel {
                                         break;
@@ -1148,9 +1152,7 @@ pub async fn work_until_with_qps(
                                 while let Ok(()) = rx.recv_async().await {
                                     let mut res = client.work_http2(&mut client_state).await;
                                     let is_cancel = is_too_many_open_files(&res);
-                                    if let Ok(ref mut res) = res {
-                                        res.connection_time = Some(connection_time);
-                                    }
+                                    set_connection_time(&mut res, connection_time);
                                     report_tx.send_async(res).await.unwrap();
                                     if is_cancel {
                                         break;
@@ -1265,14 +1267,8 @@ pub async fn work_until_with_qps_latency_correction(
                             tokio::spawn(async move {
                                 while let Ok(start) = rx.recv_async().await {
                                     let mut res = client.work_http2(&mut client_state).await;
-
-                                    if let Ok(request_result) = &mut res {
-                                        request_result.start_latency_correction = Some(start);
-                                    }
-
-                                    if let Ok(ref mut res) = res {
-                                        res.connection_time = Some(connection_time);
-                                    }
+                                    set_start_latency_correction(&mut res, start);
+                                    set_connection_time(&mut res, connection_time);
                                     let is_cancel = is_too_many_open_files(&res);
                                     report_tx.send_async(res).await.unwrap();
                                     if is_cancel {

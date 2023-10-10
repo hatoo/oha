@@ -129,14 +129,14 @@ Note: If qps is specified, burst will be ignored",
     #[clap(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
     #[clap(
-        help = "Limit for number of Redirect. Set 0 for no redirection.",
+        help = "Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2.",
         default_value = "10",
         short = 'r',
         long = "redirect"
     )]
     redirect: usize,
     #[clap(
-        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests.",
+        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
