@@ -5,7 +5,7 @@ use rand::prelude::*;
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::net::{TcpStream, UnixStream};
+use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::tokiort::{TokioExecutor, TokioIo};
@@ -206,7 +206,8 @@ enum Stream {
     Tls(tokio_native_tls::TlsStream<TcpStream>),
     #[cfg(feature = "rustls")]
     Tls(tokio_rustls::client::TlsStream<TcpStream>),
-    Unix(UnixStream),
+    #[cfg(unix)]
+    Unix(tokio::net::UnixStream),
 }
 
 impl Stream {
@@ -224,6 +225,7 @@ impl Stream {
                 tokio::spawn(conn);
                 Ok(send_request)
             }
+            #[cfg(unix)]
             Stream::Unix(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
@@ -248,6 +250,7 @@ impl Stream {
                 tokio::spawn(conn);
                 Ok(send_request)
             }
+            #[cfg(unix)]
             Stream::Unix(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http2::handshake(TokioExecutor, TokioIo::new(stream))
