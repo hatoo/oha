@@ -261,11 +261,6 @@ async fn main() -> anyhow::Result<()> {
             );
         }
 
-        headers.insert(
-            http::header::HOST,
-            http::header::HeaderValue::from_str(url.authority())?,
-        );
-
         // User agent
         headers
             .entry(http::header::USER_AGENT)
@@ -287,6 +282,11 @@ async fn main() -> anyhow::Result<()> {
 
         if let Some(h) = opts.host {
             headers.insert(http::header::HOST, HeaderValue::from_bytes(h.as_bytes())?);
+        } else if http_version != http::Version::HTTP_2 {
+            headers.insert(
+                http::header::HOST,
+                http::header::HeaderValue::from_str(url.authority())?,
+            );
         }
 
         if let Some(auth) = opts.basic_auth {
@@ -335,11 +335,6 @@ async fn main() -> anyhow::Result<()> {
             .collect::<anyhow::Result<Vec<_>>>()?
         {
             headers.insert(k, v);
-        }
-
-        // Host header is deprecated in HTTP/2
-        if http_version == http::Version::HTTP_2 {
-            headers.remove(http::header::HOST);
         }
 
         headers
