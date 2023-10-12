@@ -72,9 +72,9 @@ impl Monitor {
         // Return this when ends to application print summary
         // We must not read all data from this due to computational cost.
         let mut all: Vec<Result<RequestResult, ClientError>> = Vec::new();
-        // statics for HTTP status
+        // stats for HTTP status
         let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
-        // statics for Error
+        // stats for Error
         let mut error_dist: BTreeMap<String, usize> = Default::default();
 
         #[cfg(unix)]
@@ -236,7 +236,7 @@ impl Monitor {
                     .take_while(|r| (now - r.end).as_secs_f64() <= timescale.as_secs_f64())
                     .collect::<Vec<_>>();
 
-                let statics_text = vec![
+                let stats_text = vec![
                     Line::from(format!("Requests : {}", last_1_timescale.len())),
                     Line::from(vec![Span::styled(
                         format!(
@@ -297,30 +297,30 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let statics_title = format!("statics for last {timescale}");
-                let statics = Paragraph::new(statics_text).block(
+                let stats_title = format!("stats for last {timescale}");
+                let stats = Paragraph::new(stats_text).block(
                     Block::default()
-                        .title(Span::raw(statics_title))
+                        .title(Span::raw(stats_title))
                         .borders(Borders::ALL),
                 );
-                f.render_widget(statics, mid[0]);
+                f.render_widget(stats, mid[0]);
 
                 let mut status_v: Vec<(http::StatusCode, usize)> =
                     status_dist.clone().into_iter().collect();
                 status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-                let statics2_text = status_v
+                let stats2_text = status_v
                     .into_iter()
                     .map(|(status, count)| {
                         Line::from(format!("[{}] {} responses", status.as_str(), count))
                     })
                     .collect::<Vec<_>>();
-                let statics2 = Paragraph::new(statics2_text).block(
+                let stats2 = Paragraph::new(stats2_text).block(
                     Block::default()
                         .title("Status code distribution")
                         .borders(Borders::ALL),
                 );
-                f.render_widget(statics2, mid[1]);
+                f.render_widget(stats2, mid[1]);
 
                 let mut error_v: Vec<(String, usize)> = error_dist.clone().into_iter().collect();
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
