@@ -1007,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "oha"
-version = "0.6.5"
+version = "1.0.0-rc.4.a8dcd7ca5df49c0701893c4d9d81ec8c1342f141"
 dependencies = [
  "anyhow",
  "assert_cmd",
