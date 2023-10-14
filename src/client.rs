@@ -49,7 +49,7 @@ impl RequestResult {
 pub struct Dns {
     pub connect_to: Vec<ConnectToEntry>,
     pub resolver:
-        trust_dns_resolver::AsyncResolver<trust_dns_resolver::name_server::TokioConnectionProvider>,
+        hickory_resolver::AsyncResolver<hickory_resolver::name_server::TokioConnectionProvider>,
 }
 
 impl Dns {
@@ -111,7 +111,7 @@ pub enum ClientError {
     TooManyRedirect,
     #[error(transparent)]
     // Use Box here because ResolveError is big.
-    ResolveError(#[from] Box<trust_dns_resolver::error::ResolveError>),
+    ResolveError(#[from] Box<hickory_resolver::error::ResolveError>),
 
     #[cfg(feature = "native-tls")]
     #[error(transparent)]

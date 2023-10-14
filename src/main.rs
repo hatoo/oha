@@ -427,15 +427,15 @@ async fn main() -> anyhow::Result<()> {
 
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
         (false, false) => Default::default(),
-        (true, false) => trust_dns_resolver::config::LookupIpStrategy::Ipv4Only,
-        (false, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv6Only,
-        (true, true) => trust_dns_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
+        (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
+        (false, true) => hickory_resolver::config::LookupIpStrategy::Ipv6Only,
+        (true, true) => hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
     };
-    let (config, _) = trust_dns_resolver::system_conf::read_system_conf()
+    let (config, _) = hickory_resolver::system_conf::read_system_conf()
         .context("DNS: failed to load /etc/resolv.conf")?;
-    let mut resolver_opts = trust_dns_resolver::config::ResolverOpts::default();
+    let mut resolver_opts = hickory_resolver::config::ResolverOpts::default();
     resolver_opts.ip_strategy = ip_strategy;
-    let resolver = trust_dns_resolver::AsyncResolver::tokio(config, resolver_opts);
+    let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
 
     // client_builder builds client for each workers
     let client = client::Client {
