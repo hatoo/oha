@@ -18,7 +18,7 @@ version = "0.6.5"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["native-tls"]
+default = ["rustls"]
 native-tls = ["dep:native-tls", "dep:tokio-native-tls"]
 rustls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-native-certs"]
 
