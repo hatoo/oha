@@ -1,6 +1,7 @@
 # Unreleased
 
 - Support HTTP/2 #224 #201
+    - Make `rustls` as a default TLS backend #331
     - Added `-p` option to set number of HTTP/2 parallel requests
 
 # 0.6.5 (2023-09-04)
