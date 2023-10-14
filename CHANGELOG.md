@@ -1,6 +1,6 @@
 # Unreleased
 
-# 1.0.0-rc.4.a8dcd7ca5df49c0701893c4d9d81ec8c1342f141
+# 1.0.0-rc.4.a8dcd7ca5df49c0701893c4d9d81ec8c1342f141 (2023-10-14)
 
 This is a RC release for 1.0.0. Please test it and report any issues.
 The version is named as same as `hyper`'s version and it's commit hash.
@@ -11,7 +11,7 @@ Since this version depends on unreleased `hyper`'s version, we can't release on 
 - Make `rustls` as a default TLS backend #331
 - Added `-p` option to set number of HTTP/2 parallel requests
 
-# 0.6.5 (2023-09-04)
+# 0.6.5 (2023-10-09)
 
 - Fix Apple Silicon's binary release #323
 
