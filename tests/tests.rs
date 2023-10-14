@@ -102,7 +102,7 @@ async fn get_method(args: &[&str]) -> http::method::Method {
     rx.try_recv().unwrap()
 }
 
-async fn get_query(p: &'static str) -> String {
+async fn get_query(p: &'static str, args: &[&str]) -> String {
     use hyper::Error;
     let (tx, rx) = flume::unbounded();
 
@@ -126,13 +126,16 @@ async fn get_query(p: &'static str) -> String {
         server.serve(make_svc).await.unwrap();
     });
 
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
             .args(["-n", "1", "--no-tui"])
+            .args(args)
             .arg(format!("http://127.0.0.1:{port}{p}"))
             .assert()
-            .success();
+            .success()
     })
     .await
     .unwrap();
@@ -140,7 +143,7 @@ async fn get_query(p: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-async fn get_path_rand_regex(p: &'static str) -> String {
+async fn get_path_rand_regex(p: &'static str, args: &[&str]) -> String {
     use hyper::Error;
 
     let (tx, rx) = flume::unbounded();
@@ -164,10 +167,12 @@ async fn get_path_rand_regex(p: &'static str) -> String {
         server.serve(make_svc).await.unwrap();
     });
 
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
             .args(["-n", "1", "--no-tui", "--rand-regex-url"])
+            .args(args)
             .arg(format!(r"http://127.0.0.1:{port}{p}"))
             .assert()
             .success();
@@ -407,6 +412,18 @@ async fn test_enable_compression_default() {
 
     assert!(accept_encoding.contains(&"gzip"));
     assert!(accept_encoding.contains(&"br"));
+
+    let header = get_header_body(&["--http2"]).await.0;
+    let accept_encoding: Vec<&str> = header
+        .get("accept-encoding")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(", ")
+        .collect();
+
+    assert!(accept_encoding.contains(&"gzip"));
+    assert!(accept_encoding.contains(&"br"));
 }
 
 async fn get_http_version(args: &[&str]) -> http::Version {
@@ -448,6 +465,13 @@ async fn test_setting_custom_header() {
     assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
     let header = get_header_body(&["-H", "foo:bar", "--"]).await.0;
     assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
+
+    let header = get_header_body(&["--http2", "-H", "foo: bar", "--"])
+        .await
+        .0;
+    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
+    let header = get_header_body(&["--http2", "-H", "foo:bar", "--"]).await.0;
+    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
 #[tokio::test]
@@ -456,11 +480,24 @@ async fn test_setting_accept_header() {
     assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
     let header = get_header_body(&["-H", "accept:text/html"]).await.0;
     assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
+
+    let header = get_header_body(&["--http2", "-A", "text/html"]).await.0;
+    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
+    let header = get_header_body(&["--http2", "-H", "accept:text/html"])
+        .await
+        .0;
+    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
 }
 
 #[tokio::test]
 async fn test_setting_body() {
     let body = get_header_body(&["-d", "hello body"]).await.1;
+    assert_eq!(
+        body.as_ref(),
+        &b"hello body"[..] /* This looks dirty... Any suggestion? */
+    );
+
+    let body = get_header_body(&["--http2", "-d", "hello body"]).await.1;
     assert_eq!(
         body.as_ref(),
         &b"hello body"[..] /* This looks dirty... Any suggestion? */
@@ -479,11 +516,30 @@ async fn test_setting_content_type_header() {
         header.get("content-type").unwrap().to_str().unwrap(),
         "text/html"
     );
+
+    let header = get_header_body(&["--http2", "-T", "text/html"]).await.0;
+    assert_eq!(
+        header.get("content-type").unwrap().to_str().unwrap(),
+        "text/html"
+    );
+    let header = get_header_body(&["--http2", "-H", "content-type:text/html"])
+        .await
+        .0;
+    assert_eq!(
+        header.get("content-type").unwrap().to_str().unwrap(),
+        "text/html"
+    );
 }
 
 #[tokio::test]
 async fn test_setting_basic_auth() {
     let header = get_header_body(&["-a", "hatoo:pass"]).await.0;
+    assert_eq!(
+        header.get("authorization").unwrap().to_str().unwrap(),
+        "Basic aGF0b286cGFzcw=="
+    );
+
+    let header = get_header_body(&["--http2", "-a", "hatoo:pass"]).await.0;
     assert_eq!(
         header.get("authorization").unwrap().to_str().unwrap(),
         "Basic aGF0b286cGFzcw=="
@@ -497,6 +553,9 @@ async fn test_setting_host() {
 
     let header = get_header_body(&["-H", "host:hatoo.io"]).await.0;
     assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
+
+    // You shouldn't set host header when using HTTP/2
+    // Use --connect-to instead
 }
 
 #[tokio::test]
@@ -532,20 +591,75 @@ async fn test_setting_method() {
         get_method(&["-m", "TRACE"]).await,
         http::method::Method::TRACE
     );
+
+    assert_eq!(get_method(&["--http2"]).await, http::method::Method::GET);
+    assert_eq!(
+        get_method(&["--http2", "-m", "GET"]).await,
+        http::method::Method::GET
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "POST"]).await,
+        http::method::Method::POST
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "DELETE"]).await,
+        http::method::Method::DELETE
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "HEAD"]).await,
+        http::method::Method::HEAD
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "OPTIONS"]).await,
+        http::method::Method::OPTIONS
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "PATCH"]).await,
+        http::method::Method::PATCH
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "PUT"]).await,
+        http::method::Method::PUT
+    );
+    assert_eq!(
+        get_method(&["--http2", "-m", "TRACE"]).await,
+        http::method::Method::TRACE
+    );
 }
 
 #[tokio::test]
 async fn test_query() {
     assert_eq!(
-        get_query("/index?a=b&c=d").await,
+        get_query("/index?a=b&c=d", &[]).await,
         "/index?a=b&c=d".to_string()
+    );
+
+    assert_eq!(
+        get_query("/index?a=b&c=d", &["--http2"])
+            .await
+            .split('/')
+            .last()
+            .unwrap(),
+        "index?a=b&c=d".to_string()
     );
 }
 
 #[tokio::test]
 async fn test_query_rand_regex() {
-    let query = get_path_rand_regex("/[a-z][0-9][a-z]").await;
+    let query = get_path_rand_regex("/[a-z][0-9][a-z]", &[]).await;
     let chars = query.trim_start_matches('/').chars().collect::<Vec<char>>();
+    assert_eq!(chars.len(), 3);
+    assert!(chars[0].is_ascii_lowercase());
+    assert!(chars[1].is_ascii_digit());
+    assert!(chars[2].is_ascii_lowercase());
+
+    let query = get_path_rand_regex("/[a-z][0-9][a-z]", &["--http2"]).await;
+    let chars = query
+        .split('/')
+        .last()
+        .unwrap()
+        .chars()
+        .collect::<Vec<char>>();
     assert_eq!(chars.len(), 3);
     assert!(chars[0].is_ascii_lowercase());
     assert!(chars[1].is_ascii_digit());
@@ -627,11 +741,11 @@ async fn test_ipv6() {
 #[tokio::test]
 async fn test_query_limit() {
     assert_eq!(burst_10_req_delay_2s_rate_4(10, &[],).await, 10);
+    assert_eq!(burst_10_req_delay_2s_rate_4(10, &["--http2"],).await, 10);
 }
 
 #[tokio::test]
 async fn test_http2() {
-    // FIXME: Ideally, we need to test all of above with HTTP/2
     assert_eq!(get_http_version(&[]).await, http::Version::HTTP_11);
     assert_eq!(get_http_version(&["--http2"]).await, http::Version::HTTP_2);
     assert_eq!(
