@@ -63,7 +63,7 @@ regex-syntax = "0.7.4"
 url = "2.4.0"
 futures-util = "0.3.28"
 pin-project-lite = "0.2.13"
-http-body-util = "0.1.0-rc.3"
+http-body-util = "0.1.0"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.10.0"
