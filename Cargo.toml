@@ -13,7 +13,7 @@ license = "MIT"
 name = "oha"
 readme = "README.md"
 repository = "https://github.com/hatoo/oha"
-version = "1.0.0-rc.4.a8dcd7ca5df49c0701893c4d9d81ec8c1342f141"
+version = "1.0.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

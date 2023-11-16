@@ -1,5 +1,9 @@
 # Unreleased
 
+# 1.0.0 (2023-11-16)
+
+- Update hyper dependency to 1.0.0
+
 # 1.0.0-rc.4.a8dcd7ca5df49c0701893c4d9d81ec8c1342f141 (2023-10-14)
 
 This is a RC release for 1.0.0. Please test it and report any issues.
