@@ -1089,7 +1089,6 @@ dependencies = [
  "float-ord",
  "flume",
  "futures",
- "futures-util",
  "hickory-resolver",
  "http-body-util",
  "humantime",
