@@ -41,12 +41,8 @@ ratatui = { version = "0.23", default-features = false, features = [
     "crossterm",
 ] }
 
-http = "0.2"
-hyper = { git = "https://github.com/hyperium/hyper.git", features = [
-    "client",
-    "http1",
-    "http2",
-] }
+http = "1"
+hyper = { version = "1.0", features = ["client", "http1", "http2"] }
 
 # native-tls
 native-tls = { version = "0.2.11", features = ["alpn"], optional = true }
