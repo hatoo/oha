@@ -5,7 +5,7 @@ use average::Max;
 use average::Variance;
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
-use http::StatusCode;
+use hyper::http::{self, StatusCode};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::Duration;

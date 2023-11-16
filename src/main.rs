@@ -2,8 +2,11 @@ use anyhow::Context;
 use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
-use http::header::{HeaderName, HeaderValue};
 use humantime::Duration;
+use hyper::http::{
+    self,
+    header::{HeaderName, HeaderValue},
+};
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;

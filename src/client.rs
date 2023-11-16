@@ -1,6 +1,7 @@
 use futures::future::FutureExt;
 use http_body_util::Full;
 use hyper::body::{Body, Incoming};
+use hyper::http;
 use rand::prelude::*;
 use std::pin::Pin;
 use std::sync::Arc;
