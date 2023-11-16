@@ -2,6 +2,7 @@ use byte_unit::Byte;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::ExecutableCommand;
 use flume::TryRecvError;
+use hyper::http;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};

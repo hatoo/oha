@@ -1091,8 +1091,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hickory-resolver",
- "http 0.2.11",
- "http 1.0.0",
  "http-body-util",
  "humantime",
  "hyper 0.14.27",

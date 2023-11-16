@@ -41,7 +41,6 @@ ratatui = { version = "0.24.0", default-features = false, features = [
     "crossterm",
 ] }
 
-http = "1"
 hyper = { version = "1.0", features = ["client", "http1", "http2"] }
 
 # native-tls
@@ -75,6 +74,5 @@ hyper14 = { package = "hyper", version = "0.14", features = ["full"] }
 assert_cmd = "2.0.2"
 axum = { version = "0.6.20", features = ["http2"] }
 bytes = "1.0"
-http = "0.2"
 lazy_static = "1.4.0"
 regex = "1.9.6"
