@@ -1,20 +1,25 @@
 use byte_unit::Byte;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::ExecutableCommand;
+use crossterm::{
+    event::{Event, KeyCode, KeyEvent, KeyModifiers},
+    ExecutableCommand,
+};
 use flume::TryRecvError;
 use hyper::http;
-use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{BarChart, Block, Borders, Gauge, Paragraph};
-use ratatui::Terminal;
-use std::collections::BTreeMap;
-use std::io;
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::{BarChart, Block, Borders, Gauge, Paragraph},
+    Terminal,
+};
+use std::{collections::BTreeMap, io};
 
-use crate::client::{ClientError, RequestResult};
-use crate::printer::PrintMode;
-use crate::timescale::{TimeLabel, TimeScale};
+use crate::{
+    client::{ClientError, RequestResult},
+    printer::PrintMode,
+    timescale::{TimeLabel, TimeScale},
+};
 
 /// When the monitor ends
 pub enum EndLine {

@@ -19,7 +19,6 @@ mod histogram;
 mod monitor;
 mod printer;
 mod timescale;
-mod tokiort;
 mod url_generator;
 
 #[cfg(unix)]

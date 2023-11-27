@@ -1,17 +1,20 @@
 use futures::future::FutureExt;
 use http_body_util::Full;
-use hyper::body::{Body, Incoming};
-use hyper::http;
+use hyper::{
+    body::{Body, Incoming},
+    http,
+};
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
-use std::pin::Pin;
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
-use crate::tokiort::{TokioExecutor, TokioIo};
-use crate::url_generator::{UrlGenerator, UrlGeneratorError};
-use crate::ConnectToEntry;
+use crate::{
+    url_generator::{UrlGenerator, UrlGeneratorError},
+    ConnectToEntry,
+};
 
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<&'static [u8]>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<&'static [u8]>>;
@@ -235,7 +238,7 @@ impl Stream {
         }
     }
     async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
-        let builder = hyper::client::conn::http2::Builder::new(TokioExecutor);
+        let builder = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
 
         match self {
             Stream::Tcp(stream) => {
