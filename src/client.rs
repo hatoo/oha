@@ -4,6 +4,7 @@ use hyper::{
     body::{Body, Incoming},
     http,
 };
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{pin::Pin, sync::Arc};
 use thiserror::Error;
@@ -11,7 +12,6 @@ use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::{
-    tokiort::{TokioExecutor, TokioIo},
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -238,7 +238,7 @@ impl Stream {
         }
     }
     async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
-        let builder = hyper::client::conn::http2::Builder::new(TokioExecutor);
+        let builder = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
 
         match self {
             Stream::Tcp(stream) => {
