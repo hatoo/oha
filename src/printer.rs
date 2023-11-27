@@ -1,15 +1,16 @@
-use crate::client::ConnectionTime;
-use crate::client::RequestResult;
-use crate::histogram::histogram;
-use average::Max;
-use average::Variance;
+use crate::{
+    client::{ConnectionTime, RequestResult},
+    histogram::histogram,
+};
+use average::{Max, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
 use hyper::http::{self, StatusCode};
-use std::collections::BTreeMap;
-use std::io::Write;
-use std::time::Duration;
-use std::time::Instant;
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy)]
 struct StyleScheme {

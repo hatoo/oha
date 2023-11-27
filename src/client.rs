@@ -1,17 +1,20 @@
 use futures::future::FutureExt;
 use http_body_util::Full;
-use hyper::body::{Body, Incoming};
-use hyper::http;
+use hyper::{
+    body::{Body, Incoming},
+    http,
+};
 use rand::prelude::*;
-use std::pin::Pin;
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
-use crate::tokiort::{TokioExecutor, TokioIo};
-use crate::url_generator::{UrlGenerator, UrlGeneratorError};
-use crate::ConnectToEntry;
+use crate::{
+    tokiort::{TokioExecutor, TokioIo},
+    url_generator::{UrlGenerator, UrlGeneratorError},
+    ConnectToEntry,
+};
 
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<&'static [u8]>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<&'static [u8]>>;
