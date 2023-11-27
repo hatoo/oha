@@ -6,35 +6,32 @@ use std::{
 
 use assert_cmd::Command;
 use axum::{
-    extract::{Path, RawBody},
+    extract::Path,
     response::Redirect,
     routing::{any, get},
     Router,
 };
+use bytes::Bytes;
+use futures::StreamExt;
 use http::{HeaderMap, Request, Response};
-use hyper14::{
-    body::to_bytes,
-    http,
-    server::conn::AddrIncoming,
-    service::{make_service_fn, service_fn},
-    Body,
-};
+use hyper::{http, service::service_fn};
+use hyper_util::rt::{TokioExecutor, TokioIo};
 
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
 
-fn bind_port() -> (hyper14::server::Builder<AddrIncoming>, u16) {
+async fn bind_port() -> (tokio::net::TcpListener, u16) {
     let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
 
-    (axum::Server::bind(&addr), port)
+    (tokio::net::TcpListener::bind(addr).await.unwrap(), port)
 }
 
-fn bind_port_ipv6() -> (hyper14::server::Builder<AddrIncoming>, u16) {
+async fn bind_port_ipv6() -> (tokio::net::TcpListener, u16) {
     let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::new(std::net::IpAddr::V6(Ipv6Addr::LOCALHOST), port);
 
-    (axum::Server::bind(&addr), port)
+    (tokio::net::TcpListener::bind(addr).await.unwrap(), port)
 }
 
 async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
@@ -42,17 +39,21 @@ async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
 
     let app = Router::new().route(
         "/",
-        get(|header: HeaderMap, RawBody(body): RawBody| async move {
-            tx.send((header, to_bytes(body).await.unwrap())).unwrap();
-            "Hello World"
-        }),
+        get(
+            |header: HeaderMap, req: axum::extract::Request| async move {
+                let mut body = Vec::new();
+                let mut stream = req.into_body().into_data_stream();
+                while let Some(data) = stream.next().await {
+                    body.extend_from_slice(data.unwrap().as_ref());
+                }
+                tx.send((header, Bytes::from(body))).unwrap();
+                "Hello World"
+            },
+        ),
     );
 
-    let (server, port) = bind_port();
-
-    tokio::spawn(async {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
@@ -80,11 +81,8 @@ async fn get_method(args: &[&str]) -> http::method::Method {
         }),
     );
 
-    let (server, port) = bind_port();
-
-    tokio::spawn(async {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
 
@@ -104,28 +102,18 @@ async fn get_method(args: &[&str]) -> http::method::Method {
 }
 
 async fn get_query(p: &'static str, args: &[&str]) -> String {
-    use hyper::Error;
     let (tx, rx) = flume::unbounded();
 
-    let make_svc = make_service_fn(move |_| {
-        let tx = tx.clone();
-        async move {
-            Ok::<_, Error>(service_fn(move |req| {
-                let tx = tx.clone();
-                async move {
-                    let (parts, _) = req.into_parts();
-                    tx.send(parts.uri.to_string()).unwrap();
-                    Ok::<_, Error>(Response::new(Body::from("Hello World")))
-                }
-            }))
-        }
-    });
+    let app = Router::new().route(
+        "/index",
+        get(move |req: Request<axum::body::Body>| async move {
+            tx.send(req.uri().to_string()).unwrap();
+            "Hello World"
+        }),
+    );
 
-    let (server, port) = bind_port();
-
-    tokio::spawn(async move {
-        server.serve(make_svc).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
 
@@ -148,24 +136,26 @@ async fn get_path_rand_regex(p: &'static str, args: &[&str]) -> String {
     use hyper::Error;
 
     let (tx, rx) = flume::unbounded();
-    let make_svc = make_service_fn(move |_| {
-        let tx = tx.clone();
-        async move {
-            Ok::<_, Error>(service_fn(move |req| {
+
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async move {
+        loop {
+            let (socket, _remote_addr) = listener.accept().await.unwrap();
+            let tx = tx.clone();
+            let service = service_fn(move |req| {
                 let tx = tx.clone();
                 async move {
                     let (parts, _) = req.into_parts();
                     tx.send(parts.uri.to_string()).unwrap();
-                    Ok::<_, Error>(Response::new(Body::from("Hello World")))
+                    Ok::<_, Error>(Response::new("Hello World".to_string()))
                 }
-            }))
+            });
+            tokio::spawn(async move {
+                hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(socket), service)
+                    .await
+            });
         }
-    });
-
-    let (server, port) = bind_port();
-
-    tokio::spawn(async move {
-        server.serve(make_svc).await.unwrap();
     });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
@@ -187,7 +177,7 @@ async fn get_path_rand_regex(p: &'static str, args: &[&str]) -> String {
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = flume::unbounded();
 
-    let (server, port) = bind_port();
+    let (listener, port) = bind_port().await;
 
     let app = Router::new().route(
         "/:n",
@@ -203,9 +193,7 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
         }),
     );
 
-    tokio::spawn(async move {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -234,10 +222,8 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
         }),
     );
 
-    let (server, port) = bind_port();
-    tokio::spawn(async move {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -266,10 +252,8 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
         }),
     );
 
-    let (server, port) = bind_port_ipv6();
-    tokio::spawn(async move {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port_ipv6().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -298,10 +282,8 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
         }),
     );
 
-    let (server, port) = bind_port();
-    tokio::spawn(async move {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -335,10 +317,8 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
             }),
         );
 
-    let (server, port) = bind_port();
-    tokio::spawn(async move {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
@@ -367,10 +347,8 @@ async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
         }),
     );
 
-    let (service, port) = bind_port();
-    tokio::spawn(async move {
-        service.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
@@ -432,17 +410,14 @@ async fn get_http_version(args: &[&str]) -> http::Version {
 
     let app = Router::new().route(
         "/",
-        get(|req: Request<hyper14::Body>| async move {
+        get(|req: Request<axum::body::Body>| async move {
             tx.send(req.version()).unwrap();
             "Hello World"
         }),
     );
 
-    let (server, port) = bind_port();
-
-    tokio::spawn(async {
-        server.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
@@ -720,10 +695,8 @@ async fn test_ipv6() {
         }),
     );
 
-    let (service, port) = bind_port_ipv6();
-    tokio::spawn(async move {
-        service.serve(app.into_make_service()).await.unwrap();
-    });
+    let (listener, port) = bind_port_ipv6().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")

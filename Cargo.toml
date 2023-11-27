@@ -68,9 +68,9 @@ rlimit = "0.10.0"
 jemallocator = "0.5.0"
 
 [dev-dependencies]
-hyper14 = { package = "hyper", version = "0.14", features = ["full"] }
 assert_cmd = "2.0.2"
-axum = { version = "0.6.20", features = ["http2"] }
+axum = { version = "0.7", features = ["http2"] }
 bytes = "1.0"
+hyper-util = "0.1.1"
 lazy_static = "1.4.0"
 regex = "1.9.6"
