@@ -37,6 +37,20 @@ You can optionally build oha against [rustls](https://github.com/rustls/rustls) 
     apt update
     apt install oha
 
+## Containerized
+
+You can also build and create a container image including oha
+
+```sh
+docker build . -t example.com/hatoo/oha:latest
+```
+
+Then you can use oha directly throught the container
+
+```sh
+docker run -it example.com/hatoo/oha:latest https://example.com:3000
+```
+
 # Platform
 
 - Linux - Tested on Ubuntu 18.04 gnome-terminal
