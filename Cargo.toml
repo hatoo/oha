@@ -48,7 +48,7 @@ native-tls = { version = "0.2.11", features = ["alpn"], optional = true }
 tokio-native-tls = { version = "0.3.0", optional = true }
 
 # rustls
-rustls = { version = "0.21.0", features = [
+rustls = { version = "0.21.10", features = [
     "dangerous_configuration",
 ], optional = true }
 rustls-native-certs = { version = "0.6.2", optional = true }
