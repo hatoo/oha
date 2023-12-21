@@ -20,7 +20,12 @@ version = "1.0.0"
 [features]
 default = ["rustls"]
 native-tls = ["dep:native-tls", "dep:tokio-native-tls"]
-rustls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-native-certs"]
+rustls = [
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:rustls-native-certs",
+    "dep:rustls-pki-types",
+]
 
 [dependencies]
 anyhow = "1.0.38"
@@ -48,11 +53,10 @@ native-tls = { version = "0.2.11", features = ["alpn"], optional = true }
 tokio-native-tls = { version = "0.3.0", optional = true }
 
 # rustls
-rustls = { version = "0.21.0", features = [
-    "dangerous_configuration",
-], optional = true }
-rustls-native-certs = { version = "0.6.2", optional = true }
-tokio-rustls = { version = "0.24.0", optional = true }
+rustls = { version = "0.22.1", optional = true }
+rustls-native-certs = { version = "0.7.0", optional = true }
+tokio-rustls = { version = "0.25.0", optional = true }
+rustls-pki-types = { version = "1.0.1", optional = true }
 
 base64 = "0.21.0"
 rand = "0.8"
