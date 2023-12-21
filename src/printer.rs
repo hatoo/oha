@@ -137,9 +137,9 @@ fn print_json<W: Write, E: std::fmt::Display>(
         #[serde(rename = "requestsPerSec")]
         requests_per_sec: f64,
         #[serde(rename = "totalData")]
-        total_data: u128,
+        total_data: u64,
         #[serde(rename = "sizePerRequest")]
-        size_per_request: Option<u128>,
+        size_per_request: Option<u64>,
         #[serde(rename = "sizePerSec")]
         size_per_sec: f64,
     }
@@ -398,20 +398,22 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(
         w,
         "  Total data:\t{}",
-        Byte::from_bytes(calculate_total_data(res)).get_appropriate_unit(true)
+        Byte::from_u64(calculate_total_data(res)).get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
     writeln!(
         w,
         "  Size/request:\t{}",
         (calculate_size_per_request(res))
-            .map(|n| Byte::from_bytes(n).get_appropriate_unit(true).to_string())
+            .map(|n| Byte::from_u64(n)
+                .get_appropriate_unit(byte_unit::UnitType::Binary)
+                .to_string())
             .unwrap_or_else(|| "NaN".to_string())
     )?;
     writeln!(
         w,
         "  Size/sec:\t{}",
-        Byte::from_bytes((calculate_size_per_sec(res, total_duration)) as u128)
-            .get_appropriate_unit(true)
+        Byte::from_u64((calculate_size_per_sec(res, total_duration)) as u64)
+            .get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
     writeln!(w)?;
 
@@ -655,19 +657,19 @@ fn calculate_requests_per_sec<E>(
     res.len() as f64 / total_duration.as_secs_f64()
 }
 
-fn calculate_total_data<E>(res: &[Result<RequestResult, E>]) -> u128 {
+fn calculate_total_data<E>(res: &[Result<RequestResult, E>]) -> u64 {
     res.iter()
         .filter_map(|r| r.as_ref().ok())
-        .map(|r| r.len_bytes as u128)
-        .sum::<u128>()
+        .map(|r| r.len_bytes as u64)
+        .sum::<u64>()
 }
 
-fn calculate_size_per_request<E>(res: &[Result<RequestResult, E>]) -> Option<u128> {
+fn calculate_size_per_request<E>(res: &[Result<RequestResult, E>]) -> Option<u64> {
     res.iter()
         .filter_map(|r| r.as_ref().ok())
-        .map(|r| r.len_bytes as u128)
-        .sum::<u128>()
-        .checked_div(res.iter().filter(|r| r.is_ok()).count() as u128)
+        .map(|r| r.len_bytes as u64)
+        .sum::<u64>()
+        .checked_div(res.iter().filter(|r| r.is_ok()).count() as u64)
 }
 
 fn calculate_size_per_sec<E>(res: &[Result<RequestResult, E>], total_duration: Duration) -> f64 {
