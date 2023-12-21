@@ -282,13 +282,13 @@ impl Monitor {
                     )]),
                     Line::from(format!(
                         "Data: {}",
-                        Byte::from_bytes(
+                        Byte::from_u64(
                             last_1_timescale
                                 .iter()
-                                .map(|r| r.len_bytes as u128)
-                                .sum::<u128>()
+                                .map(|r| r.len_bytes as u64)
+                                .sum::<u64>()
                         )
-                        .get_appropriate_unit(true)
+                        .get_appropriate_unit(byte_unit::UnitType::Binary)
                     )),
                     #[cfg(unix)]
                     // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.

@@ -127,7 +127,7 @@ pub enum ClientError {
 
     #[cfg(feature = "rustls")]
     #[error(transparent)]
-    InvalidHost(#[from] rustls::client::InvalidDnsNameError),
+    InvalidDnsName(#[from] rustls_pki_types::InvalidDnsNameError),
 
     #[error(transparent)]
     IoError(#[from] std::io::Error),
@@ -341,10 +341,9 @@ impl Client {
 
         let mut root_cert_store = rustls::RootCertStore::empty();
         for cert in rustls_native_certs::load_native_certs()? {
-            root_cert_store.add(&rustls::Certificate(cert.0)).ok(); // ignore error
+            root_cert_store.add(cert).ok(); // ignore error
         }
         let mut config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(root_cert_store)
             .with_no_client_auth();
         if self.insecure {
@@ -356,9 +355,10 @@ impl Client {
             config.alpn_protocols = vec![b"h2".to_vec()];
         }
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-        let domain =
-            rustls::ServerName::try_from(url.host_str().ok_or(ClientError::HostNotFound)?)?;
-        let stream = connector.connect(domain, stream).await?;
+        let domain = rustls_pki_types::ServerName::try_from(
+            url.host_str().ok_or(ClientError::HostNotFound)?,
+        )?;
+        let stream = connector.connect(domain.to_owned(), stream).await?;
 
         Ok(Stream::Tls(stream))
     }
@@ -646,38 +646,44 @@ impl Client {
 
 /// A server certificate verifier that accepts any certificate.
 #[cfg(feature = "rustls")]
+#[derive(Debug)]
 struct AcceptAnyServerCert;
 
 #[cfg(feature = "rustls")]
-impl rustls::client::ServerCertVerifier for AcceptAnyServerCert {
+impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _end_entity: &rustls_pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        _server_name: &rustls_pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::ServerCertVerified::assertion())
+        _now: rustls_pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
-        _cert: &rustls::Certificate,
+        _cert: &rustls_pki_types::CertificateDer<'_>,
         _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::HandshakeSignatureValid::assertion())
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
-        _cert: &rustls::Certificate,
+        _cert: &rustls_pki_types::CertificateDer<'_>,
         _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::HandshakeSignatureValid::assertion())
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
