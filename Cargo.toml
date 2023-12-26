@@ -35,7 +35,7 @@ clap = { version = "4.1.4", features = ["derive"] }
 crossterm = "0.27"
 float-ord = "0.3.1"
 flume = "0.11"
-futures = "0.3.12"
+futures = "0.3.30"
 humantime = "2.0.0"
 libc = "0.2.147"
 serde = { version = "1.0.142", features = ["derive"] }
