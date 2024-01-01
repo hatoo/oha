@@ -28,7 +28,7 @@ rustls = [
 ]
 
 [dependencies]
-anyhow = "1.0.38"
+anyhow = "1.0.78"
 average = "0.14.1"
 byte-unit = "5.1.2"
 clap = { version = "4.1.4", features = ["derive"] }
