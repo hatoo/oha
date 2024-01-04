@@ -397,12 +397,12 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     writeln!(w)?;
     writeln!(
         w,
-        "  Total data:\t{}",
+        "  Total data:\t{:.2}",
         Byte::from_u64(calculate_total_data(res)).get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
     writeln!(
         w,
-        "  Size/request:\t{}",
+        "  Size/request:\t{:.2}",
         (calculate_size_per_request(res))
             .map(|n| Byte::from_u64(n)
                 .get_appropriate_unit(byte_unit::UnitType::Binary)
@@ -411,7 +411,7 @@ fn print_summary<W: Write, E: std::fmt::Display>(
     )?;
     writeln!(
         w,
-        "  Size/sec:\t{}",
+        "  Size/sec:\t{:.2}",
         Byte::from_u64((calculate_size_per_sec(res, total_duration)) as u64)
             .get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;

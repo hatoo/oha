@@ -281,7 +281,7 @@ impl Monitor {
                         Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(format!(
-                        "Data: {}",
+                        "Data: {:.2}",
                         Byte::from_u64(
                             last_1_timescale
                                 .iter()
