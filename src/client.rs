@@ -1098,7 +1098,7 @@ pub async fn work_until(
                                 let should_exit = Arc::new(AtomicBool::new(false));
                                 // Setup the parallel workers for each HTTP2 connection
                                 loop {
-                                    if std::time::Instant::now() > dead_line.into() || should_exit.load(Ordering::Relaxed){
+                                    if std::time::Instant::now() > dead_line.into() || should_exit.load(Ordering::Relaxed) {
                                         break;
                                     }
                                     let futures = (0..n_http2_parallel)
