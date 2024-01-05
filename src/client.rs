@@ -272,20 +272,37 @@ impl Client {
         addr: (std::net::IpAddr, u16),
         url: &Url,
     ) -> Result<Stream, ClientError> {
+        // TODO: Allow the connect timeout to be configured
+        let timeout_duration = tokio::time::Duration::from_secs(5);
+
         if url.scheme() == "https" {
-            // TODO: This may be where some of the connection loops are hanging when
-            // the server closes; we may need to add a timeout here so that we can exit
-            // more closely to the configured timeout
-            self.tls_client(addr, url).await
+            // If we do not put a timeout here then the connections attempts will
+            // linger long past the configured timeout
+            let stream = tokio::time::timeout(timeout_duration, self.tls_client(addr, url)).await;
+            match stream {
+                Ok(Ok(stream)) => Ok(stream),
+                Ok(Err(err)) => Err(err),
+                Err(_) => Err(ClientError::Timeout),
+            }
         } else if let Some(socket_path) = &self.unix_socket {
-            Ok(Stream::Unix(
-                tokio::net::UnixStream::connect(socket_path).await?,
-            ))
+            let stream = tokio::time::timeout(timeout_duration, 
+                tokio::net::UnixStream::connect(socket_path)
+            ).await;
+            match stream {
+                Ok(Ok(stream)) => Ok(Stream::Unix(stream)),
+                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Err(_) => Err(ClientError::Timeout),
+            }
         } else {
-            let stream = tokio::net::TcpStream::connect(addr).await?;
-            stream.set_nodelay(true)?;
-            // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            Ok(Stream::Tcp(stream))
+            let stream = tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
+            match stream {
+                Ok(Ok(stream)) => {
+                    stream.set_nodelay(true)?;
+                    return Ok(Stream::Tcp(stream));
+                },
+                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Err(_) => Err(ClientError::Timeout),
+            }
         }
     }
 
@@ -710,7 +727,7 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
         .map(|err| match err {
             // REVIEW: IoErrors, if indicating the underlying connection has failed,
             // should also cause a stop of HTTP2 requests
-            // ClientError::IoError(_) => true,
+            ClientError::IoError(_) => true,
             ClientError::HyperError(_) => true,
             _ => false,
         })
@@ -1063,12 +1080,10 @@ pub async fn work_until(
     use std::sync::atomic::{AtomicBool, Ordering};
     let client = Arc::new(client);
     if client.is_http2() {
-        let should_exit = Arc::new(AtomicBool::new(false));
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
-                let should_exit = Arc::clone(&should_exit);
                 tokio::spawn(async move {
                     // Keep trying to establish or re-establish connections up to the deadline
                     loop {
@@ -1080,9 +1095,10 @@ pub async fn work_until(
                         }
                         match setup_http2(&client).await {
                             Ok((connection_time, client_state)) => {
+                                let should_exit = Arc::new(AtomicBool::new(false));
                                 // Setup the parallel workers for each HTTP2 connection
                                 loop {
-                                    if std::time::Instant::now() > dead_line.into() {
+                                    if std::time::Instant::now() > dead_line.into() || should_exit.load(Ordering::Relaxed){
                                         break;
                                     }
                                     let futures = (0..n_http2_parallel)
@@ -1113,6 +1129,7 @@ pub async fn work_until(
                                             match result {
                                                 Ok(_) => {
                                                     // All tasks completed successfully
+                                                    should_exit.store(true, Ordering::Relaxed);
                                                     break;
                                                 }
                                                 Err(_) => {
