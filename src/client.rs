@@ -285,21 +285,24 @@ impl Client {
                 Err(_) => Err(ClientError::Timeout),
             }
         } else if let Some(socket_path) = &self.unix_socket {
-            let stream = tokio::time::timeout(timeout_duration, 
-                tokio::net::UnixStream::connect(socket_path)
-            ).await;
+            let stream = tokio::time::timeout(
+                timeout_duration,
+                tokio::net::UnixStream::connect(socket_path),
+            )
+            .await;
             match stream {
                 Ok(Ok(stream)) => Ok(Stream::Unix(stream)),
                 Ok(Err(err)) => Err(ClientError::IoError(err)),
                 Err(_) => Err(ClientError::Timeout),
             }
         } else {
-            let stream = tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
+            let stream =
+                tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
             match stream {
                 Ok(Ok(stream)) => {
                     stream.set_nodelay(true)?;
                     return Ok(Stream::Tcp(stream));
-                },
+                }
                 Ok(Err(err)) => Err(ClientError::IoError(err)),
                 Err(_) => Err(ClientError::Timeout),
             }
@@ -1077,7 +1080,6 @@ pub async fn work_until(
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
-    use std::sync::atomic::{AtomicBool, Ordering};
     let client = Arc::new(client);
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -1087,72 +1089,43 @@ pub async fn work_until(
                 tokio::spawn(async move {
                     // Keep trying to establish or re-establish connections up to the deadline
                     loop {
-                        // Stop if the deadline has passed
-                        // This happens when a connection is never able to be established
-                        // since the response handling / timeout logic never gets a chance to run
-                        if std::time::Instant::now() > dead_line.into() {
-                            break;
-                        }
                         match setup_http2(&client).await {
                             Ok((connection_time, client_state)) => {
-                                let should_exit = Arc::new(AtomicBool::new(false));
                                 // Setup the parallel workers for each HTTP2 connection
-                                loop {
-                                    if std::time::Instant::now() > dead_line.into() || should_exit.load(Ordering::Relaxed) {
-                                        break;
-                                    }
-                                    let futures = (0..n_http2_parallel)
-                                        .map(|_| {
-                                            let client = client.clone();
-                                            let report_tx = report_tx.clone();
-                                            let mut client_state = client_state.clone();
-                                            let should_exit = Arc::clone(&should_exit);
-                                            tokio::spawn(async move {
-                                                // This is where HTTP2 loops to make all the requests for a given client and worker
-                                                loop {
-                                                    let mut res =
-                                                        client.work_http2(&mut client_state).await;
-                                                    let is_cancel = is_too_many_open_files(&res);
-                                                    let is_hyper_error = is_hyper_error(&res);
-                                                    set_connection_time(&mut res, connection_time);
-                                                    report_tx.send_async(res).await.unwrap();
-                                                    if is_cancel || is_hyper_error || should_exit.load(Ordering::Relaxed) {
-                                                        break;
-                                                    }
-                                                }
-                                            })
-                                        })
-                                        .collect::<Vec<_>>();
-
-                                    tokio::select! {
-                                        result = futures::future::try_join_all(futures) => {
-                                            match result {
-                                                Ok(_) => {
-                                                    // All tasks completed successfully
-                                                    should_exit.store(true, Ordering::Relaxed);
-                                                    break;
-                                                }
-                                                Err(_) => {
-                                                    // Re-establish the connection and restart the tasks
-                                                    should_exit.store(true, Ordering::Relaxed);
-                                                    break;
+                                let futures = (0..n_http2_parallel)
+                                    .map(|_| {
+                                        let client = client.clone();
+                                        let report_tx = report_tx.clone();
+                                        let mut client_state = client_state.clone();
+                                        tokio::spawn(async move {
+                                            // This is where HTTP2 loops to make all the requests for a given client and worker
+                                            loop {
+                                                let mut res =
+                                                    client.work_http2(&mut client_state).await;
+                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_hyper_error = is_hyper_error(&res);
+                                                set_connection_time(&mut res, connection_time);
+                                                report_tx.send_async(res).await.unwrap();
+                                                if is_cancel || is_hyper_error {
+                                                    break is_cancel;
                                                 }
                                             }
-                                        }
-                                        _ = tokio::time::sleep_until(dead_line.into()) => {
-                                            // TODO: Ideally we would abort all the futures here
-                                            // This would be particurlarly important for cases where an tested request
-                                            // takes, say, 30 seconds to complete on avg.  In that case it will be really
-                                            // obvious that the test does not exit at any specific configured time, but
-                                            // rather up to 30 seconds after that time.
-                                            // I cannot figure out how to abort the futures without triggering borrow/move errors
-                                            // for f in futures {
-                                            //     f.abort();
-                                            // }
-                                            should_exit.store(true, Ordering::Relaxed);
-                                            break;
-                                        }
-                                    }
+                                        })
+                                    })
+                                    .chain(std::iter::once(tokio::spawn(async move {
+                                        tokio::time::sleep_until(dead_line.into()).await;
+                                        true
+                                    })))
+                                    .collect::<Vec<_>>();
+
+                                let (is_cancel, _, rest) =
+                                    futures::future::select_all(futures).await;
+                                for f in rest {
+                                    f.abort();
+                                }
+
+                                if matches!(is_cancel, Ok(true)) {
+                                    break;
                                 }
                             }
 
