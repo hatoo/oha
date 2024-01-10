@@ -266,7 +266,6 @@ impl Client {
         self.http_version == http::Version::HTTP_2
     }
 
-    #[cfg(unix)]
     async fn client(
         &self,
         addr: (std::net::IpAddr, u16),
@@ -279,49 +278,34 @@ impl Client {
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
             let stream = tokio::time::timeout(timeout_duration, self.tls_client(addr, url)).await;
-            match stream {
+            return match stream {
                 Ok(Ok(stream)) => Ok(stream),
                 Ok(Err(err)) => Err(err),
                 Err(_) => Err(ClientError::Timeout),
-            }
-        } else if let Some(socket_path) = &self.unix_socket {
+            };
+        }
+        #[cfg(unix)]
+        if let Some(socket_path) = &self.unix_socket {
             let stream = tokio::time::timeout(
                 timeout_duration,
                 tokio::net::UnixStream::connect(socket_path),
             )
             .await;
-            match stream {
+            return match stream {
                 Ok(Ok(stream)) => Ok(Stream::Unix(stream)),
                 Ok(Err(err)) => Err(ClientError::IoError(err)),
                 Err(_) => Err(ClientError::Timeout),
-            }
-        } else {
-            let stream =
-                tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
-            match stream {
-                Ok(Ok(stream)) => {
-                    stream.set_nodelay(true)?;
-                    return Ok(Stream::Tcp(stream));
-                }
-                Ok(Err(err)) => Err(ClientError::IoError(err)),
-                Err(_) => Err(ClientError::Timeout),
-            }
+            };
         }
-    }
-
-    #[cfg(not(unix))]
-    async fn client(
-        &self,
-        addr: (std::net::IpAddr, u16),
-        url: &Url,
-    ) -> Result<Stream, ClientError> {
-        if url.scheme() == "https" {
-            self.tls_client(addr, url).await
-        } else {
-            let stream = tokio::net::TcpStream::connect(addr).await?;
-            stream.set_nodelay(true)?;
-            // stream.set_keepalive(std::time::Duration::from_secs(1).into())?;
-            Ok(Stream::Tcp(stream))
+        let stream =
+            tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
+        match stream {
+            Ok(Ok(stream)) => {
+                stream.set_nodelay(true)?;
+                Ok(Stream::Tcp(stream))
+            }
+            Ok(Err(err)) => Err(ClientError::IoError(err)),
+            Err(_) => Err(ClientError::Timeout),
         }
     }
 
