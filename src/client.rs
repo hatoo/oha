@@ -819,7 +819,7 @@ pub async fn work(
                             Err(err) => {
                                 report_tx.send_async(Err(err)).await.unwrap();
 
-                                if !(counter.fetch_add(1, Ordering::Relaxed) < n_tasks) {
+                                if counter.fetch_add(1, Ordering::Relaxed) >= n_tasks {
                                     return true;
                                 }
                             }
