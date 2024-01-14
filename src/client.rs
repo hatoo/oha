@@ -1451,21 +1451,42 @@ pub async fn work_until_with_qps_latency_correction(
                                             set_start_latency_correction(&mut res, start);
                                             set_connection_time(&mut res, connection_time);
                                             let is_cancel = is_too_many_open_files(&res);
+                                            let is_reconnect = is_hyper_error(&res);
                                             report_tx.send_async(res).await.unwrap();
-                                            if is_cancel {
-                                                break;
+                                            if is_cancel || is_reconnect {
+                                                return is_cancel;
                                             }
                                         }
+                                        true
                                     })
                                 })
                                 .collect::<Vec<_>>();
-                            tokio::time::sleep_until(dead_line.into()).await;
+                            let mut connection_gone = false;
                             for f in futures {
-                                f.abort();
+                                match f.await {
+                                    Ok(true) => {
+                                        // All works done
+                                        connection_gone = true;
+                                    }
+                                    Err(_) => {
+                                        // Unexpected
+                                        connection_gone = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if connection_gone {
+                                return;
                             }
                         }
 
-                        Err(err) => report_tx.send_async(Err(err)).await.unwrap(),
+                        Err(err) => {
+                            if let Ok(_) = rx.recv_async().await {
+                                report_tx.send_async(Err(err)).await.unwrap();
+                            } else {
+                                return;
+                            }
+                        }
                     }
                 })
             })
