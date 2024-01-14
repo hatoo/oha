@@ -1100,7 +1100,7 @@ pub async fn work_with_qps_latency_correction(
                             }
                             Err(err) => {
                                 // Consume a task
-                                if let Ok(_) = rx.recv_async().await {
+                                if rx.recv_async().await.is_ok() {
                                     report_tx.send_async(Err(err)).await.unwrap();
                                 } else {
                                     return;
@@ -1336,7 +1336,7 @@ pub async fn work_until_with_qps(
                             }
                             Err(err) => {
                                 // Consume a task
-                                if let Ok(_) = rx.recv_async().await {
+                                if rx.recv_async().await.is_ok() {
                                     report_tx.send_async(Err(err)).await.unwrap();
                                 } else {
                                     return;
@@ -1482,7 +1482,7 @@ pub async fn work_until_with_qps_latency_correction(
                             }
 
                             Err(err) => {
-                                if let Ok(_) = rx.recv_async().await {
+                                if rx.recv_async().await.is_ok() {
                                     report_tx.send_async(Err(err)).await.unwrap();
                                 } else {
                                     return;
