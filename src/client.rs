@@ -786,11 +786,11 @@ pub async fn work(
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
-                                                    return (false, is_cancel);
+                                                    return is_cancel;
                                                 }
                                             }
 
-                                            (true, true)
+                                            true
                                         })
                                     })
                                     .collect::<Vec<_>>();
@@ -798,29 +798,27 @@ pub async fn work(
                                 let mut connection_gone = false;
                                 for f in futures {
                                     match f.await {
-                                        Ok((true, _)) => {
+                                        Ok(true) => {
                                             // All works done
-                                            return true;
-                                        }
-                                        Ok((_, is_cancel)) => {
-                                            connection_gone |= is_cancel;
+                                            connection_gone = true;
                                         }
                                         Err(_) => {
                                             // Unexpected
-                                            return false;
+                                            connection_gone = true;
                                         }
+                                        _ => {}
                                     }
                                 }
 
                                 if connection_gone {
-                                    return false;
+                                    return;
                                 }
                             }
                             Err(err) => {
-                                report_tx.send_async(Err(err)).await.unwrap();
-
-                                if counter.fetch_add(1, Ordering::Relaxed) >= n_tasks {
-                                    return true;
+                                if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                    report_tx.send_async(Err(err)).await.unwrap();
+                                } else {
+                                    return;
                                 }
                             }
                         }
@@ -829,9 +827,7 @@ pub async fn work(
             })
             .collect::<Vec<_>>();
         for f in futures {
-            if matches!(f.await, Ok(true)) {
-                break;
-            }
+            let _ = f.await;
         }
     } else {
         let futures = (0..n_connections)
@@ -846,17 +842,14 @@ pub async fn work(
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
-                            return false;
+                            break;
                         }
                     }
-                    true
                 })
             })
             .collect::<Vec<_>>();
         for f in futures {
-            if matches!(f.await, Ok(true)) {
-                break;
-            }
+            let _ = f.await;
         }
     };
 }
@@ -936,38 +929,37 @@ pub async fn work_with_qps(
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
-                                                    return (false, is_cancel);
+                                                    return is_cancel;
                                                 }
                                             }
-                                            (true, true)
+                                            true
                                         })
                                     })
                                     .collect::<Vec<_>>();
                                 let mut connection_gone = false;
                                 for f in futures {
                                     match f.await {
-                                        Ok((true, _)) => {
+                                        Ok(true) => {
                                             // All works done
-                                            return true;
-                                        }
-                                        Ok((_, is_cancel)) => {
-                                            connection_gone |= is_cancel;
+                                            connection_gone = true;
                                         }
                                         Err(_) => {
                                             // Unexpected
-                                            return false;
+                                            connection_gone = true;
                                         }
+                                        _ => {}
                                     }
                                 }
                                 if connection_gone {
-                                    return false;
+                                    return;
                                 }
                             }
                             Err(err) => {
-                                report_tx.send_async(Err(err)).await.unwrap();
                                 // Consume a task
-                                if rx.recv_async().await.is_err() {
-                                    return true;
+                                if let Ok(()) = rx.recv_async().await {
+                                    report_tx.send_async(Err(err)).await.unwrap();
+                                } else {
+                                    return;
                                 }
                             }
                         }
@@ -976,9 +968,7 @@ pub async fn work_with_qps(
             })
             .collect::<Vec<_>>();
         for f in futures {
-            if matches!(f.await, Ok(true)) {
-                break;
-            }
+            let _ = f.await;
         }
     } else {
         let futures = (0..n_connections)
@@ -993,17 +983,14 @@ pub async fn work_with_qps(
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
-                            return false;
+                            break;
                         }
                     }
-                    true
                 })
             })
             .collect::<Vec<_>>();
         for f in futures {
-            if matches!(f.await, Ok(true)) {
-                break;
-            }
+            let _ = f.await;
         }
     };
 }
@@ -1086,38 +1073,37 @@ pub async fn work_with_qps_latency_correction(
                                                 set_start_latency_correction(&mut res, start);
                                                 report_tx.send_async(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
-                                                    return (false, is_cancel);
+                                                    return is_cancel;
                                                 }
                                             }
-                                            (true, true)
+                                            true
                                         })
                                     })
                                     .collect::<Vec<_>>();
                                 let mut connection_gone = false;
                                 for f in futures {
                                     match f.await {
-                                        Ok((true, _)) => {
+                                        Ok(true) => {
                                             // All works done
-                                            return true;
-                                        }
-                                        Ok((_, is_cancel)) => {
-                                            connection_gone |= is_cancel;
+                                            connection_gone = true;
                                         }
                                         Err(_) => {
                                             // Unexpected
-                                            return false;
+                                            connection_gone = true;
                                         }
+                                        _ => {}
                                     }
                                 }
                                 if connection_gone {
-                                    return false;
+                                    return;
                                 }
                             }
                             Err(err) => {
-                                report_tx.send_async(Err(err)).await.unwrap();
                                 // Consume a task
-                                if rx.recv_async().await.is_err() {
-                                    return true;
+                                if let Ok(_) = rx.recv_async().await {
+                                    report_tx.send_async(Err(err)).await.unwrap();
+                                } else {
+                                    return;
                                 }
                             }
                         }
@@ -1126,9 +1112,7 @@ pub async fn work_with_qps_latency_correction(
             })
             .collect::<Vec<_>>();
         for f in futures {
-            if matches!(f.await, Ok(true)) {
-                break;
-            }
+            let _ = f.await;
         }
     } else {
         let futures = (0..n_connections)
@@ -1144,17 +1128,14 @@ pub async fn work_with_qps_latency_correction(
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
-                            return false;
+                            break;
                         }
                     }
-                    true
                 })
             })
             .collect::<Vec<_>>();
         for f in futures {
-            if matches!(f.await, Ok(true)) {
-                break;
-            }
+            let _ = f.await;
         }
     };
 }
