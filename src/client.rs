@@ -1309,38 +1309,37 @@ pub async fn work_until_with_qps(
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
-                                                    return (false, is_cancel);
+                                                    return is_cancel;
                                                 }
                                             }
-                                            (true, true)
+                                            true
                                         })
                                     })
                                     .collect::<Vec<_>>();
                                 let mut connection_gone = false;
                                 for f in futures {
                                     match f.await {
-                                        Ok((true, _)) => {
+                                        Ok(true) => {
                                             // All works done
-                                            return true;
-                                        }
-                                        Ok((_, is_cancel)) => {
-                                            connection_gone |= is_cancel;
+                                            connection_gone = true;
                                         }
                                         Err(_) => {
                                             // Unexpected
-                                            return false;
+                                            connection_gone = true;
                                         }
+                                        _ => {}
                                     }
                                 }
                                 if connection_gone {
-                                    return false;
+                                    return;
                                 }
                             }
                             Err(err) => {
-                                report_tx.send_async(Err(err)).await.unwrap();
                                 // Consume a task
-                                if rx.recv_async().await.is_err() {
-                                    return true;
+                                if let Ok(_) = rx.recv_async().await {
+                                    report_tx.send_async(Err(err)).await.unwrap();
+                                } else {
+                                    return;
                                 }
                             }
                         }
