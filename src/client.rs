@@ -1060,47 +1060,78 @@ pub async fn work_with_qps_latency_correction(
 
     let client = Arc::new(client);
 
-    let futures = if client.is_http2() {
-        (0..n_connections)
+    if client.is_http2() {
+        let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 let client = client.clone();
                 tokio::spawn(async move {
-                    match setup_http2(&client).await {
-                        Ok((connection_time, client_state)) => {
-                            let futures = (0..n_http2_parallel)
-                                .map(|_| {
-                                    let report_tx = report_tx.clone();
-                                    let rx = rx.clone();
-                                    let client = client.clone();
-                                    let mut client_state = client_state.clone();
-                                    tokio::spawn(async move {
-                                        while let Ok(start) = rx.recv_async().await {
-                                            let mut res =
-                                                client.work_http2(&mut client_state).await;
-                                            let is_cancel = is_too_many_open_files(&res);
-                                            set_connection_time(&mut res, connection_time);
-                                            set_start_latency_correction(&mut res, start);
-                                            report_tx.send_async(res).await.unwrap();
-                                            if is_cancel {
-                                                break;
+                    loop {
+                        match setup_http2(&client).await {
+                            Ok((connection_time, client_state)) => {
+                                let futures = (0..n_http2_parallel)
+                                    .map(|_| {
+                                        let report_tx = report_tx.clone();
+                                        let rx = rx.clone();
+                                        let client = client.clone();
+                                        let mut client_state = client_state.clone();
+                                        tokio::spawn(async move {
+                                            while let Ok(start) = rx.recv_async().await {
+                                                let mut res =
+                                                    client.work_http2(&mut client_state).await;
+                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_reconnect = is_hyper_error(&res);
+                                                set_connection_time(&mut res, connection_time);
+                                                set_start_latency_correction(&mut res, start);
+                                                report_tx.send_async(res).await.unwrap();
+                                                if is_cancel || is_reconnect {
+                                                    return (false, is_cancel);
+                                                }
                                             }
-                                        }
+                                            (true, true)
+                                        })
                                     })
-                                })
-                                .collect::<Vec<_>>();
-                            for f in futures {
-                                let _ = f.await;
+                                    .collect::<Vec<_>>();
+                                let mut connection_gone = false;
+                                for f in futures {
+                                    match f.await {
+                                        Ok((true, _)) => {
+                                            // All works done
+                                            return true;
+                                        }
+                                        Ok((_, is_cancel)) => {
+                                            connection_gone |= is_cancel;
+                                        }
+                                        Err(_) => {
+                                            // Unexpected
+                                            return false;
+                                        }
+                                    }
+                                }
+                                if connection_gone {
+                                    return false;
+                                }
+                            }
+                            Err(err) => {
+                                report_tx.send_async(Err(err)).await.unwrap();
+                                // Consume a task
+                                if rx.recv_async().await.is_err() {
+                                    return true;
+                                }
                             }
                         }
-                        Err(err) => report_tx.send_async(Err(err)).await.unwrap(),
                     }
                 })
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        for f in futures {
+            if matches!(f.await, Ok(true)) {
+                break;
+            }
+        }
     } else {
-        (0..n_connections)
+        let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
@@ -1113,17 +1144,19 @@ pub async fn work_with_qps_latency_correction(
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
-                            break;
+                            return false;
                         }
                     }
+                    true
                 })
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        for f in futures {
+            if matches!(f.await, Ok(true)) {
+                break;
+            }
+        }
     };
-
-    for f in futures {
-        let _ = f.await;
-    }
 }
 
 /// Run until dead_line by n workers
