@@ -993,14 +993,17 @@ pub async fn work_with_qps(
                         let is_cancel = is_too_many_open_files(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
-                            break;
+                            return false;
                         }
                     }
+                    true
                 })
             })
             .collect::<Vec<_>>();
         for f in futures {
-            let _ = f.await;
+            if matches!(f.await, Ok(true)) {
+                break;
+            }
         }
     };
 }
