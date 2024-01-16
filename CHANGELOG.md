@@ -1,5 +1,9 @@
 # Unreleased
 
+# 1.1.0 (2024-01-16)
+
+-  [HTTP2] Reconnect TCP connection when it fails #369 
+
 # 1.0.0 (2023-11-16)
 
 - Update hyper dependency to 1.0.0
