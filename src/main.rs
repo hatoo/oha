@@ -29,6 +29,7 @@ use client::{ClientError, RequestResult};
 
 #[derive(Parser)]
 #[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
+#[command(arg_required_else_help(true))]
 struct Opts {
     #[clap(help = "Target URL.")]
     url: String,

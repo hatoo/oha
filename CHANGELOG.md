@@ -1,5 +1,7 @@
 # Unreleased
 
+- Print help message when no argument is given #378
+
 # 1.1.0 (2024-01-16)
 
 -  [HTTP2] Reconnect TCP connection when it fails #369 
