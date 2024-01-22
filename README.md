@@ -6,6 +6,8 @@
 [![Homebrew](https://img.shields.io/homebrew/v/oha)](https://formulae.brew.sh/formula/oha)
 [![Gitter](https://img.shields.io/gitter/room/hatoo/oha)](https://gitter.im/hatoo-oha/community#)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/hatoo)
+
 oha is a tiny program that sends some load to a web application and show realtime tui inspired by [rakyll/hey](https://github.com/rakyll/hey).
 
 This program is written in Rust and powered by [tokio](https://github.com/tokio-rs/tokio) and beautiful tui by [ratatui](https://github.com/ratatui-org/ratatui).
