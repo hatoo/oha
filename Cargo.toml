@@ -77,4 +77,4 @@ assert_cmd = "2.0.2"
 axum = { version = "0.7", features = ["http2"] }
 bytes = "1.0"
 lazy_static = "1.4.0"
-regex = "1.9.6"
+regex = "1.10.3"
