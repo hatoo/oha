@@ -271,41 +271,28 @@ impl Client {
         addr: (std::net::IpAddr, u16),
         url: &Url,
     ) -> Result<Stream, ClientError> {
-        // TODO: Allow the connect timeout to be configured
-        let timeout_duration = tokio::time::Duration::from_secs(5);
-
         if url.scheme() == "https" {
-            // If we do not put a timeout here then the connections attempts will
-            // linger long past the configured timeout
-            let stream = tokio::time::timeout(timeout_duration, self.tls_client(addr, url)).await;
+            let stream = self.tls_client(addr, url).await;
             return match stream {
-                Ok(Ok(stream)) => Ok(stream),
-                Ok(Err(err)) => Err(err),
-                Err(_) => Err(ClientError::Timeout),
+                Ok(stream) => Ok(stream),
+                Err(err) => Err(err),
             };
         }
         #[cfg(unix)]
         if let Some(socket_path) = &self.unix_socket {
-            let stream = tokio::time::timeout(
-                timeout_duration,
-                tokio::net::UnixStream::connect(socket_path),
-            )
-            .await;
+            let stream = tokio::net::UnixStream::connect(socket_path).await;
             return match stream {
-                Ok(Ok(stream)) => Ok(Stream::Unix(stream)),
-                Ok(Err(err)) => Err(ClientError::IoError(err)),
-                Err(_) => Err(ClientError::Timeout),
+                Ok(stream) => Ok(Stream::Unix(stream)),
+                Err(err) => Err(ClientError::IoError(err)),
             };
         }
-        let stream =
-            tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
+        let stream = tokio::net::TcpStream::connect(addr).await;
         match stream {
-            Ok(Ok(stream)) => {
+            Ok(stream) => {
                 stream.set_nodelay(true)?;
                 Ok(Stream::Tcp(stream))
             }
-            Ok(Err(err)) => Err(ClientError::IoError(err)),
-            Err(_) => Err(ClientError::Timeout),
+            Err(err) => Err(ClientError::IoError(err)),
         }
     }
 
