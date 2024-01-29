@@ -30,7 +30,7 @@ rustls = [
 [dependencies]
 anyhow = "1.0.38"
 average = "0.14.1"
-byte-unit = "5.1.2"
+byte-unit = "5.1.4"
 clap = { version = "4.1.4", features = ["derive"] }
 crossterm = "0.27"
 float-ord = "0.3.1"
