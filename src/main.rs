@@ -143,6 +143,12 @@ Note: If qps is specified, burst will be ignored",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
+    #[clap(
+        help = "Perform a DNS lookup at beginning to cache it",
+        long = "pre-lookup",
+        default_value = "true"
+    )]
+    pre_lookup: bool,
     #[clap(help = "Lookup only ipv6.", long = "ipv6")]
     ipv6: bool,
     #[clap(help = "Lookup only ipv4.", long = "ipv4")]
@@ -361,6 +367,51 @@ async fn main() -> anyhow::Result<()> {
 
     let (result_tx, result_rx) = flume::unbounded();
 
+    // When panics, reset terminal mode and exit immediately.
+    std::panic::set_hook(Box::new(|info| {
+        use crossterm::ExecutableCommand;
+        let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = std::io::stdout().execute(crossterm::cursor::Show);
+        eprintln!("{info}");
+        std::process::exit(libc::EXIT_FAILURE);
+    }));
+
+    let ip_strategy = match (opts.ipv4, opts.ipv6) {
+        (false, false) => Default::default(),
+        (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
+        (false, true) => hickory_resolver::config::LookupIpStrategy::Ipv6Only,
+        (true, true) => hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
+    };
+    let (config, _) = hickory_resolver::system_conf::read_system_conf()
+        .context("DNS: failed to load /etc/resolv.conf")?;
+    let mut resolver_opts = hickory_resolver::config::ResolverOpts::default();
+    resolver_opts.ip_strategy = ip_strategy;
+    let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
+
+    // client_builder builds client for each workers
+    let client = client::Client {
+        http_version,
+        url_generator,
+        method: opts.method,
+        headers,
+        body,
+        dns: client::Dns {
+            resolver,
+            connect_to: opts.connect_to,
+        },
+        timeout: opts.timeout.map(|d| d.into()),
+        redirect_limit: opts.redirect,
+        disable_keepalive: opts.disable_keepalive,
+        insecure: opts.insecure,
+        #[cfg(unix)]
+        unix_socket: opts.unix_socket,
+    };
+
+    if opts.pre_lookup {
+        client.pre_lookup().await?;
+    }
+
     let start = std::time::Instant::now();
 
     let data_collector = if opts.no_tui || !std::io::stdout().is_tty() {
@@ -415,48 +466,6 @@ async fn main() -> anyhow::Result<()> {
             .monitor(),
         )
         .boxed()
-    };
-
-    // On mac, tokio runtime crashes when too many files are opend.
-    // Then reset terminal mode and exit immediately.
-    std::panic::set_hook(Box::new(|info| {
-        use crossterm::ExecutableCommand;
-        let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = std::io::stdout().execute(crossterm::cursor::Show);
-        eprintln!("{info}");
-        std::process::exit(libc::EXIT_FAILURE);
-    }));
-
-    let ip_strategy = match (opts.ipv4, opts.ipv6) {
-        (false, false) => Default::default(),
-        (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
-        (false, true) => hickory_resolver::config::LookupIpStrategy::Ipv6Only,
-        (true, true) => hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
-    };
-    let (config, _) = hickory_resolver::system_conf::read_system_conf()
-        .context("DNS: failed to load /etc/resolv.conf")?;
-    let mut resolver_opts = hickory_resolver::config::ResolverOpts::default();
-    resolver_opts.ip_strategy = ip_strategy;
-    let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
-
-    // client_builder builds client for each workers
-    let client = client::Client {
-        http_version,
-        url_generator,
-        method: opts.method,
-        headers,
-        body,
-        dns: client::Dns {
-            resolver,
-            connect_to: opts.connect_to,
-        },
-        timeout: opts.timeout.map(|d| d.into()),
-        redirect_limit: opts.redirect,
-        disable_keepalive: opts.disable_keepalive,
-        insecure: opts.insecure,
-        #[cfg(unix)]
-        unix_socket: opts.unix_socket,
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {

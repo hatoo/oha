@@ -266,6 +266,17 @@ impl Client {
         self.http_version == http::Version::HTTP_2
     }
 
+    /// Perform a DNS lookup to cache it
+    /// This is useful to avoid DNS lookup latency at the first concurrent requests
+    pub async fn pre_lookup(&self) -> Result<(), ClientError> {
+        let mut rng = StdRng::from_entropy();
+        let url = self.url_generator.generate(&mut rng)?;
+
+        // It automatically caches the result
+        self.dns.lookup(&url, &mut rng).await?;
+        Ok(())
+    }
+
     async fn client(
         &self,
         addr: (std::net::IpAddr, u16),
