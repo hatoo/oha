@@ -1,6 +1,7 @@
 # Unreleased
 
 - Print help message when no argument is given #378
+- Lookup DNS at beginning and cache it #391
 
 # 1.1.0 (2024-01-16)
 
