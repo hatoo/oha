@@ -308,7 +308,7 @@ fn print_json<W: Write>(
     }
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
-        calcuate_connection_times_base(res);
+        calculate_connection_times_base(res);
     let details = Details {
         dns_dialup: Triple {
             average: calculate_connection_times_dns_dialup_average(&connection_times),
@@ -467,7 +467,7 @@ fn print_summary<W: Write>(
     writeln!(w)?;
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
-        calcuate_connection_times_base(res);
+        calculate_connection_times_base(res);
     writeln!(
         w,
         "{}",
@@ -688,7 +688,7 @@ fn calculate_size_per_sec<E>(res: &[Result<RequestResult, E>], total_duration: D
         / total_duration.as_secs_f64()
 }
 
-fn calcuate_connection_times_base<E>(
+fn calculate_connection_times_base<E>(
     res: &[Result<RequestResult, E>],
 ) -> Vec<(Instant, ConnectionTime)> {
     res.iter()
@@ -920,7 +920,7 @@ mod tests {
     #[test]
     fn test_calcuate_connection_times_base() {
         assert_eq!(
-            calcuate_connection_times_base(&build_mock_request_result_vec()).len(),
+            calculate_connection_times_base(&build_mock_request_result_vec()).len(),
             3
         );
     }
@@ -930,7 +930,7 @@ mod tests {
         assert_eq!(
             // Round the calculation to 4 decimal places to remove imprecision
             fp_round(
-                calculate_connection_times_dns_dialup_average(&calcuate_connection_times_base(
+                calculate_connection_times_dns_dialup_average(&calculate_connection_times_base(
                     &build_mock_request_result_vec()
                 )),
                 4.0
@@ -944,7 +944,7 @@ mod tests {
         assert_eq!(
             // Round the calculation to 4 decimal places to remove imprecision
             fp_round(
-                calculate_connection_times_dns_dialup_fastest(&calcuate_connection_times_base(
+                calculate_connection_times_dns_dialup_fastest(&calculate_connection_times_base(
                     &build_mock_request_result_vec()
                 )),
                 4.0
@@ -958,7 +958,7 @@ mod tests {
         assert_eq!(
             // Round the calculation to 4 decimal places to remove imprecision
             fp_round(
-                calculate_connection_times_dns_dialup_slowest(&calcuate_connection_times_base(
+                calculate_connection_times_dns_dialup_slowest(&calculate_connection_times_base(
                     &build_mock_request_result_vec()
                 )),
                 4.0
@@ -972,7 +972,7 @@ mod tests {
         assert_eq!(
             // Round the calculation to 4 decimal places to remove imprecision
             fp_round(
-                calculate_connection_times_dns_lookup_average(&calcuate_connection_times_base(
+                calculate_connection_times_dns_lookup_average(&calculate_connection_times_base(
                     &build_mock_request_result_vec()
                 )),
                 4.0
@@ -986,7 +986,7 @@ mod tests {
         assert_eq!(
             // Round the calculation to 4 decimal places to remove imprecision
             fp_round(
-                calculate_connection_times_dns_lookup_fastest(&calcuate_connection_times_base(
+                calculate_connection_times_dns_lookup_fastest(&calculate_connection_times_base(
                     &build_mock_request_result_vec()
                 )),
                 4.0
@@ -1000,7 +1000,7 @@ mod tests {
         assert_eq!(
             // Round the calculation to 4 decimal places to remove imprecision
             fp_round(
-                calculate_connection_times_dns_lookup_slowest(&calcuate_connection_times_base(
+                calculate_connection_times_dns_lookup_slowest(&calculate_connection_times_base(
                     &build_mock_request_result_vec()
                 )),
                 4.0
