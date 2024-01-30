@@ -147,6 +147,8 @@ pub enum ClientError {
     InvalidUri(#[from] http::uri::InvalidUri),
     #[error("timeout")]
     Timeout,
+    #[error("deadline")]
+    Deadline,
     #[error(transparent)]
     UrlGeneratorError(#[from] UrlGeneratorError),
     #[error(transparent)]
@@ -414,11 +416,35 @@ impl Client {
     async fn work_http1(
         &self,
         client_state: &mut ClientStateHttp1,
+        dead_line: Option<std::time::Instant>,
     ) -> Result<RequestResult, ClientError> {
-        let timeout = if let Some(timeout) = self.timeout {
-            tokio::time::sleep(timeout).boxed()
-        } else {
-            std::future::pending().boxed()
+        let timeout = match (dead_line, self.timeout) {
+            (Some(dead_line), Some(timeout)) => {
+                if std::time::Instant::now() + timeout > dead_line {
+                    async move {
+                        tokio::time::sleep_until(dead_line.into()).await;
+                        ClientError::Deadline
+                    }
+                    .boxed()
+                } else {
+                    async move {
+                        tokio::time::sleep(timeout).await;
+                        ClientError::Timeout
+                    }
+                    .boxed()
+                }
+            }
+            (Some(dead_line), None) => async move {
+                tokio::time::sleep_until(dead_line.into()).await;
+                ClientError::Deadline
+            }
+            .boxed(),
+            (None, Some(timeout)) => async move {
+                tokio::time::sleep(timeout).await;
+                ClientError::Timeout
+            }
+            .boxed(),
+            (None, None) => std::future::pending().boxed(),
         };
 
         let do_req = async {
@@ -511,8 +537,8 @@ impl Client {
             res = do_req => {
                 res
             }
-            _ = timeout => {
-                Err(ClientError::Timeout)
+            client_error = timeout => {
+                Err(client_error)
             }
         }
     }
@@ -707,6 +733,11 @@ impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {
     }
 }
 
+/// Check error and decide whether to cancel the connection
+fn is_cancel_error(res: &Result<RequestResult, ClientError>) -> bool {
+    matches!(res, Err(ClientError::Deadline)) || is_too_many_open_files(res)
+}
+
 /// Check error was "Too many open file"
 fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
     res.as_ref()
@@ -792,7 +823,7 @@ pub async fn work(
                                             {
                                                 let mut res =
                                                     client.work_http2(&mut client_state).await;
-                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
@@ -849,8 +880,8 @@ pub async fn work(
                 tokio::spawn(async move {
                     let mut client_state = ClientStateHttp1::default();
                     while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_too_many_open_files(&res);
+                        let res = client.work_http1(&mut client_state, None).await;
+                        let is_cancel = is_cancel_error(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
                             break;
@@ -935,7 +966,7 @@ pub async fn work_with_qps(
                                             while let Ok(()) = rx.recv_async().await {
                                                 let mut res =
                                                     client.work_http2(&mut client_state).await;
-                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
@@ -990,8 +1021,8 @@ pub async fn work_with_qps(
                 tokio::spawn(async move {
                     let mut client_state = ClientStateHttp1::default();
                     while let Ok(()) = rx.recv_async().await {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_too_many_open_files(&res);
+                        let res = client.work_http1(&mut client_state, None).await;
+                        let is_cancel = is_cancel_error(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
                             break;
@@ -1078,7 +1109,7 @@ pub async fn work_with_qps_latency_correction(
                                             while let Ok(start) = rx.recv_async().await {
                                                 let mut res =
                                                     client.work_http2(&mut client_state).await;
-                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
                                                 set_start_latency_correction(&mut res, start);
@@ -1134,9 +1165,9 @@ pub async fn work_with_qps_latency_correction(
                 let rx = rx.clone();
                 tokio::spawn(async move {
                     while let Ok(start) = rx.recv_async().await {
-                        let mut res = client.work_http1(&mut client_state).await;
+                        let mut res = client.work_http1(&mut client_state, None).await;
                         set_start_latency_correction(&mut res, start);
-                        let is_cancel = is_too_many_open_files(&res);
+                        let is_cancel = is_cancel_error(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
                             break;
@@ -1181,7 +1212,7 @@ pub async fn work_until(
                                             loop {
                                                 let mut res =
                                                     client.work_http2(&mut client_state).await;
-                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
@@ -1226,8 +1257,8 @@ pub async fn work_until(
                 tokio::spawn(async move {
                     loop {
                         // This is where HTTP1 loops to make all the requests for a given client
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_too_many_open_files(&res);
+                        let res = client.work_http1(&mut client_state, Some(dead_line)).await;
+                        let is_cancel = is_cancel_error(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
                             break;
@@ -1236,9 +1267,8 @@ pub async fn work_until(
                 })
             })
             .collect::<Vec<_>>();
-        tokio::time::sleep_until(dead_line.into()).await;
         for f in futures {
-            f.abort();
+            let _ = f.await;
         }
     };
 }
@@ -1315,7 +1345,7 @@ pub async fn work_until_with_qps(
                                             while let Ok(()) = rx.recv_async().await {
                                                 let mut res =
                                                     client.work_http2(&mut client_state).await;
-                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
                                                 report_tx.send_async(res).await.unwrap();
@@ -1371,8 +1401,8 @@ pub async fn work_until_with_qps(
                 let rx = rx.clone();
                 tokio::spawn(async move {
                     while let Ok(()) = rx.recv_async().await {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_too_many_open_files(&res);
+                        let res = client.work_http1(&mut client_state, Some(dead_line)).await;
+                        let is_cancel = is_cancel_error(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
                             break;
@@ -1382,9 +1412,8 @@ pub async fn work_until_with_qps(
             })
             .collect::<Vec<_>>();
 
-        tokio::time::sleep_until(dead_line.into()).await;
         for f in futures {
-            f.abort();
+            let _ = f.await;
         }
     }
 }
@@ -1462,7 +1491,7 @@ pub async fn work_until_with_qps_latency_correction(
                                                     client.work_http2(&mut client_state).await;
                                                 set_start_latency_correction(&mut res, start);
                                                 set_connection_time(&mut res, connection_time);
-                                                let is_cancel = is_too_many_open_files(&res);
+                                                let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 report_tx.send_async(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
@@ -1517,9 +1546,9 @@ pub async fn work_until_with_qps_latency_correction(
                 let rx = rx.clone();
                 tokio::spawn(async move {
                     while let Ok(start) = rx.recv_async().await {
-                        let mut res = client.work_http1(&mut client_state).await;
+                        let mut res = client.work_http1(&mut client_state, Some(dead_line)).await;
                         set_start_latency_correction(&mut res, start);
-                        let is_cancel = is_too_many_open_files(&res);
+                        let is_cancel = is_cancel_error(&res);
                         report_tx.send_async(res).await.unwrap();
                         if is_cancel {
                             break;
@@ -1529,9 +1558,8 @@ pub async fn work_until_with_qps_latency_correction(
             })
             .collect::<Vec<_>>();
 
-        tokio::time::sleep_until(dead_line.into()).await;
         for f in futures {
-            f.abort();
+            let _ = f.await;
         }
     }
 }
