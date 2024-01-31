@@ -180,19 +180,7 @@ impl Monitor {
                 bar_num_req.iter().map(|(a, b)| (a.as_str(), *b)).collect();
 
             #[cfg(unix)]
-            let nofile = match tokio::fs::read_dir("/dev/fd").await {
-                Ok(mut dir) => {
-                    let mut count = 0;
-                    loop {
-                        match dir.next_entry().await {
-                            Ok(Some(_)) => count += 1,
-                            Ok(None) => break Ok(count),
-                            Err(err) => break Err(err),
-                        }
-                    }
-                }
-                Err(e) => Err(e),
-            };
+            let nofile = std::fs::read_dir("/dev/fd").map(|dir| dir.count());
 
             terminal.draw(|f| {
                 let row4 = Layout::default()
