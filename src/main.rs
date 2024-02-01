@@ -53,6 +53,7 @@ struct Opts {
     n_http2_parallel: usize,
     #[clap(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
+When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
 Examples: -z 10s -z 3m.",
         short = 'z'
     )]
