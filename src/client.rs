@@ -147,7 +147,7 @@ pub enum ClientError {
     InvalidUri(#[from] http::uri::InvalidUri),
     #[error("timeout")]
     Timeout,
-    #[error("deadline")]
+    #[error("aborted due to deadline")]
     Deadline,
     #[error(transparent)]
     UrlGeneratorError(#[from] UrlGeneratorError),
