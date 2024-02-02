@@ -1,5 +1,6 @@
 # Unreleased
 
+- Use `kanal` instead of `flume` as channel library #200
 - Print help message when no argument is given #378
 - Lookup DNS at beginning and cache it #391
 

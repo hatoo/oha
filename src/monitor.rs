@@ -3,7 +3,7 @@ use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers},
     ExecutableCommand,
 };
-use flume::TryRecvError;
+use kanal::AsyncReceiver;
 use hyper::http;
 use ratatui::{
     backend::CrosstermBackend,
@@ -55,7 +55,7 @@ pub struct Monitor {
     pub print_mode: PrintMode,
     pub end_line: EndLine,
     /// All workers sends each result to this channel
-    pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
+    pub report_receiver: AsyncReceiver<Result<RequestResult, ClientError>>,
     // When started
     pub start: std::time::Instant,
     // Frame per scond of TUI
@@ -99,17 +99,17 @@ impl Monitor {
             let frame_start = std::time::Instant::now();
             loop {
                 match self.report_receiver.try_recv() {
-                    Ok(report) => {
+                    Ok(Some(report)) => {
                         match report.as_ref() {
                             Ok(report) => *status_dist.entry(report.status).or_default() += 1,
                             Err(e) => *error_dist.entry(e.to_string()).or_default() += 1,
                         }
                         all.push(report);
                     }
-                    Err(TryRecvError::Empty) => {
+                    Ok(None) => {
                         break;
                     }
-                    Err(TryRecvError::Disconnected) => {
+                    Err(_) => {
                         // Application ends.
                         break 'outer;
                     }

@@ -10,6 +10,7 @@ use std::{pin::Pin, sync::Arc};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use url::{ParseError, Url};
+use kanal::AsyncSender;
 
 use crate::{
     url_generator::{UrlGenerator, UrlGeneratorError},
@@ -795,7 +796,7 @@ fn set_start_latency_correction<E>(
 /// Run n tasks by m workers
 pub async fn work(
     client: Client,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: AsyncSender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_connections: usize,
     n_http2_parallel: usize,
@@ -807,7 +808,7 @@ pub async fn work(
 
     if client.is_http2() {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let report_tx = report_tx.clone();
                 let counter = counter.clone();
                 let client = client.clone();
@@ -831,7 +832,7 @@ pub async fn work(
                                                 let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
-                                                report_tx.send_async(res).await.unwrap();
+                                                report_tx.send(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -863,7 +864,7 @@ pub async fn work(
                             }
                             Err(err) => {
                                 if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                    report_tx.send_async(Err(err)).await.unwrap();
+                                    report_tx.send(Err(err)).await.unwrap();
                                 } else {
                                     return;
                                 }
@@ -878,7 +879,7 @@ pub async fn work(
         }
     } else {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let report_tx = report_tx.clone();
                 let counter = counter.clone();
                 let client = client.clone();
@@ -887,7 +888,7 @@ pub async fn work(
                     while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                         let res = client.work_http1(&mut client_state, None).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).await.unwrap();
                         if is_cancel {
                             break;
                         }
@@ -904,13 +905,13 @@ pub async fn work(
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
     client: Client,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: AsyncSender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded_async();
 
     match query_limit {
         QueryLimit::Qps(qps) => {
@@ -921,7 +922,7 @@ pub async fn work_with_qps(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
-                    tx.send_async(()).await.unwrap();
+                    tx.send(()).await.unwrap();
                 }
                 // tx gone
             });
@@ -933,7 +934,7 @@ pub async fn work_with_qps(
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        tx.send_async(()).await.unwrap();
+                        tx.send(()).await.unwrap();
                     }
                     n += rate;
                 }
@@ -941,7 +942,7 @@ pub async fn work_with_qps(
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
-                        tx.send_async(()).await.unwrap();
+                        tx.send(()).await.unwrap();
                     }
                 }
                 // tx gone
@@ -953,7 +954,7 @@ pub async fn work_with_qps(
 
     if client.is_http2() {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 let client = client.clone();
@@ -968,14 +969,14 @@ pub async fn work_with_qps(
                                         let client = client.clone();
                                         let mut client_state = client_state.clone();
                                         tokio::spawn(async move {
-                                            while let Ok(()) = rx.recv_async().await {
+                                            while let Ok(()) = rx.recv().await {
                                                 let mut res = client
                                                     .work_http2(&mut client_state, None)
                                                     .await;
                                                 let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
-                                                report_tx.send_async(res).await.unwrap();
+                                                report_tx.send(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -1004,8 +1005,8 @@ pub async fn work_with_qps(
                             }
                             Err(err) => {
                                 // Consume a task
-                                if let Ok(()) = rx.recv_async().await {
-                                    report_tx.send_async(Err(err)).await.unwrap();
+                                if let Ok(()) = rx.recv().await {
+                                    report_tx.send(Err(err)).await.unwrap();
                                 } else {
                                     return;
                                 }
@@ -1020,16 +1021,16 @@ pub async fn work_with_qps(
         }
     } else {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 let client = client.clone();
                 tokio::spawn(async move {
                     let mut client_state = ClientStateHttp1::default();
-                    while let Ok(()) = rx.recv_async().await {
+                    while let Ok(()) = rx.recv().await {
                         let res = client.work_http1(&mut client_state, None).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).await.unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1046,13 +1047,13 @@ pub async fn work_with_qps(
 /// n tasks by m workers limit to qps works in a second with latency correction
 pub async fn work_with_qps_latency_correction(
     client: Client,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: AsyncSender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded_async();
 
     match query_limit {
         QueryLimit::Qps(qps) => {
@@ -1063,7 +1064,7 @@ pub async fn work_with_qps_latency_correction(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
-                    tx.send_async(std::time::Instant::now()).await.unwrap();
+                    tx.send(std::time::Instant::now()).await.unwrap();
                 }
                 // tx gone
             });
@@ -1076,7 +1077,7 @@ pub async fn work_with_qps_latency_correction(
                     tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     for _ in 0..rate {
-                        tx.send_async(now).await.unwrap();
+                        tx.send(now).await.unwrap();
                     }
                     n += rate;
                 }
@@ -1085,7 +1086,7 @@ pub async fn work_with_qps_latency_correction(
                     tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     for _ in 0..n_tasks - n {
-                        tx.send_async(now).await.unwrap();
+                        tx.send(now).await.unwrap();
                     }
                 }
                 // tx gone
@@ -1097,7 +1098,7 @@ pub async fn work_with_qps_latency_correction(
 
     if client.is_http2() {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 let client = client.clone();
@@ -1112,7 +1113,7 @@ pub async fn work_with_qps_latency_correction(
                                         let client = client.clone();
                                         let mut client_state = client_state.clone();
                                         tokio::spawn(async move {
-                                            while let Ok(start) = rx.recv_async().await {
+                                            while let Ok(start) = rx.recv().await {
                                                 let mut res = client
                                                     .work_http2(&mut client_state, None)
                                                     .await;
@@ -1120,7 +1121,7 @@ pub async fn work_with_qps_latency_correction(
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
                                                 set_start_latency_correction(&mut res, start);
-                                                report_tx.send_async(res).await.unwrap();
+                                                report_tx.send(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -1149,8 +1150,8 @@ pub async fn work_with_qps_latency_correction(
                             }
                             Err(err) => {
                                 // Consume a task
-                                if rx.recv_async().await.is_ok() {
-                                    report_tx.send_async(Err(err)).await.unwrap();
+                                if rx.recv().await.is_ok() {
+                                    report_tx.send(Err(err)).await.unwrap();
                                 } else {
                                     return;
                                 }
@@ -1165,17 +1166,17 @@ pub async fn work_with_qps_latency_correction(
         }
     } else {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 tokio::spawn(async move {
-                    while let Ok(start) = rx.recv_async().await {
+                    while let Ok(start) = rx.recv().await {
                         let mut res = client.work_http1(&mut client_state, None).await;
                         set_start_latency_correction(&mut res, start);
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).await.unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1192,7 +1193,7 @@ pub async fn work_with_qps_latency_correction(
 /// Run until dead_line by n workers
 pub async fn work_until(
     client: Client,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: AsyncSender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
@@ -1200,7 +1201,7 @@ pub async fn work_until(
     let client = Arc::new(client);
     if client.is_http2() {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 tokio::spawn(async move {
@@ -1223,7 +1224,7 @@ pub async fn work_until(
                                                 let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
-                                                report_tx.send_async(res).await.unwrap();
+                                                report_tx.send(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
                                                     break is_cancel;
                                                 }
@@ -1244,7 +1245,7 @@ pub async fn work_until(
                             }
 
                             Err(err) => {
-                                report_tx.send_async(Err(err)).await.unwrap();
+                                report_tx.send(Err(err)).await.unwrap();
                                 if tokio::time::Instant::now() >= dead_line.into() {
                                     break;
                                 }
@@ -1259,7 +1260,7 @@ pub async fn work_until(
         }
     } else {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let mut client_state = ClientStateHttp1::default();
@@ -1268,7 +1269,7 @@ pub async fn work_until(
                         // This is where HTTP1 loops to make all the requests for a given client
                         let res = client.work_http1(&mut client_state, Some(dead_line)).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).await.unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1285,7 +1286,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 pub async fn work_until_with_qps(
     client: Client,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: AsyncSender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
@@ -1294,7 +1295,7 @@ pub async fn work_until_with_qps(
 ) {
     let rx = match query_limit {
         QueryLimit::Qps(qps) => {
-            let (tx, rx) = flume::bounded(qps);
+            let (tx, rx) = kanal::bounded_async(qps);
             tokio::spawn(async move {
                 for i in 0.. {
                     if std::time::Instant::now() > dead_line {
@@ -1304,7 +1305,7 @@ pub async fn work_until_with_qps(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
-                    if tx.send_async(()).await.is_err() {
+                    if tx.send(()).await.is_err() {
                         break;
                     }
                 }
@@ -1313,7 +1314,7 @@ pub async fn work_until_with_qps(
             rx
         }
         QueryLimit::Burst(duration, rate) => {
-            let (tx, rx) = flume::unbounded();
+            let (tx, rx) = kanal::unbounded_async();
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
                 for _ in 0.. {
@@ -1323,7 +1324,7 @@ pub async fn work_until_with_qps(
 
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        tx.send_async(()).await.unwrap();
+                        tx.send(()).await.unwrap();
                     }
                 }
                 // tx gone
@@ -1336,7 +1337,7 @@ pub async fn work_until_with_qps(
 
     if client.is_http2() {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
@@ -1351,14 +1352,14 @@ pub async fn work_until_with_qps(
                                         let rx = rx.clone();
                                         let mut client_state = client_state.clone();
                                         tokio::spawn(async move {
-                                            while let Ok(()) = rx.recv_async().await {
+                                            while let Ok(()) = rx.recv().await {
                                                 let mut res = client
                                                     .work_http2(&mut client_state, Some(dead_line))
                                                     .await;
                                                 let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
                                                 set_connection_time(&mut res, connection_time);
-                                                report_tx.send_async(res).await.unwrap();
+                                                report_tx.send(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -1387,8 +1388,8 @@ pub async fn work_until_with_qps(
                             }
                             Err(err) => {
                                 // Consume a task
-                                if rx.recv_async().await.is_ok() {
-                                    report_tx.send_async(Err(err)).await.unwrap();
+                                if rx.recv().await.is_ok() {
+                                    report_tx.send(Err(err)).await.unwrap();
                                 } else {
                                     return;
                                 }
@@ -1404,16 +1405,16 @@ pub async fn work_until_with_qps(
         }
     } else {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 tokio::spawn(async move {
-                    while let Ok(()) = rx.recv_async().await {
+                    while let Ok(()) = rx.recv().await {
                         let res = client.work_http1(&mut client_state, Some(dead_line)).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).await.unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1431,14 +1432,14 @@ pub async fn work_until_with_qps(
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
 pub async fn work_until_with_qps_latency_correction(
     client: Client,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: AsyncSender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded_async();
     match query_limit {
         QueryLimit::Qps(qps) => {
             tokio::spawn(async move {
@@ -1451,7 +1452,7 @@ pub async fn work_until_with_qps_latency_correction(
                     if now > dead_line {
                         break;
                     }
-                    if tx.send_async(now).await.is_err() {
+                    if tx.send(now).await.is_err() {
                         break;
                     }
                 }
@@ -1469,7 +1470,7 @@ pub async fn work_until_with_qps_latency_correction(
                     }
 
                     for _ in 0..rate {
-                        tx.send_async(now).await.unwrap();
+                        tx.send(now).await.unwrap();
                     }
                 }
                 // tx gone
@@ -1481,7 +1482,7 @@ pub async fn work_until_with_qps_latency_correction(
 
     if client.is_http2() {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
@@ -1496,7 +1497,7 @@ pub async fn work_until_with_qps_latency_correction(
                                         let rx = rx.clone();
                                         let mut client_state = client_state.clone();
                                         tokio::spawn(async move {
-                                            while let Ok(start) = rx.recv_async().await {
+                                            while let Ok(start) = rx.recv().await {
                                                 let mut res = client
                                                     .work_http2(&mut client_state, Some(dead_line))
                                                     .await;
@@ -1504,7 +1505,7 @@ pub async fn work_until_with_qps_latency_correction(
                                                 set_connection_time(&mut res, connection_time);
                                                 let is_cancel = is_cancel_error(&res);
                                                 let is_reconnect = is_hyper_error(&res);
-                                                report_tx.send_async(res).await.unwrap();
+                                                report_tx.send(res).await.unwrap();
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -1533,8 +1534,8 @@ pub async fn work_until_with_qps_latency_correction(
                             }
 
                             Err(err) => {
-                                if rx.recv_async().await.is_ok() {
-                                    report_tx.send_async(Err(err)).await.unwrap();
+                                if rx.recv().await.is_ok() {
+                                    report_tx.send(Err(err)).await.unwrap();
                                 } else {
                                     return;
                                 }
@@ -1550,17 +1551,17 @@ pub async fn work_until_with_qps_latency_correction(
         }
     } else {
         let futures = (0..n_connections)
-            .map(|_| {
+            .map(move |_| {
                 let client = client.clone();
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
                 tokio::spawn(async move {
-                    while let Ok(start) = rx.recv_async().await {
+                    while let Ok(start) = rx.recv().await {
                         let mut res = client.work_http1(&mut client_state, Some(dead_line)).await;
                         set_start_latency_correction(&mut res, start);
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).await.unwrap();
                         if is_cancel {
                             break;
                         }
