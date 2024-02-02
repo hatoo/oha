@@ -70,6 +70,8 @@ hyper-util = { version = "0.1.1", features = ["tokio"] }
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.10.0"
+
+[target.'cfg(linux)'.dependencies]
 jemallocator = "0.5.0"
 
 [dev-dependencies]

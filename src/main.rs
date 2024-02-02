@@ -21,7 +21,7 @@ mod printer;
 mod timescale;
 mod url_generator;
 
-#[cfg(unix)]
+#[cfg(linux)]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
