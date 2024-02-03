@@ -1,5 +1,7 @@
 # Unreleased
 
+# 1.2.0 (2024-02-03)
+
 - Print help message when no argument is given #378
 - Lookup DNS at beginning and cache it #391
 - Report deadlined requests #392 
