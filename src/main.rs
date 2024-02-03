@@ -145,11 +145,11 @@ Note: If qps is specified, burst will be ignored",
     )]
     disable_keepalive: bool,
     #[clap(
-        help = "Perform a DNS lookup at beginning to cache it",
-        long = "pre-lookup",
-        default_value = "true"
+        help = "*Not* perform a DNS lookup at beginning to cache it",
+        long = "no-pre-lookup",
+        default_value = "false"
     )]
-    pre_lookup: bool,
+    no_pre_lookup: bool,
     #[clap(help = "Lookup only ipv6.", long = "ipv6")]
     ipv6: bool,
     #[clap(help = "Lookup only ipv4.", long = "ipv4")]
@@ -409,7 +409,7 @@ async fn main() -> anyhow::Result<()> {
         unix_socket: opts.unix_socket,
     };
 
-    if opts.pre_lookup {
+    if !opts.no_pre_lookup {
         client.pre_lookup().await?;
     }
 

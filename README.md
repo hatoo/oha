@@ -76,6 +76,7 @@ Options:
   -c <N_CONNECTIONS>                  Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`. [default: 50]
   -p <N_HTTP2_PARALLEL>               Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total. [default: 1]
   -z <DURATION>                       Duration of application to send requests. If duration is specified, n is ignored.
+                                      When the duration is reached, ongoing requests are aborted and counted as "aborted due to deadline"
                                       Examples: -z 10s -z 3m.
   -q <QUERY_PER_SECOND>               Rate limit for all, in queries per second (QPS)
       --burst-delay <BURST_DURATION>  Introduce delay between a predefined number of requests.
@@ -102,6 +103,7 @@ Options:
       --disable-compression           Disable compression.
   -r, --redirect <REDIRECT>           Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2. [default: 10]
       --disable-keepalive             Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.
+      --no-pre-lookup                 *Not* perform a DNS lookup at beginning to cache it
       --ipv6                          Lookup only ipv6.
       --ipv4                          Lookup only ipv4.
       --insecure                      Accept invalid certs.
