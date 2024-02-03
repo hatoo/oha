@@ -28,7 +28,7 @@ jobs:
             artifact_name: oha
             release_name: oha-linux-arm64
             target: aarch64-unknown-linux-musl
-          - os: macos-latest
+          - os: macos-14
             artifact_name: oha
             release_name: oha-macos-arm64
             target: aarch64-apple-darwin
