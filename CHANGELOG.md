@@ -1,5 +1,7 @@
 # Unreleased
 
+# 1.3.0 (2024-02-04)
+
 - Optimize timeout #403 
 - Compact error #402 
 - fix tui layout #401 
