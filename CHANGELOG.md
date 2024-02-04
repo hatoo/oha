@@ -1,5 +1,9 @@
 # Unreleased
 
+- Optimize timeout #403 
+- Compact error #402 
+- fix tui layout #401 
+
 # 1.2.0 (2024-02-03)
 
 - Print help message when no argument is given #378
