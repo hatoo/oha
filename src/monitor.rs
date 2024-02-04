@@ -190,7 +190,7 @@ impl Monitor {
                             Constraint::Length(3),
                             Constraint::Length(8),
                             Constraint::Length(error_dist.len() as u16 + 2),
-                            Constraint::Percentage(40),
+                            Constraint::Fill(1),
                         ]
                         .as_ref(),
                     )
