@@ -10,6 +10,7 @@ use hyper::http::{
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
+use results::Results;
 use std::{io::Read, str::FromStr};
 use url::Url;
 use url_generator::UrlGenerator;
@@ -18,14 +19,13 @@ mod client;
 mod histogram;
 mod monitor;
 mod printer;
+mod results;
 mod timescale;
 mod url_generator;
 
 #[cfg(unix)]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
-use client::{ClientError, RequestResult};
 
 #[derive(Parser)]
 #[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
@@ -427,12 +427,12 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
 
-                let mut all: Vec<Result<RequestResult, ClientError>> = Vec::new();
+                let mut all: Results = Default::default();
                 loop {
                     tokio::select! {
                         report = result_rx.recv_async() => {
                             if let Ok(report) = report {
-                                all.push(report);
+                                all.add_result(report);
                             } else {
                                 break;
                             }
@@ -610,7 +610,7 @@ async fn main() -> anyhow::Result<()> {
 
     let duration = start.elapsed();
 
-    let res: Vec<Result<RequestResult, ClientError>> = data_collector.await??;
+    let res: Results = data_collector.await??;
 
     printer::print_result(
         &mut std::io::stdout(),
