@@ -1,7 +1,7 @@
 use crate::{
     client::{ClientError, ConnectionTime},
     histogram::histogram,
-    results::Results,
+    result_data::ResultData,
 };
 use average::{Max, Variance};
 use byte_unit::Byte;
@@ -100,7 +100,7 @@ pub fn print_result<W: Write>(
     w: &mut W,
     mode: PrintMode,
     start: Instant,
-    res: &Results,
+    res: &ResultData,
     total_duration: Duration,
     disable_color: bool,
     stats_success_breakdown: bool,
@@ -122,7 +122,7 @@ pub fn print_result<W: Write>(
 fn print_json<W: Write>(
     w: &mut W,
     start: Instant,
-    res: &Results,
+    res: &ResultData,
     total_duration: Duration,
     stats_success_breakdown: bool,
 ) -> serde_json::Result<()> {
@@ -255,7 +255,7 @@ fn print_json<W: Write>(
     }
 
     let mut ends = res
-        .results
+        .success
         .iter()
         .map(|r| (r.end - start).as_secs_f64())
         .collect::<Vec<_>>();
@@ -299,7 +299,7 @@ fn print_json<W: Write>(
 
     let mut status_code_distribution: BTreeMap<http::StatusCode, usize> = Default::default();
 
-    for s in res.results.iter().map(|r| r.status) {
+    for s in res.success.iter().map(|r| r.status) {
         *status_code_distribution.entry(s).or_default() += 1;
     }
 
@@ -334,7 +334,7 @@ fn print_json<W: Write>(
                 .into_iter()
                 .map(|(k, v)| (k.as_u16().to_string(), v))
                 .collect(),
-            error_distribution: res.errors.clone(),
+            error_distribution: res.error.clone(),
         },
     )
 }
@@ -342,7 +342,7 @@ fn print_json<W: Write>(
 /// Print all summary as Text
 fn print_summary<W: Write>(
     w: &mut W,
-    res: &Results,
+    res: &ResultData,
     total_duration: Duration,
     disable_color: bool,
     stats_success_breakdown: bool,
@@ -488,7 +488,7 @@ fn print_summary<W: Write>(
 
     let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
 
-    for s in res.results.iter().map(|r| r.status) {
+    for s in res.success.iter().map(|r| r.status) {
         *status_dist.entry(s).or_default() += 1;
     }
 
@@ -509,7 +509,7 @@ fn print_summary<W: Write>(
     }
 
     let mut error_v: Vec<(String, usize)> =
-        res.errors.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        res.error.iter().map(|(k, v)| (k.clone(), *v)).collect();
     error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
     if !error_v.is_empty() {
@@ -609,39 +609,39 @@ fn percentiles(values: &mut [f64]) -> BTreeMap<String, f64> {
         .collect()
 }
 
-fn calculate_success_rate(res: &Results) -> f64 {
+fn calculate_success_rate(res: &ResultData) -> f64 {
     let dead_line = ClientError::Deadline.to_string();
     // We ignore deadline errors which are because of `-z` option, not because of the server
-    let denominator = res.results.len()
+    let denominator = res.success.len()
         + res
-            .errors
+            .error
             .iter()
             .filter_map(|(k, v)| if k == &dead_line { None } else { Some(v) })
             .sum::<usize>();
-    let numerator = res.results.len();
+    let numerator = res.success.len();
 
     numerator as f64 / denominator as f64
 }
 
-fn calculate_slowest_request(res: &Results) -> f64 {
-    res.results
+fn calculate_slowest_request(res: &ResultData) -> f64 {
+    res.success
         .iter()
         .map(|r| r.duration().as_secs_f64())
         .collect::<average::Max>()
         .max()
 }
 
-fn calculate_fastest_request(res: &Results) -> f64 {
-    res.results
+fn calculate_fastest_request(res: &ResultData) -> f64 {
+    res.success
         .iter()
         .map(|r| r.duration().as_secs_f64())
         .collect::<average::Min>()
         .min()
 }
 
-fn calculate_average_request(res: &Results) -> f64 {
+fn calculate_average_request(res: &ResultData) -> f64 {
     let mean = res
-        .results
+        .success
         .iter()
         .map(|r| r.duration().as_secs_f64())
         .collect::<average::Mean>();
@@ -652,32 +652,32 @@ fn calculate_average_request(res: &Results) -> f64 {
     }
 }
 
-fn calculate_requests_per_sec(res: &Results, total_duration: Duration) -> f64 {
+fn calculate_requests_per_sec(res: &ResultData, total_duration: Duration) -> f64 {
     res.len() as f64 / total_duration.as_secs_f64()
 }
 
-fn calculate_total_data(res: &Results) -> u64 {
-    res.results.iter().map(|r| r.len_bytes as u64).sum::<u64>()
+fn calculate_total_data(res: &ResultData) -> u64 {
+    res.success.iter().map(|r| r.len_bytes as u64).sum::<u64>()
 }
 
-fn calculate_size_per_request(res: &Results) -> Option<u64> {
-    res.results
+fn calculate_size_per_request(res: &ResultData) -> Option<u64> {
+    res.success
         .iter()
         .map(|r| r.len_bytes as u64)
         .sum::<u64>()
-        .checked_div(res.results.len() as u64)
+        .checked_div(res.success.len() as u64)
 }
 
-fn calculate_size_per_sec(res: &Results, total_duration: Duration) -> f64 {
-    res.results
+fn calculate_size_per_sec(res: &ResultData, total_duration: Duration) -> f64 {
+    res.success
         .iter()
         .map(|r| r.len_bytes as u128)
         .sum::<u128>() as f64
         / total_duration.as_secs_f64()
 }
 
-fn calculate_connection_times_base(res: &Results) -> Vec<(Instant, ConnectionTime)> {
-    res.results
+fn calculate_connection_times_base(res: &ResultData) -> Vec<(Instant, ConnectionTime)> {
+    res.success
         .iter()
         .filter_map(|r| r.connection_time.map(|c| (r.start, c)))
         .collect()
@@ -743,23 +743,23 @@ fn calculate_connection_times_dns_lookup_slowest(
         .max()
 }
 
-fn get_durations_all(res: &Results) -> Vec<f64> {
-    res.results
+fn get_durations_all(res: &ResultData) -> Vec<f64> {
+    res.success
         .iter()
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>()
 }
 
-fn get_durations_successful(res: &Results) -> Vec<f64> {
-    res.results
+fn get_durations_successful(res: &ResultData) -> Vec<f64> {
+    res.success
         .iter()
         .filter(|r| r.status.is_success())
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>()
 }
 
-fn get_durations_not_successful(res: &Results) -> Vec<f64> {
-    res.results
+fn get_durations_not_successful(res: &ResultData) -> Vec<f64> {
+    res.success
         .iter()
         .filter(|r| r.status.is_client_error() || r.status.is_server_error())
         .map(|r| r.duration().as_secs_f64())
@@ -799,24 +799,24 @@ mod tests {
         })
     }
 
-    fn build_mock_request_results() -> Results {
-        let mut results = Results::default();
+    fn build_mock_request_results() -> ResultData {
+        let mut results = ResultData::default();
 
-        results.add_result(build_mock_request_result(
+        results.push(build_mock_request_result(
             StatusCode::OK,
             1000,
             200,
             50,
             100,
         ));
-        results.add_result(build_mock_request_result(
+        results.push(build_mock_request_result(
             StatusCode::BAD_REQUEST,
             100000,
             250,
             100,
             200,
         ));
-        results.add_result(build_mock_request_result(
+        results.push(build_mock_request_result(
             StatusCode::INTERNAL_SERVER_ERROR,
             1000000,
             300,

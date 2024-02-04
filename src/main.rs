@@ -10,7 +10,7 @@ use hyper::http::{
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
-use results::Results;
+use result_data::ResultData;
 use std::{io::Read, str::FromStr};
 use url::Url;
 use url_generator::UrlGenerator;
@@ -19,7 +19,7 @@ mod client;
 mod histogram;
 mod monitor;
 mod printer;
-mod results;
+mod result_data;
 mod timescale;
 mod url_generator;
 
@@ -427,12 +427,12 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
 
-                let mut all: Results = Default::default();
+                let mut all: ResultData = Default::default();
                 loop {
                     tokio::select! {
                         report = result_rx.recv_async() => {
                             if let Ok(report) = report {
-                                all.add_result(report);
+                                all.push(report);
                             } else {
                                 break;
                             }
@@ -610,7 +610,7 @@ async fn main() -> anyhow::Result<()> {
 
     let duration = start.elapsed();
 
-    let res: Results = data_collector.await??;
+    let res: ResultData = data_collector.await??;
 
     printer::print_result(
         &mut std::io::stdout(),

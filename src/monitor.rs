@@ -18,7 +18,7 @@ use std::{collections::BTreeMap, io};
 use crate::{
     client::{ClientError, RequestResult},
     printer::PrintMode,
-    results::Results,
+    result_data::ResultData,
     timescale::{TimeLabel, TimeScale},
 };
 
@@ -66,7 +66,7 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub async fn monitor(self) -> Result<Results, std::io::Error> {
+    pub async fn monitor(self) -> Result<ResultData, std::io::Error> {
         crossterm::terminal::enable_raw_mode()?;
         io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
         io::stdout().execute(crossterm::cursor::Hide)?;
@@ -78,7 +78,7 @@ impl Monitor {
 
         // Return this when ends to application print summary
         // We must not read all data from this due to computational cost.
-        let mut all: Results = Default::default();
+        let mut all: ResultData = Default::default();
         // stats for HTTP status
         let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
 
@@ -102,7 +102,7 @@ impl Monitor {
                         if let Ok(report) = report.as_ref() {
                             *status_dist.entry(report.status).or_default() += 1;
                         }
-                        all.add_result(report);
+                        all.push(report);
                     }
                     Err(TryRecvError::Empty) => {
                         break;
@@ -134,7 +134,7 @@ impl Monitor {
 
             let mut bar_num_req = vec![0u64; count];
             let short_bin = (now - self.start).as_secs_f64() % bin;
-            for r in all.results.iter().rev() {
+            for r in all.success.iter().rev() {
                 let past = (now - r.end).as_secs_f64();
                 let i = if past <= short_bin {
                     0
@@ -185,7 +185,7 @@ impl Monitor {
                         [
                             Constraint::Length(3),
                             Constraint::Length(8),
-                            Constraint::Length(all.errors.len() as u16 + 2),
+                            Constraint::Length(all.error.len() as u16 + 2),
                             Constraint::Percentage(40),
                         ]
                         .as_ref(),
@@ -220,7 +220,7 @@ impl Monitor {
                 f.render_widget(gauge, row4[0]);
 
                 let last_1_timescale = all
-                    .results
+                    .success
                     .iter()
                     .rev()
                     .take_while(|r| (now - r.end).as_secs_f64() <= timescale.as_secs_f64())
@@ -312,7 +312,7 @@ impl Monitor {
                 );
                 f.render_widget(stats2, mid[1]);
 
-                let mut error_v: Vec<(String, usize)> = all.errors.clone().into_iter().collect();
+                let mut error_v: Vec<(String, usize)> = all.error.clone().into_iter().collect();
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
                 let errors_text = error_v
                     .into_iter()
@@ -366,7 +366,7 @@ impl Monitor {
                     }
                     .max(2);
                     let values = all
-                        .results
+                        .success
                         .iter()
                         .rev()
                         .take_while(|r| (now - r.end).as_secs_f64() < timescale.as_secs_f64())
