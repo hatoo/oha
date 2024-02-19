@@ -1685,9 +1685,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a716eb65e3158e90e17cd93d855216e27bde02745ab842f2cab4a39dba1bacf"
+checksum = "048a63e5b3ac996d78d402940b5fa47973d2d080c6c6fffa1d0f19c4445310b7"
 
 [[package]]
 name = "rustls-webpki"
