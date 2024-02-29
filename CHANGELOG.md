@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add HTTP over VSOCK support #416
+
 # 1.3.0 (2024-02-04)
 
 - Optimize timeout #403 
