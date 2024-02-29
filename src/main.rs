@@ -169,6 +169,12 @@ Note: If qps is specified, burst will be ignored",
         long = "unix-socket"
     )]
     unix_socket: Option<std::path::PathBuf>,
+    #[cfg(feature = "vsock")]
+    #[clap(
+        help = "Connect to a VSOCK socket using 'cid:port' instead of the domain in the URL. Only for non-HTTPS URLs.",
+        long = "vsock-addr"
+    )]
+    vsock_addr: Option<VsockAddr>,
     #[clap(
         help = "Include a response status code successful or not successful breakdown for the time histogram and distribution statistics",
         long = "stats-success-breakdown"
@@ -213,6 +219,29 @@ impl FromStr for ConnectToEntry {
                 format!("target port must be an u16, but got {target_port}: {err}")
             })?,
         })
+    }
+}
+
+/// A wrapper around a [`tokio_vsock::VsockAddr`] that provides a parser for clap
+#[derive(Debug, Clone)]
+#[repr(transparent)]
+#[cfg(feature = "vsock")]
+struct VsockAddr(tokio_vsock::VsockAddr);
+
+#[cfg(feature = "vsock")]
+impl FromStr for VsockAddr {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (cid, port) = s
+            .split_once(':')
+            .ok_or("syntax for --vsock-addr is cid:port")?;
+        Ok(Self(tokio_vsock::VsockAddr::new(
+            cid.parse()
+                .map_err(|err| format!("cid must be a u32, but got {cid}: {err}"))?,
+            port.parse()
+                .map_err(|err| format!("port must be a u32, but got {port}: {err}"))?,
+        )))
     }
 }
 
@@ -407,6 +436,8 @@ async fn main() -> anyhow::Result<()> {
         insecure: opts.insecure,
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
+        #[cfg(feature = "vsock")]
+        vsock_addr: opts.vsock_addr.map(|v| v.0),
     };
 
     if !opts.no_pre_lookup {

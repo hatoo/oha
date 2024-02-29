@@ -168,6 +168,8 @@ pub struct Client {
     pub insecure: bool,
     #[cfg(unix)]
     pub unix_socket: Option<std::path::PathBuf>,
+    #[cfg(feature = "vsock")]
+    pub vsock_addr: Option<tokio_vsock::VsockAddr>,
 }
 
 struct ClientStateHttp1 {
@@ -213,6 +215,8 @@ enum Stream {
     Tls(tokio_rustls::client::TlsStream<TcpStream>),
     #[cfg(unix)]
     Unix(tokio::net::UnixStream),
+    #[cfg(feature = "vsock")]
+    Vsock(tokio_vsock::VsockStream),
 }
 
 impl Stream {
@@ -237,6 +241,13 @@ impl Stream {
                 tokio::spawn(conn);
                 Ok(send_request)
             }
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => {
+                let (send_request, conn) =
+                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
         }
     }
     async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
@@ -255,6 +266,12 @@ impl Stream {
             }
             #[cfg(unix)]
             Stream::Unix(stream) => {
+                let (send_request, conn) = builder.handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok(send_request)
+            }
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => {
                 let (send_request, conn) = builder.handshake(TokioIo::new(stream)).await?;
                 tokio::spawn(conn);
                 Ok(send_request)
@@ -306,6 +323,17 @@ impl Client {
             .await;
             return match stream {
                 Ok(Ok(stream)) => Ok(Stream::Unix(stream)),
+                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Err(_) => Err(ClientError::Timeout),
+            };
+        }
+        #[cfg(feature = "vsock")]
+        if let Some(addr) = self.vsock_addr {
+            let stream =
+                tokio::time::timeout(timeout_duration, tokio_vsock::VsockStream::connect(addr))
+                    .await;
+            return match stream {
+                Ok(Ok(stream)) => Ok(Stream::Vsock(stream)),
                 Ok(Err(err)) => Err(ClientError::IoError(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
