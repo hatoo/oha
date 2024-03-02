@@ -75,7 +75,7 @@ rlimit = "0.10.0"
 jemallocator = "0.5.0"
 
 [dev-dependencies]
-assert_cmd = "2.0.2"
+assert_cmd = "2.0.14"
 axum = { version = "0.7", features = ["http2"] }
 bytes = "1.0"
 lazy_static = "1.4.0"
