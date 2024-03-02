@@ -20,9 +20,13 @@ This program is built on stable Rust.
 
     cargo install oha
 
-You can optionally build oha against [rustls](https://github.com/rustls/rustls) instead of [native-tls](https://github.com/sfackler/rust-native-tls).
+You can optionally build oha against [native-tls](https://github.com/sfackler/rust-native-tls) instead of [rustls](https://github.com/rustls/rustls).
 
     cargo install --no-default-features --features rustls oha
+
+You can enable VSOCK support by enabling `vsock` feature.
+
+    cargo install --features vsock oha
 
 ## On Arch Linux
 
