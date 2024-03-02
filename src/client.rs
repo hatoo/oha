@@ -6,7 +6,7 @@ use hyper::{
 };
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
-use std::{pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use url::{ParseError, Url};
@@ -288,6 +288,17 @@ impl Client {
     /// Perform a DNS lookup to cache it
     /// This is useful to avoid DNS lookup latency at the first concurrent requests
     pub async fn pre_lookup(&self) -> Result<(), ClientError> {
+        // If the client is using a unix socket, we don't need to do a DNS lookup
+        #[cfg(unix)]
+        if self.unix_socket.is_some() {
+            return Ok(());
+        }
+        // If the client is using a vsock address, we don't need to do a DNS lookup
+        #[cfg(feature = "vsock")]
+        if self.vsock_addr.is_some() {
+            return Ok(());
+        }
+
         let mut rng = StdRng::from_entropy();
         let url = self.url_generator.generate(&mut rng)?;
 
@@ -296,54 +307,60 @@ impl Client {
         Ok(())
     }
 
-    async fn client(
+    async fn client<R: Rng>(
         &self,
-        addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<Stream, ClientError> {
+        rng: &mut R,
+    ) -> Result<(Instant, Stream), ClientError> {
         // TODO: Allow the connect timeout to be configured
         let timeout_duration = tokio::time::Duration::from_secs(5);
 
         if url.scheme() == "https" {
+            let addr = self.dns.lookup(url, rng).await?;
+            let dns_lookup = Instant::now();
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
             let stream = tokio::time::timeout(timeout_duration, self.tls_client(addr, url)).await;
             return match stream {
-                Ok(Ok(stream)) => Ok(stream),
+                Ok(Ok(stream)) => Ok((dns_lookup, stream)),
                 Ok(Err(err)) => Err(err),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
         #[cfg(unix)]
         if let Some(socket_path) = &self.unix_socket {
+            let dns_lookup = Instant::now();
             let stream = tokio::time::timeout(
                 timeout_duration,
                 tokio::net::UnixStream::connect(socket_path),
             )
             .await;
             return match stream {
-                Ok(Ok(stream)) => Ok(Stream::Unix(stream)),
+                Ok(Ok(stream)) => Ok((dns_lookup, Stream::Unix(stream))),
                 Ok(Err(err)) => Err(ClientError::IoError(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
         #[cfg(feature = "vsock")]
         if let Some(addr) = self.vsock_addr {
+            let dns_lookup = Instant::now();
             let stream =
                 tokio::time::timeout(timeout_duration, tokio_vsock::VsockStream::connect(addr))
                     .await;
             return match stream {
-                Ok(Ok(stream)) => Ok(Stream::Vsock(stream)),
+                Ok(Ok(stream)) => Ok((dns_lookup, Stream::Vsock(stream))),
                 Ok(Err(err)) => Err(ClientError::IoError(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
+        let addr = self.dns.lookup(url, rng).await?;
+        let dns_lookup = Instant::now();
         let stream =
             tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
         match stream {
             Ok(Ok(stream)) => {
                 stream.set_nodelay(true)?;
-                Ok(Stream::Tcp(stream))
+                Ok((dns_lookup, Stream::Tcp(stream)))
             }
             Ok(Err(err)) => Err(ClientError::IoError(err)),
             Err(_) => Err(ClientError::Timeout),
@@ -411,13 +428,13 @@ impl Client {
         Ok(Stream::Tls(stream))
     }
 
-    async fn client_http1(
+    async fn client_http1<R: Rng>(
         &self,
-        addr: (std::net::IpAddr, u16),
         url: &Url,
-    ) -> Result<SendRequestHttp1, ClientError> {
-        let stream = self.client(addr, url).await?;
-        stream.handshake_http1().await
+        rng: &mut R,
+    ) -> Result<(Instant, SendRequestHttp1), ClientError> {
+        let (dns_lookup, stream) = self.client(url, rng).await?;
+        Ok((dns_lookup, stream.handshake_http1().await?))
     }
 
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
@@ -453,9 +470,8 @@ impl Client {
             let mut send_request = if let Some(send_request) = client_state.send_request.take() {
                 send_request
             } else {
-                let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
-                let dns_lookup = std::time::Instant::now();
-                let send_request = self.client_http1(addr, &url).await?;
+                let (dns_lookup, send_request) =
+                    self.client_http1(&url, &mut client_state.rng).await?;
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
@@ -468,9 +484,9 @@ impl Client {
                 // This gets hit when the connection for HTTP/1.1 faults
                 // This re-connects
                 start = std::time::Instant::now();
-                let addr = self.dns.lookup(&url, &mut client_state.rng).await?;
-                let dns_lookup = std::time::Instant::now();
-                send_request = self.client_http1(addr, &url).await?;
+                let (dns_lookup, send_request_) =
+                    self.client_http1(&url, &mut client_state.rng).await?;
+                send_request = send_request_;
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
@@ -549,9 +565,7 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-        let addr = self.dns.lookup(url, rng).await?;
-        let dns_lookup = std::time::Instant::now();
-        let stream = self.client(addr, url).await?;
+        let (dns_lookup, stream) = self.client(url, rng).await?;
         let send_request = stream.handshake_http2().await?;
         let dialup = std::time::Instant::now();
         Ok((ConnectionTime { dns_lookup, dialup }, send_request))
@@ -641,16 +655,16 @@ impl Client {
                     // reuse connection
                     (send_request, None)
                 } else {
-                    let addr = self.dns.lookup(&url, rng).await?;
-                    (self.client_http1(addr, &url).await?, Some(send_request))
+                    let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
+                    (stream, Some(send_request))
                 };
 
             while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
                 .await
                 .is_err()
             {
-                let addr = self.dns.lookup(&url, rng).await?;
-                send_request = self.client_http1(addr, &url).await?;
+                let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
+                send_request = stream;
             }
 
             let mut request = self.request(&url)?;

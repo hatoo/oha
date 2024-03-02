@@ -764,7 +764,7 @@ async fn test_unix_socket() {
                 "--no-tui",
                 "--unix-socket",
                 path.to_str().unwrap(),
-                "http://localhost/",
+                "http://unix-socket.invalid-tld/",
             ])
             .assert()
             .success();
