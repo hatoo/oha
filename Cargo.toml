@@ -47,7 +47,7 @@ ratatui = { version = "0.26.1", default-features = false, features = [
     "crossterm",
 ] }
 
-hyper = { version = "1.0", features = ["client", "http1", "http2"] }
+hyper = { version = "1.2", features = ["client", "http1", "http2"] }
 
 # native-tls
 native-tls = { version = "0.2.11", features = ["alpn"], optional = true }
