@@ -727,3 +727,50 @@ async fn test_http2() {
         http::Version::HTTP_2
     );
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_unix_socket() {
+    let (tx, rx) = flume::unbounded();
+
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("socket");
+
+    let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+    tokio::spawn(async move {
+        actix_web::HttpServer::new(move || {
+            let tx = actix_web::web::Data::new(tx.clone());
+            actix_web::App::new().service(actix_web::web::resource("/").to(move || {
+                let tx = tx.clone();
+                async move {
+                    tx.send_async(()).await.unwrap();
+                    "Hello World"
+                }
+            }))
+        })
+        .listen_uds(listener)
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
+    });
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args([
+                "-n",
+                "1",
+                "--no-tui",
+                "--unix-socket",
+                path.to_str().unwrap(),
+                "http://localhost/",
+            ])
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    rx.try_recv().unwrap();
+}
