@@ -166,13 +166,15 @@ Note: If qps is specified, burst will be ignored",
     #[cfg(unix)]
     #[clap(
         help = "Connect to a unix socket instead of the domain in the URL. Only for non-HTTPS URLs.",
-        long = "unix-socket"
+        long = "unix-socket",
+        group = "socket-type"
     )]
     unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
     #[clap(
         help = "Connect to a VSOCK socket using 'cid:port' instead of the domain in the URL. Only for non-HTTPS URLs.",
-        long = "vsock-addr"
+        long = "vsock-addr",
+        group = "socket-type"
     )]
     vsock_addr: Option<VsockAddr>,
     #[clap(
