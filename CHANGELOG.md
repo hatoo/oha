@@ -1,5 +1,7 @@
 # Unreleased
 
+# 1.4.0 (2024-03-09)
+
 - No DNS lookup when unix socket or vsock #418
 - Add HTTP over VSOCK support #416
 

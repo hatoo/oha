@@ -114,6 +114,7 @@ Options:
       --connect-to <CONNECT_TO>       Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'
       --disable-color                 Disable the color scheme.
       --unix-socket <UNIX_SOCKET>     Connect to a unix socket instead of the domain in the URL. Only for non-HTTPS URLs.
+      --vsock-addr <VSOCK_ADDR>       Connect to a VSOCK socket using 'cid:port' instead of the domain in the URL. Only for non-HTTPS URLs.
       --stats-success-breakdown       Include a response status code successful or not successful breakdown for the time histogram and distribution statistics
   -h, --help                          Print help
   -V, --version                       Print version
