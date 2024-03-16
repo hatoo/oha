@@ -1,0 +1,54 @@
+name: Publish PGO
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+jobs:
+  publish:
+    name: Publish for ${{ matrix.target }} PGO
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: oha
+            release_name: oha-linux-amd64-pgo
+            target: x86_64-unknown-linux-musl
+            additional_args: "--features vsock"
+          - os: windows-latest
+            artifact_name: oha.exe
+            release_name: oha-windows-amd64-pgo.exe
+            target: x86_64-pc-windows-msvc
+            additional_args: ""
+          - os: macos-latest
+            artifact_name: oha
+            release_name: oha-macos-amd64-pgo
+            target: x86_64-apple-darwin
+            additional_args: ""
+          - os: macos-14
+            artifact_name: oha
+            release_name: oha-macos-arm64-pgo
+            target: aarch64-apple-darwin
+            additional_args: ""
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install musl-tools on Linux
+        run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
+        if: contains(matrix.target, 'musl')
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: llvm-tools-preview
+      - run: cargo install cargo-pgo
+      - uses: taiki-e/install-action@just
+      - run: just pgo '--target ${{ matrix.target }} ${{ matrix.additional_args }}'
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.target }}/pgo/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.release_name }}
+          tag: ${{ github.ref }}
