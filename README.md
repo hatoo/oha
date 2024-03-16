@@ -57,6 +57,16 @@ Then you can use oha directly throught the container
 docker run -it example.com/hatoo/oha:latest https://example.com:3000
 ```
 
+## Profile-Guided Optimization (PGO)
+
+You can build `oha` with PGO by using the following commands:
+
+```sh
+just pgo
+```
+
+And the binary will be available at `target/[target-triple]/pgo/oha`.
+
 # Platform
 
 - Linux - Tested on Ubuntu 18.04 gnome-terminal
