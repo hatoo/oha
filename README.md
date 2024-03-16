@@ -217,6 +217,3 @@ Here are some issues to improving.
   - There are no color in realtime tui now. I want help from someone who has some color sense.
 - Improve speed
   - I'm new to tokio. I think there are some space to optimize query scheduling.
-- Output like CSV or JSON format.
-- Improve histogram in summary output
-  - It uses very simple algorithm now.
