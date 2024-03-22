@@ -1,4 +1,3 @@
-use futures::future::FutureExt;
 use http_body_util::Full;
 use hyper::{
     body::{Body, Incoming},
@@ -627,80 +626,73 @@ impl Client {
     }
 
     #[allow(clippy::type_complexity)]
-    fn redirect<'a, R: Rng + Send>(
-        &'a self,
+    async fn redirect<R: Rng + Send>(
+        &self,
         send_request: SendRequestHttp1,
-        base_url: &'a Url,
-        location: &'a http::header::HeaderValue,
+        base_url: &Url,
+        location: &http::header::HeaderValue,
         limit: usize,
-        rng: &'a mut R,
-    ) -> futures::future::BoxFuture<
-        'a,
-        Result<(SendRequestHttp1, http::StatusCode, usize), ClientError>,
-    > {
-        async move {
-            if limit == 0 {
-                return Err(ClientError::TooManyRedirect);
-            }
-            let url = match Url::parse(location.to_str()?) {
-                Ok(url) => url,
-                Err(ParseError::RelativeUrlWithoutBase) => Url::options()
-                    .base_url(Some(base_url))
-                    .parse(location.to_str()?)?,
-                Err(err) => Err(err)?,
+        rng: &mut R,
+    ) -> Result<(SendRequestHttp1, http::StatusCode, usize), ClientError> {
+        if limit == 0 {
+            return Err(ClientError::TooManyRedirect);
+        }
+        let url = match Url::parse(location.to_str()?) {
+            Ok(url) => url,
+            Err(ParseError::RelativeUrlWithoutBase) => Url::options()
+                .base_url(Some(base_url))
+                .parse(location.to_str()?)?,
+            Err(err) => Err(err)?,
+        };
+
+        let (mut send_request, send_request_base) =
+            if base_url.authority() == url.authority() && !self.disable_keepalive {
+                // reuse connection
+                (send_request, None)
+            } else {
+                let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
+                (stream, Some(send_request))
             };
 
-            let (mut send_request, send_request_base) =
-                if base_url.authority() == url.authority() && !self.disable_keepalive {
-                    // reuse connection
-                    (send_request, None)
-                } else {
-                    let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
-                    (stream, Some(send_request))
-                };
-
-            while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
-                .await
-                .is_err()
-            {
-                let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
-                send_request = stream;
-            }
-
-            let mut request = self.request(&url)?;
-            if url.authority() != base_url.authority() {
-                request.headers_mut().insert(
-                    http::header::HOST,
-                    http::HeaderValue::from_str(url.authority())?,
-                );
-            }
-            let res = send_request.send_request(request).await?;
-            let (parts, mut stream) = res.into_parts();
-            let mut status = parts.status;
-
-            let mut len_sum = 0;
-            while let Some(chunk) =
-                futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut stream), cx)).await
-            {
-                len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
-            }
-
-            if let Some(location) = parts.headers.get("Location") {
-                let (send_request_redirect, new_status, len) = self
-                    .redirect(send_request, &url, location, limit - 1, rng)
-                    .await?;
-                send_request = send_request_redirect;
-                status = new_status;
-                len_sum = len;
-            }
-
-            if let Some(send_request_base) = send_request_base {
-                Ok((send_request_base, status, len_sum))
-            } else {
-                Ok((send_request, status, len_sum))
-            }
+        while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
+            .await
+            .is_err()
+        {
+            let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
+            send_request = stream;
         }
-        .boxed()
+
+        let mut request = self.request(&url)?;
+        if url.authority() != base_url.authority() {
+            request.headers_mut().insert(
+                http::header::HOST,
+                http::HeaderValue::from_str(url.authority())?,
+            );
+        }
+        let res = send_request.send_request(request).await?;
+        let (parts, mut stream) = res.into_parts();
+        let mut status = parts.status;
+
+        let mut len_sum = 0;
+        while let Some(chunk) =
+            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut stream), cx)).await
+        {
+            len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
+        }
+
+        if let Some(location) = parts.headers.get("Location") {
+            let (send_request_redirect, new_status, len) =
+                Box::pin(self.redirect(send_request, &url, location, limit - 1, rng)).await?;
+            send_request = send_request_redirect;
+            status = new_status;
+            len_sum = len;
+        }
+
+        if let Some(send_request_base) = send_request_base {
+            Ok((send_request_base, status, len_sum))
+        } else {
+            Ok((send_request, status, len_sum))
+        }
     }
 }
 
