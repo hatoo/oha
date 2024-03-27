@@ -15,6 +15,7 @@ jobs:
           - os: ["ubuntu-latest"]
             additional_args: "--features vsock"
     steps:
+      # We need nasm to build aws-lc on windows
       - uses: ilammy/setup-nasm@v1
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
