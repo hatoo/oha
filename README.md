@@ -36,6 +36,10 @@ You can enable VSOCK support by enabling `vsock` feature.
 
     brew install oha
 
+## On Windows (winget)
+
+    winget install hatoo.oha
+
 ## On Debian ([Azlux's repository](http://packages.azlux.fr/))
 
     echo "deb [signed-by=/usr/share/keyrings/azlux-archive-keyring.gpg] http://packages.azlux.fr/debian/ stable main" | sudo tee /etc/apt/sources.list.d/azlux.list
