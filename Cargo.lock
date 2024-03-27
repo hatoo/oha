@@ -344,9 +344,9 @@ checksum = "f1fdabc7756949593fe60f30ec81974b613357de856987752631dea1e3394c80"
 
 [[package]]
 name = "average"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c309b1c7fca12ebeec3ecba29ea917b3a4cb458ccf504df68bb4d8a0ca565a00"
+checksum = "05f76208cb77117916095b9b446f1383754062fed6819c4b4012de610aecc48f"
 dependencies = [
  "easy-cast",
  "float-ord",
