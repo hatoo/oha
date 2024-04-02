@@ -396,15 +396,13 @@ fn print_summary<W: Write>(
         "  Total data:\t{:.2}",
         Byte::from_u64(calculate_total_data(res)).get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
-    writeln!(
-        w,
-        "  Size/request:\t{:.2}",
-        (calculate_size_per_request(res))
-            .map(|n| Byte::from_u64(n)
-                .get_appropriate_unit(byte_unit::UnitType::Binary)
-                .to_string())
-            .unwrap_or_else(|| "NaN".to_string())
-    )?;
+    if let Some(size) = calculate_size_per_request(res)
+        .map(|n| Byte::from_u64(n).get_appropriate_unit(byte_unit::UnitType::Binary))
+    {
+        writeln!(w, "  Size/request:\t{size:.2}")?;
+    } else {
+        writeln!(w, "  Size/request:\tNaN")?;
+    }
     writeln!(
         w,
         "  Size/sec:\t{:.2}",
