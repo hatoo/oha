@@ -1,5 +1,13 @@
 # Unreleased
 
+# 1.4.2 (2024-04-06)
+
+- Fix printing of Size/request #447 
+
+# 1.4.1 (2024-03-16)
+
+- Enable: Profile-Guided Optimization (PGO) #268
+
 # 1.4.0 (2024-03-09)
 
 - No DNS lookup when unix socket or vsock #418
