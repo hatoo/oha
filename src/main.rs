@@ -446,14 +446,6 @@ async fn main() -> anyhow::Result<()> {
         client.pre_lookup().await?;
     }
 
-    #[cfg(feature = "rustls")]
-    {
-        // aws-lc-rs is a default provider for rustls.
-        rustls::crypto::aws_lc_rs::default_provider()
-            .install_default()
-            .unwrap();
-    }
-
     let start = std::time::Instant::now();
 
     let data_collector = if opts.no_tui || !std::io::stdout().is_tty() {
