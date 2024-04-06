@@ -5,15 +5,9 @@ use std::{
 };
 
 use assert_cmd::Command;
-use axum::{
-    extract::Path,
-    response::Redirect,
-    routing::{any, get},
-    Router,
-};
-use bytes::Bytes;
-use futures::StreamExt;
+use axum::{extract::Path, response::Redirect, routing::get, Router};
 use http::{HeaderMap, Request, Response};
+use http_body_util::BodyExt;
 use hyper::{http, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
@@ -34,139 +28,59 @@ async fn bind_port_ipv6() -> (tokio::net::TcpListener, u16) {
     (tokio::net::TcpListener::bind(addr).await.unwrap(), port)
 }
 
-async fn get_header_body(args: &[&str]) -> (HeaderMap, bytes::Bytes) {
-    let (tx, rx) = flume::unbounded();
-
-    let app = Router::new().route(
-        "/",
-        get(
-            |header: HeaderMap, req: axum::extract::Request| async move {
-                let mut body = Vec::new();
-                let mut stream = req.into_body().into_data_stream();
-                while let Some(data) = stream.next().await {
-                    body.extend_from_slice(data.unwrap().as_ref());
-                }
-                tx.send((header, Bytes::from(body))).unwrap();
-                "Hello World"
-            },
-        ),
-    );
-
-    let (listener, port) = bind_port().await;
-    tokio::spawn(async { axum::serve(listener, app).await });
-
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(["-n", "1", "--no-tui"])
-            .args(args)
-            .arg(format!("http://127.0.0.1:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
-
-    rx.try_recv().unwrap()
-}
-
-async fn get_method(args: &[&str]) -> http::method::Method {
-    let (tx, rx) = flume::unbounded();
-    let app = Router::new().route(
-        "/",
-        any(|method: http::method::Method| async move {
-            tx.send(method).unwrap();
-            "Hello World"
-        }),
-    );
-
-    let (listener, port) = bind_port().await;
-    tokio::spawn(async { axum::serve(listener, app).await });
-
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(["-n", "1", "--no-tui"])
-            .args(args)
-            .arg(format!("http://127.0.0.1:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
-
-    rx.try_recv().unwrap()
-}
-
-async fn get_query(p: &'static str, args: &[&str]) -> String {
-    let (tx, rx) = flume::unbounded();
-
-    let app = Router::new().route(
-        "/index",
-        get(move |req: Request<axum::body::Body>| async move {
-            tx.send(req.uri().to_string()).unwrap();
-            "Hello World"
-        }),
-    );
-
-    let (listener, port) = bind_port().await;
-    tokio::spawn(async { axum::serve(listener, app).await });
-
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(["-n", "1", "--no-tui"])
-            .args(args)
-            .arg(format!("http://127.0.0.1:{port}{p}"))
-            .assert()
-            .success()
-    })
-    .await
-    .unwrap();
-
-    rx.try_recv().unwrap()
-}
-
-async fn get_path_rand_regex(p: &'static str, args: &[&str]) -> String {
-    use hyper::Error;
-
+async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
     let (tx, rx) = flume::unbounded();
 
     let (listener, port) = bind_port().await;
+
+    let http2 = args.iter().any(|&arg| arg == "--http2");
+
     tokio::spawn(async move {
-        loop {
-            let (socket, _remote_addr) = listener.accept().await.unwrap();
-            let tx = tx.clone();
-            let service = service_fn(move |req| {
+        if http2 {
+            loop {
+                let (tcp, _) = listener.accept().await.unwrap();
                 let tx = tx.clone();
-                async move {
-                    let (parts, _) = req.into_parts();
-                    tx.send(parts.uri.to_string()).unwrap();
-                    Ok::<_, Error>(Response::new("Hello World".to_string()))
-                }
-            });
-            tokio::spawn(async move {
-                hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                    .serve_connection(TokioIo::new(socket), service)
-                    .await
-            });
+                let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                    .serve_connection(
+                        TokioIo::new(tcp),
+                        service_fn(move |req| {
+                            let tx = tx.clone();
+
+                            async move {
+                                tx.send(req).unwrap();
+                                Ok::<_, Infallible>(Response::new("Hello World".to_string()))
+                            }
+                        }),
+                    )
+                    .await;
+            }
+        } else {
+            let (tcp, _) = listener.accept().await.unwrap();
+            hyper::server::conn::http1::Builder::new()
+                .serve_connection(
+                    TokioIo::new(tcp),
+                    service_fn(move |req| {
+                        let tx = tx.clone();
+
+                        async move {
+                            tx.send(req).unwrap();
+                            Ok::<_, Infallible>(Response::new("Hello World".to_string()))
+                        }
+                    }),
+                )
+                .await
+                .unwrap();
         }
     });
 
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let mut command = Command::cargo_bin("oha").unwrap();
+    command
+        .args(["-n", "1", "--no-tui"])
+        .args(args)
+        .arg(format!("http://127.0.0.1:{port}{path}"));
+
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(["-n", "1", "--no-tui", "--rand-regex-url"])
-            .args(args)
-            .arg(format!(r"http://127.0.0.1:{port}{p}"))
-            .assert()
-            .success();
+        command.assert().success();
     })
     .await
     .unwrap();
@@ -380,8 +294,9 @@ async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
 
 #[tokio::test]
 async fn test_enable_compression_default() {
-    let header = get_header_body(&[]).await.0;
-    let accept_encoding: Vec<&str> = header
+    let req = get_req("/", &[]).await;
+    let accept_encoding: Vec<&str> = req
+        .headers()
         .get("accept-encoding")
         .unwrap()
         .to_str()
@@ -392,8 +307,9 @@ async fn test_enable_compression_default() {
     assert!(accept_encoding.contains(&"gzip"));
     assert!(accept_encoding.contains(&"br"));
 
-    let header = get_header_body(&["--http2"]).await.0;
-    let accept_encoding: Vec<&str> = header
+    let req = get_req("/", &["--http2"]).await;
+    let accept_encoding: Vec<&str> = req
+        .headers()
         .get("accept-encoding")
         .unwrap()
         .to_str()
@@ -437,98 +353,118 @@ async fn get_http_version(args: &[&str]) -> http::Version {
 
 #[tokio::test]
 async fn test_setting_custom_header() {
-    let header = get_header_body(&["-H", "foo: bar", "--"]).await.0;
-    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
-    let header = get_header_body(&["-H", "foo:bar", "--"]).await.0;
-    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
+    let req = get_req("/", &["-H", "foo: bar", "--"]).await;
+    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
+    let req = get_req("/", &["-H", "foo:bar", "--"]).await;
+    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
 
-    let header = get_header_body(&["--http2", "-H", "foo: bar", "--"])
-        .await
-        .0;
-    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
-    let header = get_header_body(&["--http2", "-H", "foo:bar", "--"]).await.0;
-    assert_eq!(header.get("foo").unwrap().to_str().unwrap(), "bar");
+    let req = get_req("/", &["--http2", "-H", "foo: bar", "--"]).await;
+    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
+    let req = get_req("/", &["--http2", "-H", "foo:bar", "--"]).await;
+    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
 #[tokio::test]
 async fn test_setting_accept_header() {
-    let header = get_header_body(&["-A", "text/html"]).await.0;
-    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
-    let header = get_header_body(&["-H", "accept:text/html"]).await.0;
-    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
+    let req = get_req("/", &["-A", "text/html"]).await;
+    assert_eq!(
+        req.headers().get("accept").unwrap().to_str().unwrap(),
+        "text/html"
+    );
+    let req = get_req("/", &["-H", "accept:text/html"]).await;
+    assert_eq!(
+        req.headers().get("accept").unwrap().to_str().unwrap(),
+        "text/html"
+    );
 
-    let header = get_header_body(&["--http2", "-A", "text/html"]).await.0;
-    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
-    let header = get_header_body(&["--http2", "-H", "accept:text/html"])
-        .await
-        .0;
-    assert_eq!(header.get("accept").unwrap().to_str().unwrap(), "text/html");
+    let req = get_req("/", &["--http2", "-A", "text/html"]).await;
+    assert_eq!(
+        req.headers().get("accept").unwrap().to_str().unwrap(),
+        "text/html"
+    );
+    let req = get_req("/", &["--http2", "-H", "accept:text/html"]).await;
+    assert_eq!(
+        req.headers().get("accept").unwrap().to_str().unwrap(),
+        "text/html"
+    );
 }
 
 #[tokio::test]
 async fn test_setting_body() {
-    let body = get_header_body(&["-d", "hello body"]).await.1;
+    let req = get_req("/", &["-d", "hello body"]).await;
     assert_eq!(
-        body.as_ref(),
+        req.into_body().collect().await.unwrap().to_bytes(),
         &b"hello body"[..] /* This looks dirty... Any suggestion? */
     );
 
-    let body = get_header_body(&["--http2", "-d", "hello body"]).await.1;
+    let req = get_req("/", &["--http2", "-d", "hello body"]).await;
     assert_eq!(
-        body.as_ref(),
+        req.into_body().collect().await.unwrap().to_bytes(),
         &b"hello body"[..] /* This looks dirty... Any suggestion? */
     );
 }
 
 #[tokio::test]
 async fn test_setting_content_type_header() {
-    let header = get_header_body(&["-T", "text/html"]).await.0;
+    let req = get_req("/", &["-T", "text/html"]).await;
     assert_eq!(
-        header.get("content-type").unwrap().to_str().unwrap(),
+        req.headers().get("content-type").unwrap().to_str().unwrap(),
         "text/html"
     );
-    let header = get_header_body(&["-H", "content-type:text/html"]).await.0;
+    let req = get_req("/", &["-H", "content-type:text/html"]).await;
     assert_eq!(
-        header.get("content-type").unwrap().to_str().unwrap(),
+        req.headers().get("content-type").unwrap().to_str().unwrap(),
         "text/html"
     );
 
-    let header = get_header_body(&["--http2", "-T", "text/html"]).await.0;
+    let req = get_req("/", &["--http2", "-T", "text/html"]).await;
     assert_eq!(
-        header.get("content-type").unwrap().to_str().unwrap(),
+        req.headers().get("content-type").unwrap().to_str().unwrap(),
         "text/html"
     );
-    let header = get_header_body(&["--http2", "-H", "content-type:text/html"])
-        .await
-        .0;
+    let req = get_req("/", &["--http2", "-H", "content-type:text/html"]).await;
     assert_eq!(
-        header.get("content-type").unwrap().to_str().unwrap(),
+        req.headers().get("content-type").unwrap().to_str().unwrap(),
         "text/html"
     );
 }
 
 #[tokio::test]
 async fn test_setting_basic_auth() {
-    let header = get_header_body(&["-a", "hatoo:pass"]).await.0;
+    let req = get_req("/", &["-a", "hatoo:pass"]).await;
     assert_eq!(
-        header.get("authorization").unwrap().to_str().unwrap(),
+        req.headers()
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "Basic aGF0b286cGFzcw=="
     );
 
-    let header = get_header_body(&["--http2", "-a", "hatoo:pass"]).await.0;
+    let req = get_req("/", &["--http2", "-a", "hatoo:pass"]).await;
     assert_eq!(
-        header.get("authorization").unwrap().to_str().unwrap(),
+        req.headers()
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "Basic aGF0b286cGFzcw=="
     );
 }
 
 #[tokio::test]
 async fn test_setting_host() {
-    let header = get_header_body(&["--host", "hatoo.io"]).await.0;
-    assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
+    let req = get_req("/", &["--host", "hatoo.io"]).await;
+    assert_eq!(
+        req.headers().get("host").unwrap().to_str().unwrap(),
+        "hatoo.io"
+    );
 
-    let header = get_header_body(&["-H", "host:hatoo.io"]).await.0;
-    assert_eq!(header.get("host").unwrap().to_str().unwrap(), "hatoo.io");
+    let req = get_req("/", &["-H", "host:hatoo.io"]).await;
+    assert_eq!(
+        req.headers().get("host").unwrap().to_str().unwrap(),
+        "hatoo.io"
+    );
 
     // You shouldn't set host header when using HTTP/2
     // Use --connect-to instead
@@ -536,69 +472,78 @@ async fn test_setting_host() {
 
 #[tokio::test]
 async fn test_setting_method() {
-    assert_eq!(get_method(&[]).await, http::method::Method::GET);
-    assert_eq!(get_method(&["-m", "GET"]).await, http::method::Method::GET);
+    assert_eq!(get_req("/", &[]).await.method(), http::method::Method::GET);
     assert_eq!(
-        get_method(&["-m", "POST"]).await,
-        http::method::Method::POST
-    );
-    assert_eq!(
-        get_method(&["-m", "CONNECT"]).await,
-        http::method::Method::CONNECT
-    );
-    assert_eq!(
-        get_method(&["-m", "DELETE"]).await,
-        http::method::Method::DELETE
-    );
-    assert_eq!(
-        get_method(&["-m", "HEAD"]).await,
-        http::method::Method::HEAD
-    );
-    assert_eq!(
-        get_method(&["-m", "OPTIONS"]).await,
-        http::method::Method::OPTIONS
-    );
-    assert_eq!(
-        get_method(&["-m", "PATCH"]).await,
-        http::method::Method::PATCH
-    );
-    assert_eq!(get_method(&["-m", "PUT"]).await, http::method::Method::PUT);
-    assert_eq!(
-        get_method(&["-m", "TRACE"]).await,
-        http::method::Method::TRACE
-    );
-
-    assert_eq!(get_method(&["--http2"]).await, http::method::Method::GET);
-    assert_eq!(
-        get_method(&["--http2", "-m", "GET"]).await,
+        get_req("/", &["-m", "GET"]).await.method(),
         http::method::Method::GET
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "POST"]).await,
+        get_req("/", &["-m", "POST"]).await.method(),
         http::method::Method::POST
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "DELETE"]).await,
+        get_req("/", &["-m", "CONNECT"]).await.method(),
+        http::method::Method::CONNECT
+    );
+    assert_eq!(
+        get_req("/", &["-m", "DELETE"]).await.method(),
         http::method::Method::DELETE
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "HEAD"]).await,
+        get_req("/", &["-m", "HEAD"]).await.method(),
         http::method::Method::HEAD
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "OPTIONS"]).await,
+        get_req("/", &["-m", "OPTIONS"]).await.method(),
         http::method::Method::OPTIONS
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "PATCH"]).await,
+        get_req("/", &["-m", "PATCH"]).await.method(),
         http::method::Method::PATCH
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "PUT"]).await,
+        get_req("/", &["-m", "PUT"]).await.method(),
         http::method::Method::PUT
     );
     assert_eq!(
-        get_method(&["--http2", "-m", "TRACE"]).await,
+        get_req("/", &["-m", "TRACE"]).await.method(),
+        http::method::Method::TRACE
+    );
+
+    assert_eq!(
+        get_req("/", &["--http2"]).await.method(),
+        http::method::Method::GET
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "GET"]).await.method(),
+        http::method::Method::GET
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "POST"]).await.method(),
+        http::method::Method::POST
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "DELETE"]).await.method(),
+        http::method::Method::DELETE
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "HEAD"]).await.method(),
+        http::method::Method::HEAD
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "OPTIONS"]).await.method(),
+        http::method::Method::OPTIONS
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "PATCH"]).await.method(),
+        http::method::Method::PATCH
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "PUT"]).await.method(),
+        http::method::Method::PUT
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "TRACE"]).await.method(),
         http::method::Method::TRACE
     );
 }
@@ -606,13 +551,15 @@ async fn test_setting_method() {
 #[tokio::test]
 async fn test_query() {
     assert_eq!(
-        get_query("/index?a=b&c=d", &[]).await,
+        get_req("/index?a=b&c=d", &[]).await.uri().to_string(),
         "/index?a=b&c=d".to_string()
     );
 
     assert_eq!(
-        get_query("/index?a=b&c=d", &["--http2"])
+        get_req("/index?a=b&c=d", &["--http2"])
             .await
+            .uri()
+            .to_string()
             .split('/')
             .last()
             .unwrap(),
@@ -622,15 +569,22 @@ async fn test_query() {
 
 #[tokio::test]
 async fn test_query_rand_regex() {
-    let query = get_path_rand_regex("/[a-z][0-9][a-z]", &[]).await;
-    let chars = query.trim_start_matches('/').chars().collect::<Vec<char>>();
+    let req = get_req("/[a-z][0-9][a-z]", &["--rand-regex-url"]).await;
+    let chars = req
+        .uri()
+        .to_string()
+        .trim_start_matches('/')
+        .chars()
+        .collect::<Vec<char>>();
     assert_eq!(chars.len(), 3);
     assert!(chars[0].is_ascii_lowercase());
     assert!(chars[1].is_ascii_digit());
     assert!(chars[2].is_ascii_lowercase());
 
-    let query = get_path_rand_regex("/[a-z][0-9][a-z]", &["--http2"]).await;
-    let chars = query
+    let req = get_req("/[a-z][0-9][a-z]", &["--http2", "--rand-regex-url"]).await;
+    let chars = req
+        .uri()
+        .to_string()
         .split('/')
         .last()
         .unwrap()
@@ -720,8 +674,11 @@ async fn test_query_limit() {
 
 #[tokio::test]
 async fn test_http2() {
-    assert_eq!(get_http_version(&[]).await, http::Version::HTTP_11);
-    assert_eq!(get_http_version(&["--http2"]).await, http::Version::HTTP_2);
+    assert_eq!(get_req("/", &[]).await.version(), http::Version::HTTP_11);
+    assert_eq!(
+        get_req("/", &["--http2"]).await.version(),
+        http::Version::HTTP_2
+    );
     assert_eq!(
         get_http_version(&["--http-version", "2"]).await,
         http::Version::HTTP_2
