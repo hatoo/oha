@@ -921,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn test_calcuate_connection_times_base() {
+    fn test_calculate_connection_times_base() {
         assert_eq!(
             calculate_connection_times_base(&build_mock_request_results()).len(),
             3

@@ -55,7 +55,7 @@ You can also build and create a container image including oha
 docker build . -t example.com/hatoo/oha:latest
 ```
 
-Then you can use oha directly throught the container
+Then you can use oha directly through the container
 
 ```sh
 docker run -it example.com/hatoo/oha:latest https://example.com:3000
