@@ -737,7 +737,7 @@ async fn test_google() {
     Command::cargo_bin("oha")
         .unwrap()
         .args(["-n", "1", "--no-tui"])
-        .arg(format!("https://www.google.com/"))
+        .arg("https://www.google.com/")
         .assert()
         .success()
         .stdout(predicates::str::contains("[200] 1 responses"));
