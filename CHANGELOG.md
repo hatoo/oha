@@ -1,5 +1,9 @@
 # Unreleased
 
+# 1.4.3 (2024-04-06)
+
+- fix rustls error #452
+
 # 1.4.2 (2024-04-06)
 
 - Fix printing of Size/request #447 
