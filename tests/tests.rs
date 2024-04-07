@@ -33,7 +33,8 @@ async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
 
     let (listener, port) = bind_port().await;
 
-    let http2 = args.iter().any(|&arg| arg == "--http2");
+    let http2 = args.iter().any(|&arg| arg == "--http2")
+        || args.windows(2).any(|w| w == ["--http-version", "2"]);
 
     tokio::spawn(async move {
         if http2 {
@@ -319,36 +320,6 @@ async fn test_enable_compression_default() {
 
     assert!(accept_encoding.contains(&"gzip"));
     assert!(accept_encoding.contains(&"br"));
-}
-
-async fn get_http_version(args: &[&str]) -> http::Version {
-    let (tx, rx) = flume::unbounded();
-
-    let app = Router::new().route(
-        "/",
-        get(|req: Request<axum::body::Body>| async move {
-            tx.send(req.version()).unwrap();
-            "Hello World"
-        }),
-    );
-
-    let (listener, port) = bind_port().await;
-    tokio::spawn(async { axum::serve(listener, app).await });
-
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(["-n", "1", "--no-tui"])
-            .args(args)
-            .arg(format!("http://127.0.0.1:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
-
-    rx.try_recv().unwrap()
 }
 
 #[tokio::test]
@@ -680,7 +651,7 @@ async fn test_http2() {
         http::Version::HTTP_2
     );
     assert_eq!(
-        get_http_version(&["--http-version", "2"]).await,
+        get_req("/", &["--http-version", "2"]).await.version(),
         http::Version::HTTP_2
     );
 }
