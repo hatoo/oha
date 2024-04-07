@@ -66,7 +66,7 @@ docker run -it example.com/hatoo/oha:latest https://example.com:3000
 You can build `oha` with PGO by using the following commands:
 
 ```sh
-just pgo
+bun run pgo.js
 ```
 
 And the binary will be available at `target/[target-triple]/pgo/oha`.
