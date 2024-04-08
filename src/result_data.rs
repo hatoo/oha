@@ -17,6 +17,7 @@ pub struct ResultData {
 }
 
 impl ResultData {
+    #[inline]
     pub fn push(&mut self, result: Result<RequestResult, ClientError>) {
         match result {
             Ok(result) => self.success.push(result),
@@ -31,9 +32,13 @@ impl ResultData {
         self.success.len() + self.error_distribution.values().sum::<usize>()
     }
 
+    // An existence of this method doesn't prevent us to using hdrhistogram.
+    // Because this is only called from `monitor` and `monitor` can collect own data.
     pub fn success(&self) -> &[RequestResult] {
         &self.success
     }
+
+    // It's very happy if you can provide all below methods without array (= non liner memory consumption) and fast `push` runtime.
 
     pub fn success_rate(&self) -> f64 {
         let dead_line = ClientError::Deadline.to_string();
