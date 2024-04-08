@@ -205,18 +205,21 @@ fn print_json<W: Write>(
     }
 
     let summary = Summary {
-        success_rate: calculate_success_rate(res),
+        success_rate: res.success_rate(),
         total: total_duration.as_secs_f64(),
-        slowest: calculate_slowest_request(res),
-        fastest: calculate_fastest_request(res),
-        average: calculate_average_request(res),
+        slowest: res.slowest_latency(),
+        fastest: res.fastest_latency(),
+        average: res.average_latency(),
         requests_per_sec: calculate_requests_per_sec(res, total_duration),
-        total_data: calculate_total_data(res),
-        size_per_request: calculate_size_per_request(res),
-        size_per_sec: (calculate_size_per_sec(res, total_duration)),
+        total_data: res.total_data() as u64,
+        size_per_request: res.size_per_request(),
+        size_per_sec: res.total_data() as f64 / total_duration.as_secs_f64(),
     };
 
-    let mut durations = get_durations_all(res);
+    let mut durations = res
+        .duration_all()
+        .map(|d| d.as_secs_f64())
+        .collect::<Vec<_>>();
 
     let response_time_histogram = histogram(&durations, 11)
         .into_iter()
@@ -231,7 +234,10 @@ fn print_json<W: Write>(
     let mut latency_percentiles_not_successful: Option<BTreeMap<String, f64>> = None;
 
     if stats_success_breakdown {
-        let mut durations_successful = get_durations_successful(res);
+        let mut durations_successful = res
+            .duration_successful()
+            .map(|d| d.as_secs_f64())
+            .collect::<Vec<_>>();
 
         response_time_histogram_successful = Some(
             histogram(&durations_successful, 11)
@@ -242,7 +248,10 @@ fn print_json<W: Write>(
 
         latency_percentiles_successful = Some(percentiles(&mut durations_successful));
 
-        let mut durations_not_successful = get_durations_not_successful(res);
+        let mut durations_not_successful = res
+            .duration_not_successful()
+            .map(|d| d.as_secs_f64())
+            .collect::<Vec<_>>();
 
         response_time_histogram_not_successful = Some(
             histogram(&durations_not_successful, 11)
@@ -255,9 +264,8 @@ fn print_json<W: Write>(
     }
 
     let mut ends = res
-        .success
-        .iter()
-        .map(|r| (r.end - start).as_secs_f64())
+        .end_times_from_start()
+        .map(|d| d.as_secs_f64())
         .collect::<Vec<_>>();
     ends.push(0.0);
     float_ord::sort(&mut ends);
@@ -297,14 +305,10 @@ fn print_json<W: Write>(
         percentiles: rps_percentiles,
     };
 
-    let mut status_code_distribution: BTreeMap<http::StatusCode, usize> = Default::default();
-
-    for s in res.success.iter().map(|r| r.status) {
-        *status_code_distribution.entry(s).or_default() += 1;
-    }
+    let mut status_code_distribution = res.status_code_distribution();
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
-        calculate_connection_times_base(res);
+        res.connection_times_base().collect();
     let details = Details {
         dns_dialup: Triple {
             average: calculate_connection_times_dns_dialup_average(&connection_times),
@@ -334,7 +338,7 @@ fn print_json<W: Write>(
                 .into_iter()
                 .map(|(k, v)| (k.as_u16().to_string(), v))
                 .collect(),
-            error_distribution: res.error.clone(),
+            error_distribution: res.error_distribution().clone(),
         },
     )
 }
@@ -351,7 +355,7 @@ fn print_summary<W: Write>(
         color_enabled: !disable_color,
     };
     writeln!(w, "{}", style.heading("Summary:"))?;
-    let success_rate = 100.0 * calculate_success_rate(res);
+    let success_rate = 100.0 * res.success_rate();
     writeln!(
         w,
         "{}",
@@ -364,26 +368,17 @@ fn print_summary<W: Write>(
     writeln!(
         w,
         "{}",
-        style.slowest(&format!(
-            "  Slowest:\t{:.4} secs",
-            calculate_slowest_request(res)
-        ))
+        style.slowest(&format!("  Slowest:\t{:.4} secs", res.slowest_latency()))
     )?;
     writeln!(
         w,
         "{}",
-        style.fastest(&format!(
-            "  Fastest:\t{:.4} secs",
-            calculate_fastest_request(res)
-        ))
+        style.fastest(&format!("  Fastest:\t{:.4} secs", res.fastest_latency()))
     )?;
     writeln!(
         w,
         "{}",
-        style.average(&format!(
-            "  Average:\t{:.4} secs",
-            calculate_average_request(res)
-        ))
+        style.average(&format!("  Average:\t{:.4} secs", res.average_latency()))
     )?;
     writeln!(
         w,
@@ -394,9 +389,10 @@ fn print_summary<W: Write>(
     writeln!(
         w,
         "  Total data:\t{:.2}",
-        Byte::from_u64(calculate_total_data(res)).get_appropriate_unit(byte_unit::UnitType::Binary)
+        Byte::from_u64(res.total_data() as u64).get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
-    if let Some(size) = calculate_size_per_request(res)
+    if let Some(size) = res
+        .size_per_request()
         .map(|n| Byte::from_u64(n).get_appropriate_unit(byte_unit::UnitType::Binary))
     {
         writeln!(w, "  Size/request:\t{size:.2}")?;
@@ -406,12 +402,15 @@ fn print_summary<W: Write>(
     writeln!(
         w,
         "  Size/sec:\t{:.2}",
-        Byte::from_u64((calculate_size_per_sec(res, total_duration)) as u64)
+        Byte::from_u64((res.total_data() as f64 / total_duration.as_secs_f64()) as u64)
             .get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
     writeln!(w)?;
 
-    let mut durations = get_durations_all(res);
+    let mut durations = res
+        .duration_all()
+        .map(|d| d.as_secs_f64())
+        .collect::<Vec<_>>();
 
     writeln!(w, "{}", style.heading("Response time histogram:"))?;
     print_histogram(w, &durations, style)?;
@@ -422,7 +421,10 @@ fn print_summary<W: Write>(
     writeln!(w)?;
 
     if stats_success_breakdown {
-        let mut durations_successful = get_durations_successful(res);
+        let mut durations_successful = res
+            .duration_successful()
+            .map(|d| d.as_secs_f64())
+            .collect::<Vec<_>>();
 
         writeln!(
             w,
@@ -440,7 +442,10 @@ fn print_summary<W: Write>(
         print_distribution(w, &mut durations_successful, style)?;
         writeln!(w)?;
 
-        let mut durations_not_successful = get_durations_not_successful(res);
+        let mut durations_not_successful = res
+            .duration_not_successful()
+            .map(|d| d.as_secs_f64())
+            .collect::<Vec<_>>();
 
         writeln!(
             w,
@@ -461,7 +466,7 @@ fn print_summary<W: Write>(
     writeln!(w)?;
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
-        calculate_connection_times_base(res);
+        res.connection_times_base().collect();
     writeln!(
         w,
         "{}",
@@ -484,11 +489,7 @@ fn print_summary<W: Write>(
     )?;
     writeln!(w)?;
 
-    let mut status_dist: BTreeMap<http::StatusCode, usize> = Default::default();
-
-    for s in res.success.iter().map(|r| r.status) {
-        *status_dist.entry(s).or_default() += 1;
-    }
+    let mut status_dist: BTreeMap<http::StatusCode, usize> = res.status_code_distribution();
 
     let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
@@ -506,8 +507,11 @@ fn print_summary<W: Write>(
         )?;
     }
 
-    let mut error_v: Vec<(String, usize)> =
-        res.error.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    let mut error_v: Vec<(String, usize)> = res
+        .error_distribution()
+        .iter()
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
     error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
     if !error_v.is_empty() {
@@ -607,78 +611,8 @@ fn percentiles(values: &mut [f64]) -> BTreeMap<String, f64> {
         .collect()
 }
 
-fn calculate_success_rate(res: &ResultData) -> f64 {
-    let dead_line = ClientError::Deadline.to_string();
-    // We ignore deadline errors which are because of `-z` option, not because of the server
-    let denominator = res.success.len()
-        + res
-            .error
-            .iter()
-            .filter_map(|(k, v)| if k == &dead_line { None } else { Some(v) })
-            .sum::<usize>();
-    let numerator = res.success.len();
-
-    numerator as f64 / denominator as f64
-}
-
-fn calculate_slowest_request(res: &ResultData) -> f64 {
-    res.success
-        .iter()
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<average::Max>()
-        .max()
-}
-
-fn calculate_fastest_request(res: &ResultData) -> f64 {
-    res.success
-        .iter()
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<average::Min>()
-        .min()
-}
-
-fn calculate_average_request(res: &ResultData) -> f64 {
-    let mean = res
-        .success
-        .iter()
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<average::Mean>();
-    if mean.is_empty() {
-        f64::NAN
-    } else {
-        mean.mean()
-    }
-}
-
 fn calculate_requests_per_sec(res: &ResultData, total_duration: Duration) -> f64 {
     res.len() as f64 / total_duration.as_secs_f64()
-}
-
-fn calculate_total_data(res: &ResultData) -> u64 {
-    res.success.iter().map(|r| r.len_bytes as u64).sum::<u64>()
-}
-
-fn calculate_size_per_request(res: &ResultData) -> Option<u64> {
-    res.success
-        .iter()
-        .map(|r| r.len_bytes as u64)
-        .sum::<u64>()
-        .checked_div(res.success.len() as u64)
-}
-
-fn calculate_size_per_sec(res: &ResultData, total_duration: Duration) -> f64 {
-    res.success
-        .iter()
-        .map(|r| r.len_bytes as u128)
-        .sum::<u128>() as f64
-        / total_duration.as_secs_f64()
-}
-
-fn calculate_connection_times_base(res: &ResultData) -> Vec<(Instant, ConnectionTime)> {
-    res.success
-        .iter()
-        .filter_map(|r| r.connection_time.map(|c| (r.start, c)))
-        .collect()
 }
 
 fn calculate_connection_times_dns_dialup_average(
@@ -741,6 +675,7 @@ fn calculate_connection_times_dns_lookup_slowest(
         .max()
 }
 
+/*
 fn get_durations_all(res: &ResultData) -> Vec<f64> {
     res.success
         .iter()
@@ -763,6 +698,9 @@ fn get_durations_not_successful(res: &ResultData) -> Vec<f64> {
         .map(|r| r.duration().as_secs_f64())
         .collect::<Vec<_>>()
 }
+*/
+
+/*
 
 #[cfg(test)]
 mod tests {
@@ -1038,3 +976,5 @@ mod tests {
         assert_eq!(durations.get(2), None);
     }
 }
+
+*/
