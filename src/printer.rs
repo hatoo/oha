@@ -1,8 +1,4 @@
-use crate::{
-    client::{ClientError, ConnectionTime},
-    histogram::histogram,
-    result_data::ResultData,
-};
+use crate::{client::ConnectionTime, histogram::histogram, result_data::ResultData};
 use average::{Max, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
@@ -121,7 +117,7 @@ pub fn print_result<W: Write>(
 /// Print all summary as JSON
 fn print_json<W: Write>(
     w: &mut W,
-    start: Instant,
+    _start: Instant,
     res: &ResultData,
     total_duration: Duration,
     stats_success_breakdown: bool,
@@ -305,7 +301,7 @@ fn print_json<W: Write>(
         percentiles: rps_percentiles,
     };
 
-    let mut status_code_distribution = res.status_code_distribution();
+    let status_code_distribution = res.status_code_distribution();
 
     let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
         res.connection_times_base().collect();
@@ -489,7 +485,7 @@ fn print_summary<W: Write>(
     )?;
     writeln!(w)?;
 
-    let mut status_dist: BTreeMap<http::StatusCode, usize> = res.status_code_distribution();
+    let status_dist: BTreeMap<http::StatusCode, usize> = res.status_code_distribution();
 
     let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
