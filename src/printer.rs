@@ -200,12 +200,14 @@ fn print_json<W: Write>(
         error_distribution: BTreeMap<String, usize>,
     }
 
+    let latency_stat = res.latency_stat();
+
     let summary = Summary {
         success_rate: res.success_rate(),
         total: total_duration.as_secs_f64(),
-        slowest: res.slowest_latency(),
-        fastest: res.fastest_latency(),
-        average: res.average_latency(),
+        slowest: latency_stat.max(),
+        fastest: latency_stat.min(),
+        average: latency_stat.mean(),
         requests_per_sec: calculate_requests_per_sec(res, total_duration),
         total_data: res.total_data() as u64,
         size_per_request: res.size_per_request(),
@@ -361,20 +363,21 @@ fn print_summary<W: Write>(
         )
     )?;
     writeln!(w, "  Total:\t{:.4} secs", total_duration.as_secs_f64())?;
+    let latency_stat = res.latency_stat();
     writeln!(
         w,
         "{}",
-        style.slowest(&format!("  Slowest:\t{:.4} secs", res.slowest_latency()))
+        style.slowest(&format!("  Slowest:\t{:.4} secs", latency_stat.max()))
     )?;
     writeln!(
         w,
         "{}",
-        style.fastest(&format!("  Fastest:\t{:.4} secs", res.fastest_latency()))
+        style.fastest(&format!("  Fastest:\t{:.4} secs", latency_stat.min()))
     )?;
     writeln!(
         w,
         "{}",
-        style.average(&format!("  Average:\t{:.4} secs", res.average_latency()))
+        style.average(&format!("  Average:\t{:.4} secs", latency_stat.mean()))
     )?;
     writeln!(
         w,

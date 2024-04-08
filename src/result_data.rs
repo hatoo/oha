@@ -3,6 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use average::{concatenate, Estimate, Max, Mean, Min};
 use hyper::StatusCode;
 
 use crate::client::{ClientError, ConnectionTime, RequestResult};
@@ -14,6 +15,25 @@ use crate::client::{ClientError, ConnectionTime, RequestResult};
 pub struct ResultData {
     success: Vec<RequestResult>,
     error_distribution: BTreeMap<String, usize>,
+}
+
+// https://github.com/vks/average/issues/19
+// can't define pub struct for now.
+concatenate!(MinMaxMeanInner, [Min, min], [Max, max], [Mean, mean]);
+pub struct MinMaxMean(MinMaxMeanInner);
+
+impl MinMaxMean {
+    pub fn min(&self) -> f64 {
+        self.0.min()
+    }
+
+    pub fn max(&self) -> f64 {
+        self.0.max()
+    }
+
+    pub fn mean(&self) -> f64 {
+        self.0.mean()
+    }
 }
 
 impl ResultData {
@@ -54,33 +74,13 @@ impl ResultData {
         numerator as f64 / denominator as f64
     }
 
-    pub fn slowest_latency(&self) -> f64 {
-        self.success
-            .iter()
-            .map(|result| result.duration().as_secs_f64())
-            .collect::<average::Max>()
-            .max()
-    }
-
-    pub fn fastest_latency(&self) -> f64 {
-        self.success
-            .iter()
-            .map(|result| result.duration().as_secs_f64())
-            .collect::<average::Min>()
-            .min()
-    }
-
-    pub fn average_latency(&self) -> f64 {
-        let mean = self
+    pub fn latency_stat(&self) -> MinMaxMean {
+        let latencies = self
             .success
             .iter()
-            .map(|r| r.duration().as_secs_f64())
-            .collect::<average::Mean>();
-        if mean.is_empty() {
-            f64::NAN
-        } else {
-            mean.mean()
-        }
+            .map(|result| result.duration().as_secs_f64())
+            .collect::<MinMaxMeanInner>();
+        MinMaxMean(latencies)
     }
 
     pub fn error_distribution(&self) -> &BTreeMap<String, usize> {
