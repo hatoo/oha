@@ -100,10 +100,28 @@ impl ResultData {
         dist
     }
 
-    pub fn connection_times_base(&self) -> impl Iterator<Item = (Instant, ConnectionTime)> + '_ {
-        self.success
+    pub fn dns_dialup_stat(&self) -> MinMaxMean {
+        let dns_dialup = self
+            .success
             .iter()
-            .filter_map(|r| r.connection_time.map(|ct| (r.start, ct)))
+            .filter_map(|r| {
+                r.connection_time
+                    .map(|ct| (ct.dialup - r.start).as_secs_f64())
+            })
+            .collect::<MinMaxMeanInner>();
+        MinMaxMean(dns_dialup)
+    }
+
+    pub fn dns_lookup_stat(&self) -> MinMaxMean {
+        let dns_lookup = self
+            .success
+            .iter()
+            .filter_map(|r| {
+                r.connection_time
+                    .map(|ct| (ct.dns_lookup - r.start).as_secs_f64())
+            })
+            .collect::<MinMaxMeanInner>();
+        MinMaxMean(dns_lookup)
     }
 
     pub fn total_data(&self) -> usize {

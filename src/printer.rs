@@ -305,18 +305,19 @@ fn print_json<W: Write>(
 
     let status_code_distribution = res.status_code_distribution();
 
-    let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
-        res.connection_times_base().collect();
+    let dns_dialup_stat = res.dns_dialup_stat();
+    let dns_lookup_stat = res.dns_lookup_stat();
+
     let details = Details {
         dns_dialup: Triple {
-            average: calculate_connection_times_dns_dialup_average(&connection_times),
-            fastest: calculate_connection_times_dns_dialup_fastest(&connection_times),
-            slowest: calculate_connection_times_dns_dialup_slowest(&connection_times),
+            average: dns_dialup_stat.mean(),
+            fastest: dns_dialup_stat.min(),
+            slowest: dns_dialup_stat.max(),
         },
         dns_lookup: Triple {
-            average: calculate_connection_times_dns_lookup_average(&connection_times),
-            fastest: calculate_connection_times_dns_lookup_fastest(&connection_times),
-            slowest: calculate_connection_times_dns_lookup_slowest(&connection_times),
+            average: dns_lookup_stat.mean(),
+            fastest: dns_lookup_stat.min(),
+            slowest: dns_lookup_stat.max(),
         },
     };
 
@@ -464,8 +465,9 @@ fn print_summary<W: Write>(
     }
     writeln!(w)?;
 
-    let connection_times: Vec<(std::time::Instant, ConnectionTime)> =
-        res.connection_times_base().collect();
+    let dns_dialup_stat = res.dns_dialup_stat();
+    let dns_lookup_stat = res.dns_lookup_stat();
+
     writeln!(
         w,
         "{}",
@@ -475,16 +477,16 @@ fn print_summary<W: Write>(
     writeln!(
         w,
         "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        calculate_connection_times_dns_dialup_average(&connection_times),
-        calculate_connection_times_dns_dialup_fastest(&connection_times),
-        calculate_connection_times_dns_dialup_slowest(&connection_times),
+        dns_dialup_stat.mean(),
+        dns_dialup_stat.min(),
+        dns_dialup_stat.max()
     )?;
     writeln!(
         w,
         "  DNS-lookup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        calculate_connection_times_dns_lookup_average(&connection_times),
-        calculate_connection_times_dns_lookup_fastest(&connection_times),
-        calculate_connection_times_dns_lookup_slowest(&connection_times),
+        dns_lookup_stat.mean(),
+        dns_lookup_stat.min(),
+        dns_lookup_stat.max()
     )?;
     writeln!(w)?;
 
