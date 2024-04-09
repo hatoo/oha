@@ -134,7 +134,7 @@ impl Monitor {
 
             let mut bar_num_req = vec![0u64; count];
             let short_bin = (now - self.start).as_secs_f64() % bin;
-            for r in all.success.iter().rev() {
+            for r in all.success().iter().rev() {
                 let past = (now - r.end).as_secs_f64();
                 let i = if past <= short_bin {
                     0
@@ -185,7 +185,7 @@ impl Monitor {
                         [
                             Constraint::Length(3),
                             Constraint::Length(8),
-                            Constraint::Length(all.error.len() as u16 + 2),
+                            Constraint::Length(all.error_distribution().len() as u16 + 2),
                             Constraint::Fill(1),
                         ]
                         .as_ref(),
@@ -220,7 +220,7 @@ impl Monitor {
                 f.render_widget(gauge, row4[0]);
 
                 let last_1_timescale = all
-                    .success
+                    .success()
                     .iter()
                     .rev()
                     .take_while(|r| (now - r.end).as_secs_f64() <= timescale.as_secs_f64())
@@ -312,7 +312,8 @@ impl Monitor {
                 );
                 f.render_widget(stats2, mid[1]);
 
-                let mut error_v: Vec<(String, usize)> = all.error.clone().into_iter().collect();
+                let mut error_v: Vec<(String, usize)> =
+                    all.error_distribution().clone().into_iter().collect();
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
                 let errors_text = error_v
                     .into_iter()
@@ -366,7 +367,7 @@ impl Monitor {
                     }
                     .max(2);
                     let values = all
-                        .success
+                        .success()
                         .iter()
                         .rev()
                         .take_while(|r| (now - r.end).as_secs_f64() < timescale.as_secs_f64())

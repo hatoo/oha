@@ -1792,6 +1792,7 @@ dependencies = [
  "bytes",
  "clap",
  "crossterm",
+ "float-cmp",
  "float-ord",
  "flume",
  "futures",
