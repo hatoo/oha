@@ -1,4 +1,4 @@
-use crate::{client::ConnectionTime, histogram::histogram, result_data::ResultData};
+use crate::{histogram::histogram, result_data::ResultData};
 use average::{Max, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
@@ -208,7 +208,7 @@ fn print_json<W: Write>(
         slowest: latency_stat.max(),
         fastest: latency_stat.min(),
         average: latency_stat.mean(),
-        requests_per_sec: calculate_requests_per_sec(res, total_duration),
+        requests_per_sec: res.len() as f64 / total_duration.as_secs_f64(),
         total_data: res.total_data() as u64,
         size_per_request: res.size_per_request(),
         size_per_sec: res.total_data() as f64 / total_duration.as_secs_f64(),
@@ -383,7 +383,7 @@ fn print_summary<W: Write>(
     writeln!(
         w,
         "  Requests/sec:\t{:.4}",
-        calculate_requests_per_sec(res, total_duration)
+        res.len() as f64 / total_duration.as_secs_f64()
     )?;
     writeln!(w)?;
     writeln!(
@@ -611,95 +611,6 @@ fn percentiles(values: &mut [f64]) -> BTreeMap<String, f64> {
         .map(|(p, v)| (format!("p{p}"), v))
         .collect()
 }
-
-fn calculate_requests_per_sec(res: &ResultData, total_duration: Duration) -> f64 {
-    res.len() as f64 / total_duration.as_secs_f64()
-}
-
-fn calculate_connection_times_dns_dialup_average(
-    connection_times: &[(Instant, ConnectionTime)],
-) -> f64 {
-    connection_times
-        .iter()
-        .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-        .collect::<average::Mean>()
-        .mean()
-}
-
-fn calculate_connection_times_dns_dialup_fastest(
-    connection_times: &[(Instant, ConnectionTime)],
-) -> f64 {
-    connection_times
-        .iter()
-        .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-        .collect::<average::Min>()
-        .min()
-}
-
-fn calculate_connection_times_dns_dialup_slowest(
-    connection_times: &[(Instant, ConnectionTime)],
-) -> f64 {
-    connection_times
-        .iter()
-        .map(|(s, c)| (c.dialup - *s).as_secs_f64())
-        .collect::<average::Max>()
-        .max()
-}
-
-fn calculate_connection_times_dns_lookup_average(
-    connection_times: &[(Instant, ConnectionTime)],
-) -> f64 {
-    connection_times
-        .iter()
-        .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-        .collect::<average::Mean>()
-        .mean()
-}
-
-fn calculate_connection_times_dns_lookup_fastest(
-    connection_times: &[(Instant, ConnectionTime)],
-) -> f64 {
-    connection_times
-        .iter()
-        .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-        .collect::<average::Min>()
-        .min()
-}
-
-fn calculate_connection_times_dns_lookup_slowest(
-    connection_times: &[(Instant, ConnectionTime)],
-) -> f64 {
-    connection_times
-        .iter()
-        .map(|(s, c)| (c.dns_lookup - *s).as_secs_f64())
-        .collect::<average::Max>()
-        .max()
-}
-
-/*
-fn get_durations_all(res: &ResultData) -> Vec<f64> {
-    res.success
-        .iter()
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<Vec<_>>()
-}
-
-fn get_durations_successful(res: &ResultData) -> Vec<f64> {
-    res.success
-        .iter()
-        .filter(|r| r.status.is_success())
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<Vec<_>>()
-}
-
-fn get_durations_not_successful(res: &ResultData) -> Vec<f64> {
-    res.success
-        .iter()
-        .filter(|r| r.status.is_client_error() || r.status.is_server_error())
-        .map(|r| r.duration().as_secs_f64())
-        .collect::<Vec<_>>()
-}
-*/
 
 /*
 

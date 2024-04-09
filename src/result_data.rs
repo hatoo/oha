@@ -1,12 +1,9 @@
-use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use average::{concatenate, Estimate, Max, Mean, Min};
 use hyper::StatusCode;
 
-use crate::client::{ClientError, ConnectionTime, RequestResult};
+use crate::client::{ClientError, RequestResult};
 
 /// Data container for the results of the all requests
 /// When a request is successful, the result is pushed to the `success` vector and the memory consumption will not be a problem because the number of successful requests is limited by network overhead.
