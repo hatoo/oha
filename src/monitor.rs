@@ -219,12 +219,22 @@ impl Monitor {
                     .ratio(progress);
                 f.render_widget(gauge, row4[0]);
 
-                let last_1_timescale = all
-                    .success()
-                    .iter()
-                    .rev()
-                    .take_while(|r| (now - r.end).as_secs_f64() <= timescale.as_secs_f64())
-                    .collect::<Vec<_>>();
+                let last_1_timescale = {
+                    let success = all.success();
+                    let index = match success.binary_search_by(|probe| {
+                        (now - probe.end)
+                            .as_secs_f64()
+                            .partial_cmp(&timescale.as_secs_f64())
+                            // Should be fine
+                            .unwrap()
+                            .reverse()
+                    }) {
+                        Ok(i) => i,
+                        Err(i) => i,
+                    };
+
+                    &success[index..]
+                };
 
                 let stats_text = vec![
                     Line::from(format!("Requests : {}", last_1_timescale.len())),
@@ -366,11 +376,8 @@ impl Monitor {
                         (bottom[1].width as usize - 2) / (resp_histo_width + 1)
                     }
                     .max(2);
-                    let values = all
-                        .success()
+                    let values = last_1_timescale
                         .iter()
-                        .rev()
-                        .take_while(|r| (now - r.end).as_secs_f64() < timescale.as_secs_f64())
                         .map(|r| r.duration().as_secs_f64())
                         .collect::<Vec<_>>();
 
