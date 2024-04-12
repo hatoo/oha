@@ -16,7 +16,7 @@ This program is written in Rust and powered by [tokio](https://github.com/tokio-
 
 # Installation
 
-This program is built on stable Rust.
+This program is built on stable Rust, with both `make` and `cmake` prerequisites to install via cargo.
 
     cargo install oha
 
