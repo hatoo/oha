@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use average::{concatenate, Estimate, Max, Mean, Min};
 use hyper::StatusCode;
@@ -115,8 +118,8 @@ impl ResultData {
         &self.error_distribution
     }
 
-    pub fn end_times_from_start(&self) -> impl Iterator<Item = Duration> + '_ {
-        self.success.iter().map(|result| result.end - result.start)
+    pub fn end_times_from_start(&self, start: Instant) -> impl Iterator<Item = Duration> + '_ {
+        self.success.iter().map(move |result| result.end - start)
     }
 
     pub fn status_code_distribution(&self) -> BTreeMap<StatusCode, usize> {

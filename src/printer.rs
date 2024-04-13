@@ -117,7 +117,7 @@ pub fn print_result<W: Write>(
 /// Print all summary as JSON
 fn print_json<W: Write>(
     w: &mut W,
-    _start: Instant,
+    start: Instant,
     res: &ResultData,
     total_duration: Duration,
     stats_success_breakdown: bool,
@@ -272,7 +272,7 @@ fn print_json<W: Write>(
     }
 
     let mut ends = res
-        .end_times_from_start()
+        .end_times_from_start(start)
         .map(|d| d.as_secs_f64())
         .collect::<Vec<_>>();
     ends.push(0.0);
