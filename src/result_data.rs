@@ -23,6 +23,7 @@ pub struct ResultData {
 // https://github.com/vks/average/issues/19
 // can't define pub struct for now.
 concatenate!(MinMaxMeanInner, [Min, min], [Max, max], [Mean, mean]);
+#[repr(transparent)]
 pub struct MinMaxMean(MinMaxMeanInner);
 
 impl MinMaxMean {
