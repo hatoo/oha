@@ -1,4 +1,4 @@
-use crate::{histogram::histogram, result_data::ResultData};
+use crate::result_data::ResultData;
 use average::{Max, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
@@ -117,7 +117,7 @@ pub fn print_result<W: Write>(
 /// Print all summary as JSON
 fn print_json<W: Write>(
     w: &mut W,
-    _start: Instant,
+    start: Instant,
     res: &ResultData,
     total_duration: Duration,
     stats_success_breakdown: bool,
@@ -214,17 +214,19 @@ fn print_json<W: Write>(
         size_per_sec: res.total_data() as f64 / total_duration.as_secs_f64(),
     };
 
-    let mut durations = res
-        .duration_all()
-        .map(|d| d.as_secs_f64())
-        .collect::<Vec<_>>();
+    let durations_statistics = res.duration_all_statistics();
 
-    let response_time_histogram = histogram(&durations, 11)
+    let response_time_histogram = durations_statistics
+        .histogram
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
 
-    let latency_percentiles = percentiles(&mut durations);
+    let latency_percentiles = durations_statistics
+        .percentiles
+        .into_iter()
+        .map(|(p, v)| (format!("p{p}"), v))
+        .collect();
 
     let mut response_time_histogram_successful: Option<BTreeMap<String, usize>> = None;
     let mut latency_percentiles_successful: Option<BTreeMap<String, f64>> = None;
@@ -232,37 +234,45 @@ fn print_json<W: Write>(
     let mut latency_percentiles_not_successful: Option<BTreeMap<String, f64>> = None;
 
     if stats_success_breakdown {
-        let mut durations_successful = res
-            .duration_successful()
-            .map(|d| d.as_secs_f64())
-            .collect::<Vec<_>>();
+        let durations_successful_statistics = res.duration_successful_statistics();
 
         response_time_histogram_successful = Some(
-            histogram(&durations_successful, 11)
+            durations_successful_statistics
+                .histogram
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect(),
         );
 
-        latency_percentiles_successful = Some(percentiles(&mut durations_successful));
+        latency_percentiles_successful = Some(
+            durations_successful_statistics
+                .percentiles
+                .into_iter()
+                .map(|(p, v)| (format!("p{p}"), v))
+                .collect(),
+        );
 
-        let mut durations_not_successful = res
-            .duration_not_successful()
-            .map(|d| d.as_secs_f64())
-            .collect::<Vec<_>>();
+        let durations_not_successful_statistics = res.duration_not_successful_statistics();
 
         response_time_histogram_not_successful = Some(
-            histogram(&durations_not_successful, 11)
+            durations_not_successful_statistics
+                .histogram
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect(),
         );
 
-        latency_percentiles_not_successful = Some(percentiles(&mut durations_not_successful));
+        latency_percentiles_not_successful = Some(
+            durations_not_successful_statistics
+                .percentiles
+                .into_iter()
+                .map(|(p, v)| (format!("p{p}"), v))
+                .collect(),
+        );
     }
 
     let mut ends = res
-        .end_times_from_start()
+        .end_times_from_start(start)
         .map(|d| d.as_secs_f64())
         .collect::<Vec<_>>();
     ends.push(0.0);
@@ -407,31 +417,25 @@ fn print_summary<W: Write>(
     )?;
     writeln!(w)?;
 
-    let mut durations = res
-        .duration_all()
-        .map(|d| d.as_secs_f64())
-        .collect::<Vec<_>>();
+    let duration_all_statistics = res.duration_all_statistics();
 
     writeln!(w, "{}", style.heading("Response time histogram:"))?;
-    print_histogram(w, &durations, style)?;
+    print_histogram(w, &duration_all_statistics.histogram, style)?;
     writeln!(w)?;
 
     writeln!(w, "{}", style.heading("Response time distribution:"))?;
-    print_distribution(w, &mut durations, style)?;
+    print_distribution(w, &duration_all_statistics.percentiles, style)?;
     writeln!(w)?;
 
     if stats_success_breakdown {
-        let mut durations_successful = res
-            .duration_successful()
-            .map(|d| d.as_secs_f64())
-            .collect::<Vec<_>>();
+        let durations_successful_statics = res.duration_successful_statistics();
 
         writeln!(
             w,
             "{}",
             style.heading("Response time histogram (2xx only):")
         )?;
-        print_histogram(w, &durations_successful, style)?;
+        print_histogram(w, &durations_successful_statics.histogram, style)?;
         writeln!(w)?;
 
         writeln!(
@@ -439,20 +443,17 @@ fn print_summary<W: Write>(
             "{}",
             style.heading("Response time distribution (2xx only):")
         )?;
-        print_distribution(w, &mut durations_successful, style)?;
+        print_distribution(w, &durations_successful_statics.percentiles, style)?;
         writeln!(w)?;
 
-        let mut durations_not_successful = res
-            .duration_not_successful()
-            .map(|d| d.as_secs_f64())
-            .collect::<Vec<_>>();
+        let durations_not_successful = res.duration_not_successful_statistics();
 
         writeln!(
             w,
             "{}",
             style.heading("Response time histogram (4xx + 5xx only):")
         )?;
-        print_histogram(w, &durations_not_successful, style)?;
+        print_histogram(w, &durations_not_successful.histogram, style)?;
         writeln!(w)?;
 
         writeln!(
@@ -460,7 +461,7 @@ fn print_summary<W: Write>(
             "{}",
             style.heading("Response time distribution (4xx + 5xx only):")
         )?;
-        print_distribution(w, &mut durations_not_successful, style)?;
+        print_distribution(w, &durations_not_successful.percentiles, style)?;
         writeln!(w)?;
     }
     writeln!(w)?;
@@ -526,17 +527,12 @@ fn print_summary<W: Write>(
     Ok(())
 }
 
-/// Print histogram of series of f64 data.
 /// This is used to print histogram of response time.
-fn print_histogram<W: Write>(w: &mut W, values: &[f64], style: StyleScheme) -> std::io::Result<()> {
-    // TODO: Use better algorithm.
-    // Is there any common and good algorithm?
-    if values.is_empty() {
-        return Ok(());
-    }
-    let lines = 11;
-    let data = crate::histogram::histogram(values, lines);
-
+fn print_histogram<W: Write>(
+    w: &mut W,
+    data: &[(f64, usize)],
+    style: StyleScheme,
+) -> std::io::Result<()> {
     let max_bar = data.iter().map(|t| t.1).max().unwrap();
     let str_len_max = max_bar.to_string().len();
     let width = data
@@ -592,14 +588,14 @@ fn percentile_iter(values: &mut [f64]) -> impl Iterator<Item = (f64, f64)> + '_ 
 /// Print distribution of collection of f64
 fn print_distribution<W: Write>(
     w: &mut W,
-    values: &mut [f64],
+    percentiles: &[(f64, f64)],
     style: StyleScheme,
 ) -> std::io::Result<()> {
-    for (p, v) in percentile_iter(values) {
+    for (p, v) in percentiles {
         writeln!(
             w,
             "{}",
-            style.latency_distribution(&format!("  {:.2}% in {:.4} secs", p, v), v)
+            style.latency_distribution(&format!("  {:.2}% in {:.4} secs", p, v), *v)
         )?;
     }
 

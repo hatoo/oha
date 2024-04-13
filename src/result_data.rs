@@ -1,9 +1,15 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use average::{concatenate, Estimate, Max, Mean, Min};
 use hyper::StatusCode;
 
-use crate::client::{ClientError, RequestResult};
+use crate::{
+    client::{ClientError, RequestResult},
+    histogram::histogram,
+};
 
 /// Data container for the results of the all requests
 /// When a request is successful, the result is pushed to the `success` vector and the memory consumption will not be a problem because the number of successful requests is limited by network overhead.
@@ -31,6 +37,34 @@ impl MinMaxMean {
     pub fn mean(&self) -> f64 {
         self.0.mean()
     }
+}
+
+pub struct Statistics {
+    pub percentiles: Vec<(f64, f64)>,
+    pub histogram: Vec<(f64, usize)>,
+}
+
+impl Statistics {
+    /* private */
+    fn new(data: &mut [f64]) -> Self {
+        float_ord::sort(data);
+
+        Self {
+            percentiles: percentile_iter(data).collect(),
+            histogram: histogram(data, 11),
+        }
+    }
+}
+
+fn percentile_iter(values: &mut [f64]) -> impl Iterator<Item = (f64, f64)> + '_ {
+    float_ord::sort(values);
+
+    [10.0, 25.0, 50.0, 75.0, 90.0, 95.0, 99.0, 99.9, 99.99]
+        .iter()
+        .map(move |&p| {
+            let i = (p / 100.0 * values.len() as f64) as usize;
+            (p, *values.get(i).unwrap_or(&std::f64::NAN))
+        })
 }
 
 impl ResultData {
@@ -84,8 +118,8 @@ impl ResultData {
         &self.error_distribution
     }
 
-    pub fn end_times_from_start(&self) -> impl Iterator<Item = Duration> + '_ {
-        self.success.iter().map(|result| result.end - result.start)
+    pub fn end_times_from_start(&self, start: Instant) -> impl Iterator<Item = Duration> + '_ {
+        self.success.iter().map(move |result| result.end - start)
     }
 
     pub fn status_code_distribution(&self) -> BTreeMap<StatusCode, usize> {
@@ -133,22 +167,35 @@ impl ResultData {
             .checked_div(self.success.len() as u64)
     }
 
-    pub fn duration_all(&self) -> impl Iterator<Item = Duration> + '_ {
-        self.success.iter().map(|r| r.duration())
+    pub fn duration_all_statistics(&self) -> Statistics {
+        let mut data = self
+            .success
+            .iter()
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+        Statistics::new(&mut data)
     }
 
-    pub fn duration_successful(&self) -> impl Iterator<Item = Duration> + '_ {
-        self.success
+    pub fn duration_successful_statistics(&self) -> Statistics {
+        let mut data = self
+            .success
             .iter()
             .filter(|r| r.status.is_success())
-            .map(|r| r.duration())
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+
+        Statistics::new(&mut data)
     }
 
-    pub fn duration_not_successful(&self) -> impl Iterator<Item = Duration> + '_ {
-        self.success
+    pub fn duration_not_successful_statistics(&self) -> Statistics {
+        let mut data = self
+            .success
             .iter()
             .filter(|r| !r.status.is_success())
-            .map(|r| r.duration())
+            .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+
+        Statistics::new(&mut data)
     }
 }
 
@@ -278,36 +325,5 @@ mod tests {
     fn test_calculate_connection_times_dns_lookup_slowest() {
         let res = build_mock_request_results();
         assert_approx_eq!(f64, res.dns_lookup_stat().max(), 0.3);
-    }
-
-    #[test]
-    fn test_get_durations_all() {
-        let res = build_mock_request_results();
-        let durations: Vec<_> = res.duration_all().map(|d| d.as_secs_f64()).collect();
-        assert_approx_eq!(f64, durations[0], 1.0);
-        assert_approx_eq!(f64, durations[1], 100.0);
-        assert_approx_eq!(f64, durations[2], 1000.0);
-    }
-
-    #[test]
-    fn test_get_durations_successful() {
-        let res = build_mock_request_results();
-        let durations: Vec<_> = res.duration_successful().map(|d| d.as_secs_f64()).collect();
-        // Round the calculations to 4 decimal places to remove imprecision
-        assert_approx_eq!(f64, durations[0], 1.0);
-        assert_eq!(durations.get(1), None);
-    }
-
-    #[test]
-    fn test_get_durations_not_successful() {
-        let res = build_mock_request_results();
-        let durations: Vec<_> = res
-            .duration_not_successful()
-            .map(|d| d.as_secs_f64())
-            .collect();
-        // Round the calculations to 4 decimal places to remove imprecision
-        assert_approx_eq!(f64, durations[0], 100.0);
-        assert_approx_eq!(f64, durations[1], 1000.0);
-        assert_eq!(durations.get(2), None);
     }
 }
