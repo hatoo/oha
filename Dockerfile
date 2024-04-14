@@ -3,6 +3,11 @@ FROM docker.io/library/rust:${RUST_VERSION} AS build
 WORKDIR /app
 COPY . /app
 
+RUN apt-get update && apt-get install -y \
+    cmake \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN cargo install --path .
 
 # Target image
