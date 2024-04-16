@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::Parser;
 use crossterm::tty::IsTty;
 use futures::prelude::*;
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
 use hyper::http::{
     self,
@@ -11,7 +12,7 @@ use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
 use result_data::ResultData;
-use std::{io::Read, str::FromStr};
+use std::{env, io::Read, str::FromStr};
 use url::Url;
 use url_generator::UrlGenerator;
 
@@ -415,9 +416,7 @@ async fn main() -> anyhow::Result<()> {
         (false, true) => hickory_resolver::config::LookupIpStrategy::Ipv6Only,
         (true, true) => hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
     };
-    let (config, _) = hickory_resolver::system_conf::read_system_conf()
-        .context("DNS: failed to load /etc/resolv.conf")?;
-    let mut resolver_opts = hickory_resolver::config::ResolverOpts::default();
+    let (config, mut resolver_opts) = system_resolv_conf()?;
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
 
@@ -656,4 +655,19 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     Ok(())
+}
+
+fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
+    // check if we are running in termux https://github.com/termux/termux-app
+    #[cfg(unix)]
+    if env::var("TERMUX_VERSION").is_ok() {
+        let prefix = env::var("PREFIX")?;
+        let path = format!("{}/etc/resolv.conf", prefix);
+        let conf_data = std::fs::read(&path).context(format!("DNS: failed to load {}", path))?;
+        return hickory_resolver::system_conf::parse_resolv_conf(conf_data)
+            .context(format!("DNS: failed to parse {}", path));
+    }
+
+    hickory_resolver::system_conf::read_system_conf()
+        .context("DNS: failed to load /etc/resolv.conf")
 }
