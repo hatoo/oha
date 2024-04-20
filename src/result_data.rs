@@ -40,6 +40,12 @@ impl MinMaxMean {
     }
 }
 
+impl FromIterator<f64> for MinMaxMean {
+    fn from_iter<I: IntoIterator<Item = f64>>(iter: I) -> Self {
+        Self(MinMaxMeanInner::from_iter(iter))
+    }
+}
+
 pub struct Statistics {
     pub percentiles: Vec<(f64, f64)>,
     pub histogram: Vec<(f64, usize)>,
