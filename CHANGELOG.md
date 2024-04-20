@@ -1,5 +1,9 @@
 # Unreleased
 
+# 1.4.4 (2024-06-20)
+
+- support Termux #464
+
 # 1.4.3 (2024-04-06)
 
 - fix rustls error #452
