@@ -18,7 +18,7 @@ use std::{collections::BTreeMap, io};
 use crate::{
     client::{ClientError, RequestResult},
     printer::PrintMode,
-    result_data::ResultData,
+    result_data::{MinMaxMean, ResultData},
     timescale::{TimeLabel, TimeScale},
 };
 
@@ -236,42 +236,23 @@ impl Monitor {
                     &success[index..]
                 };
 
+                let last_1_minmaxmean: MinMaxMean = last_1_timescale
+                    .iter()
+                    .map(|r| r.duration().as_secs_f64())
+                    .collect();
+
                 let stats_text = vec![
                     Line::from(format!("Requests : {}", last_1_timescale.len())),
                     Line::from(vec![Span::styled(
-                        format!(
-                            "Slowest: {:.4} secs",
-                            last_1_timescale
-                                .iter()
-                                .map(|r| r.duration())
-                                .max()
-                                .map(|d| d.as_secs_f64())
-                                .unwrap_or(f64::NAN)
-                        ),
+                        format!("Slowest: {:.4} secs", last_1_minmaxmean.max(),),
                         Style::default().fg(colors.yellow.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(vec![Span::styled(
-                        format!(
-                            "Fastest: {:.4} secs",
-                            last_1_timescale
-                                .iter()
-                                .map(|r| r.duration())
-                                .min()
-                                .map(|d| d.as_secs_f64())
-                                .unwrap_or(f64::NAN)
-                        ),
+                        format!("Fastest: {:.4} secs", last_1_minmaxmean.min(),),
                         Style::default().fg(colors.green.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(vec![Span::styled(
-                        format!(
-                            "Average: {:.4} secs",
-                            last_1_timescale
-                                .iter()
-                                .map(|r| r.duration())
-                                .sum::<std::time::Duration>()
-                                .as_secs_f64()
-                                / last_1_timescale.len() as f64
-                        ),
+                        format!("Average: {:.4} secs", last_1_minmaxmean.mean(),),
                         Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(format!(
