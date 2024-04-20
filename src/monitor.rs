@@ -246,7 +246,7 @@ impl Monitor {
                                 .map(|r| r.duration())
                                 .max()
                                 .map(|d| d.as_secs_f64())
-                                .unwrap_or(std::f64::NAN)
+                                .unwrap_or(f64::NAN)
                         ),
                         Style::default().fg(colors.yellow.unwrap_or(Color::Reset)),
                     )]),
@@ -258,7 +258,7 @@ impl Monitor {
                                 .map(|r| r.duration())
                                 .min()
                                 .map(|d| d.as_secs_f64())
-                                .unwrap_or(std::f64::NAN)
+                                .unwrap_or(f64::NAN)
                         ),
                         Style::default().fg(colors.green.unwrap_or(Color::Reset)),
                     )]),
