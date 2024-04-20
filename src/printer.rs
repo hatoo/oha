@@ -581,7 +581,7 @@ fn percentile_iter(values: &mut [f64]) -> impl Iterator<Item = (f64, f64)> + '_ 
         .iter()
         .map(move |&p| {
             let i = (p / 100.0 * values.len() as f64) as usize;
-            (p, *values.get(i).unwrap_or(&std::f64::NAN))
+            (p, *values.get(i).unwrap_or(&f64::NAN))
         })
 }
 
