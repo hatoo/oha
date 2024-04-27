@@ -20,31 +20,7 @@ pub struct ResultData {
     error_distribution: BTreeMap<String, usize>,
 }
 
-// https://github.com/vks/average/issues/19
-// can't define pub struct for now.
-concatenate!(MinMaxMeanInner, [Min, min], [Max, max], [Mean, mean]);
-#[repr(transparent)]
-pub struct MinMaxMean(MinMaxMeanInner);
-
-impl MinMaxMean {
-    pub fn min(&self) -> f64 {
-        self.0.min()
-    }
-
-    pub fn max(&self) -> f64 {
-        self.0.max()
-    }
-
-    pub fn mean(&self) -> f64 {
-        self.0.mean()
-    }
-}
-
-impl FromIterator<f64> for MinMaxMean {
-    fn from_iter<I: IntoIterator<Item = f64>>(iter: I) -> Self {
-        Self(MinMaxMeanInner::from_iter(iter))
-    }
-}
+concatenate!(pub MinMaxMean, [Min, min], [Max, max], [Mean, mean]);
 
 pub struct Statistics {
     pub percentiles: Vec<(f64, f64)>,
@@ -113,12 +89,10 @@ impl ResultData {
     }
 
     pub fn latency_stat(&self) -> MinMaxMean {
-        let latencies = self
-            .success
+        self.success
             .iter()
             .map(|result| result.duration().as_secs_f64())
-            .collect::<MinMaxMeanInner>();
-        MinMaxMean(latencies)
+            .collect()
     }
 
     pub fn error_distribution(&self) -> &BTreeMap<String, usize> {
@@ -139,27 +113,23 @@ impl ResultData {
     }
 
     pub fn dns_dialup_stat(&self) -> MinMaxMean {
-        let dns_dialup = self
-            .success
+        self.success
             .iter()
             .filter_map(|r| {
                 r.connection_time
                     .map(|ct| (ct.dialup - r.start).as_secs_f64())
             })
-            .collect::<MinMaxMeanInner>();
-        MinMaxMean(dns_dialup)
+            .collect()
     }
 
     pub fn dns_lookup_stat(&self) -> MinMaxMean {
-        let dns_lookup = self
-            .success
+        self.success
             .iter()
             .filter_map(|r| {
                 r.connection_time
                     .map(|ct| (ct.dns_lookup - r.start).as_secs_f64())
             })
-            .collect::<MinMaxMeanInner>();
-        MinMaxMean(dns_lookup)
+            .collect()
     }
 
     pub fn total_data(&self) -> usize {
