@@ -1295,14 +1295,22 @@ pub async fn work_until(
                                     })
                                     .collect::<Vec<_>>();
 
-                                let (is_cancel, _, rest) =
-                                    futures::future::select_all(futures).await;
-                                for f in rest {
-                                    let _ = f.await;
+                                let mut connection_gone = false;
+                                for f in futures {
+                                    match f.await {
+                                        Ok(true) => {
+                                            // All works done
+                                            connection_gone = true;
+                                        }
+                                        Err(_) => {
+                                            // Unexpected
+                                            connection_gone = true;
+                                        }
+                                        _ => {}
+                                    }
                                 }
-
-                                if matches!(is_cancel, Ok(true)) {
-                                    break;
+                                if connection_gone {
+                                    return;
                                 }
                             }
 
