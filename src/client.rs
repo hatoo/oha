@@ -1257,12 +1257,6 @@ pub async fn work_until(
         // Maybe there is a better concurrent primitive to do this
         let s = Arc::new(tokio::sync::Semaphore::new(0));
 
-        let s1 = s.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep_until(dead_line.into()).await;
-            s1.close();
-        });
-
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
@@ -1325,17 +1319,15 @@ pub async fn work_until(
                 })
             })
             .collect::<Vec<_>>();
+
+        tokio::time::sleep_until(dead_line.into()).await;
+        s.close();
+
         for f in futures {
             let _ = f.await;
         }
     } else {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
-
-        let s1 = s.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep_until(dead_line.into()).await;
-            s1.close();
-        });
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1363,6 +1355,10 @@ pub async fn work_until(
                 })
             })
             .collect::<Vec<_>>();
+
+        tokio::time::sleep_until(dead_line.into()).await;
+        s.close();
+
         for f in futures {
             let _ = f.await;
         }
@@ -1423,12 +1419,6 @@ pub async fn work_until_with_qps(
 
     if client.is_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
-
-        let s1 = s.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep_until(dead_line.into()).await;
-            s1.close();
-        });
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1499,17 +1489,14 @@ pub async fn work_until_with_qps(
             })
             .collect::<Vec<_>>();
 
+        tokio::time::sleep_until(dead_line.into()).await;
+        s.close();
+
         for f in futures {
             let _ = f.await;
         }
     } else {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
-
-        let s1 = s.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep_until(dead_line.into()).await;
-            s1.close();
-        });
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1538,6 +1525,9 @@ pub async fn work_until_with_qps(
                 })
             })
             .collect::<Vec<_>>();
+
+        tokio::time::sleep_until(dead_line.into()).await;
+        s.close();
 
         for f in futures {
             let _ = f.await;
@@ -1598,12 +1588,6 @@ pub async fn work_until_with_qps_latency_correction(
 
     if client.is_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
-
-        let s1 = s.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep_until(dead_line.into()).await;
-            s1.close();
-        });
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1674,17 +1658,14 @@ pub async fn work_until_with_qps_latency_correction(
             })
             .collect::<Vec<_>>();
 
+        tokio::time::sleep_until(dead_line.into()).await;
+        s.close();
+
         for f in futures {
             let _ = f.await;
         }
     } else {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
-
-        let s1 = s.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep_until(dead_line.into()).await;
-            s1.close();
-        });
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1713,6 +1694,9 @@ pub async fn work_until_with_qps_latency_correction(
                 })
             })
             .collect::<Vec<_>>();
+
+        tokio::time::sleep_until(dead_line.into()).await;
+        s.close();
 
         for f in futures {
             let _ = f.await;
