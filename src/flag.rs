@@ -14,6 +14,12 @@ struct Inner {
 #[derive(Clone)]
 pub struct Flag(Arc<Inner>);
 
+impl Default for Flag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Flag {
     pub fn new() -> Self {
         Self(Arc::new(Inner {
