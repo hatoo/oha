@@ -17,6 +17,7 @@ use url::Url;
 use url_generator::UrlGenerator;
 
 mod client;
+mod flag;
 mod histogram;
 mod monitor;
 mod printer;
