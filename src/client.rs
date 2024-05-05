@@ -1278,20 +1278,29 @@ pub async fn work_until(
                                         let s = s.clone();
                                         tokio::spawn(async move {
                                             // This is where HTTP2 loops to make all the requests for a given client and worker
-                                            loop {
-                                                let (is_cancel, is_reconnect) =
-                                                    work_http2_or_acquire(
-                                                        &client,
-                                                        &mut client_state,
-                                                        &report_tx,
-                                                        connection_time,
-                                                        None,
-                                                        &s,
-                                                    )
-                                                    .await;
+                                            tokio::select! {
+                                                is_cancel = async {
+                                                    loop {
+                                                        let (is_cancel, is_reconnect) =
+                                                            work_http2_once(
+                                                                &client,
+                                                                &mut client_state,
+                                                                &report_tx,
+                                                                connection_time,
+                                                                None,
+                                                            )
+                                                            .await;
 
-                                                if is_cancel || is_reconnect {
-                                                    break is_cancel;
+                                                        if is_cancel || is_reconnect {
+                                                            break is_cancel;
+                                                        }
+                                                    }
+                                                } => {
+                                                    is_cancel
+                                                }
+                                                _ = s.acquire() => {
+                                                    report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
+                                                    true
                                                 }
                                             }
                                         })
@@ -1450,22 +1459,31 @@ pub async fn work_until_with_qps(
                                         let mut client_state = client_state.clone();
                                         let s = s.clone();
                                         tokio::spawn(async move {
-                                            while let Ok(()) = rx.recv_async().await {
-                                                let (is_cancel, is_reconnect) =
-                                                    work_http2_or_acquire(
-                                                        &client,
-                                                        &mut client_state,
-                                                        &report_tx,
-                                                        connection_time,
-                                                        None,
-                                                        &s,
-                                                    )
-                                                    .await;
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+                                            tokio::select! {
+                                                is_cancel = async {
+                                                    while let Ok(()) = rx.recv_async().await {
+                                                        let (is_cancel, is_reconnect) =
+                                                            work_http2_once(
+                                                                &client,
+                                                                &mut client_state,
+                                                                &report_tx,
+                                                                connection_time,
+                                                                None,
+                                                            )
+                                                            .await;
+                                                        if is_cancel || is_reconnect {
+                                                            return is_cancel;
+                                                        }
+                                                    }
+                                                    true
+                                                } => {
+                                                    is_cancel
+                                                }
+                                                _ = s.acquire() => {
+                                                    report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
+                                                    true
                                                 }
                                             }
-                                            true
                                         })
                                     })
                                     .collect::<Vec<_>>();
@@ -1618,22 +1636,32 @@ pub async fn work_until_with_qps_latency_correction(
                                         let mut client_state = client_state.clone();
                                         let s = s.clone();
                                         tokio::spawn(async move {
-                                            while let Ok(start) = rx.recv_async().await {
-                                                let (is_cancel, is_reconnect) =
-                                                    work_http2_or_acquire(
-                                                        &client,
-                                                        &mut client_state,
-                                                        &report_tx,
-                                                        connection_time,
-                                                        Some(start),
-                                                        &s,
-                                                    )
-                                                    .await;
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+                                            tokio::select! {
+                                                is_cancel = async {
+                                                    while let Ok(start) = rx.recv_async().await {
+                                                        let (is_cancel, is_reconnect) =
+                                                            work_http2_or_acquire(
+                                                                &client,
+                                                                &mut client_state,
+                                                                &report_tx,
+                                                                connection_time,
+                                                                Some(start),
+                                                                &s,
+                                                            )
+                                                            .await;
+                                                        if is_cancel || is_reconnect {
+                                                            return is_cancel;
+                                                        }
+                                                    }
+                                                    true
+                                                } => {
+                                                    is_cancel
+                                                }
+                                                _ = s.acquire() => {
+                                                    report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
+                                                    true
                                                 }
                                             }
-                                            true
                                         })
                                     })
                                     .collect::<Vec<_>>();
