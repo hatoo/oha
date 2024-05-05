@@ -17,11 +17,11 @@ use url::Url;
 use url_generator::UrlGenerator;
 
 mod client;
-mod flag;
 mod histogram;
 mod monitor;
 mod printer;
 mod result_data;
+mod signal;
 mod timescale;
 mod url_generator;
 
