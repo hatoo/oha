@@ -3,7 +3,7 @@ use futures::task::{AtomicWaker, Context, Poll};
 use std::pin::Pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 struct SignalFutureInner {
     waker: AtomicWaker,
@@ -13,7 +13,7 @@ struct SignalFutureInner {
 pub struct SignalFuture(Arc<SignalFutureInner>);
 
 pub struct Signal {
-    wakers: Vec<SignalFuture>,
+    wakers: Vec<Weak<SignalFutureInner>>,
     woken: Arc<AtomicBool>,
 }
 
@@ -29,7 +29,9 @@ impl Signal {
         self.woken.store(true, Relaxed);
 
         for waker in self.wakers {
-            waker.0.waker.wake();
+            if let Some(waker) = waker.upgrade() {
+                waker.waker.wake();
+            }
         }
     }
 
@@ -39,7 +41,7 @@ impl Signal {
             woken: self.woken.clone(),
         });
 
-        self.wakers.push(SignalFuture(inner.clone()));
+        self.wakers.push(Arc::downgrade(&inner));
 
         SignalFuture(inner)
     }
