@@ -94,24 +94,19 @@ impl Monitor {
             colors.set_colors();
         }
 
-        'outer: loop {
+        loop {
             let frame_start = std::time::Instant::now();
-            loop {
-                match self.report_receiver.try_recv() {
-                    Ok(report) => {
-                        if let Ok(report) = report.as_ref() {
-                            *status_dist.entry(report.status).or_default() += 1;
-                        }
-                        all.push(report);
-                    }
-                    Err(TryRecvError::Empty) => {
-                        break;
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        // Application ends.
-                        break 'outer;
-                    }
+            let is_disconnected = self.report_receiver.is_disconnected();
+
+            for report in self.report_receiver.drain() {
+                if let Ok(report) = report.as_ref() {
+                    *status_dist.entry(report.status).or_default() += 1;
                 }
+                all.push(report);
+            }
+
+            if is_disconnected {
+                break;
             }
 
             let now = std::time::Instant::now();
