@@ -25,7 +25,7 @@ impl Flag {
     pub fn signal(&self) {
         self.0.set.store(true, Relaxed);
 
-        std::mem::replace(self.0.wakers.lock().unwrap().as_mut(), Vec::new())
+        std::mem::take::<Vec<Waker>>(self.0.wakers.lock().unwrap().as_mut())
             .into_iter()
             .for_each(|waker| waker.wake());
     }
