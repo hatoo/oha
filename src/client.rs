@@ -799,34 +799,6 @@ async fn work_http2_once(
     (is_cancel, is_reconnect)
 }
 
-async fn work_http2_or_acquire(
-    client: &Client,
-    client_state: &mut ClientStateHttp2,
-    report_tx: &flume::Sender<Result<RequestResult, ClientError>>,
-    connection_time: ConnectionTime,
-    start_latency_correction: Option<Instant>,
-    semaphore: &tokio::sync::Semaphore,
-) -> (bool, bool) {
-    tokio::select! {
-        mut res =
-            client.work_http2(client_state) => {
-                let is_cancel = is_cancel_error(&res);
-                let is_reconnect = is_hyper_error(&res);
-                set_connection_time(&mut res, connection_time);
-                if let Some(start_latency_correction) = start_latency_correction {
-                    set_start_latency_correction(&mut res, start_latency_correction);
-                }
-                report_tx.send_async(res).await.unwrap();
-                (is_cancel ,is_reconnect )
-
-            }
-        _ = semaphore.acquire() => {
-            report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
-            (true, false)
-        }
-    }
-}
-
 fn set_connection_time<E>(res: &mut Result<RequestResult, E>, connection_time: ConnectionTime) {
     if let Ok(res) = res {
         res.connection_time = Some(connection_time);
@@ -1640,13 +1612,12 @@ pub async fn work_until_with_qps_latency_correction(
                                                 is_cancel = async {
                                                     while let Ok(start) = rx.recv_async().await {
                                                         let (is_cancel, is_reconnect) =
-                                                            work_http2_or_acquire(
+                                                            work_http2_once(
                                                                 &client,
                                                                 &mut client_state,
                                                                 &report_tx,
                                                                 connection_time,
                                                                 Some(start),
-                                                                &s,
                                                             )
                                                             .await;
                                                         if is_cancel || is_reconnect {
