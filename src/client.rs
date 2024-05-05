@@ -11,7 +11,7 @@ use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::{
-    flag::Flag,
+    signal::Signal,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -1345,14 +1345,14 @@ pub async fn work_until(
             let _ = f.await;
         }
     } else {
-        let flag = Flag::new();
+        let mut signal = Signal::new();
 
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let mut client_state = ClientStateHttp1::default();
-                let flag = flag.clone();
+                let signal = signal.recv_signal();
                 tokio::spawn(async move {
                     tokio::select! {
                         // This is where HTTP1 loops to make all the requests for a given client
@@ -1366,7 +1366,7 @@ pub async fn work_until(
                                 }
                             }
                         } => {},
-                        _ = flag => {
+                        _ = signal => {
                             report_tx
                                 .send_async(Err(ClientError::Deadline))
                                 .await
@@ -1378,7 +1378,7 @@ pub async fn work_until(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        signal.signal();
 
         for f in futures {
             let _ = f.await;
@@ -1526,7 +1526,7 @@ pub async fn work_until_with_qps(
             let _ = f.await;
         }
     } else {
-        let flag = Flag::new();
+        let mut signal = Signal::new();
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1534,7 +1534,7 @@ pub async fn work_until_with_qps(
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let flag = flag.clone();
+                let signal = signal.recv_signal();
                 tokio::spawn(async move {
                     tokio::select! {
                         _ = async {
@@ -1547,7 +1547,7 @@ pub async fn work_until_with_qps(
                                 }
                             }
                         } => {},
-                        _ = flag => {
+                        _ = signal => {
                             report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
                         }
                     }
@@ -1556,7 +1556,7 @@ pub async fn work_until_with_qps(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        signal.signal();
 
         for f in futures {
             let _ = f.await;
@@ -1704,7 +1704,7 @@ pub async fn work_until_with_qps_latency_correction(
             let _ = f.await;
         }
     } else {
-        let flag = Flag::new();
+        let mut signal = Signal::new();
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1712,7 +1712,7 @@ pub async fn work_until_with_qps_latency_correction(
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let flag = flag.clone();
+                let signal = signal.recv_signal();
                 tokio::spawn(async move {
                     tokio::select! {
                         _ = async {
@@ -1726,7 +1726,7 @@ pub async fn work_until_with_qps_latency_correction(
                                 }
                             }
                         } => {}
-                        _ = flag => {
+                        _ = signal => {
                             report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
                         }
                     }
@@ -1735,7 +1735,7 @@ pub async fn work_until_with_qps_latency_correction(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        signal.signal();
 
         for f in futures {
             let _ = f.await;
