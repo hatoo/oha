@@ -11,7 +11,6 @@ use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::{
-    flag::Flag,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -799,13 +798,13 @@ async fn work_http2_once(
     (is_cancel, is_reconnect)
 }
 
-async fn work_http2_or_flag(
+async fn work_http2_or_acquire(
     client: &Client,
     client_state: &mut ClientStateHttp2,
     report_tx: &flume::Sender<Result<RequestResult, ClientError>>,
     connection_time: ConnectionTime,
     start_latency_correction: Option<Instant>,
-    flag: &Flag,
+    semaphore: &tokio::sync::Semaphore,
 ) -> (bool, bool) {
     tokio::select! {
         mut res =
@@ -820,7 +819,7 @@ async fn work_http2_or_flag(
                 (is_cancel ,is_reconnect )
 
             }
-        _ = flag => {
+        _ = semaphore.acquire() => {
             report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
             (true, false)
         }
@@ -1254,14 +1253,17 @@ pub async fn work_until(
 ) {
     let client = Arc::new(client);
     if client.is_http2() {
-        let flag = Flag::new();
+        // Using semaphore to control the deadline
+        // Maybe there is a better concurrent primitive to do this
+        let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
-                let flag = flag.clone();
+                let s = s.clone();
                 tokio::spawn(async move {
+                    let s = s.clone();
                     // Keep trying to establish or re-establish connections up to the deadline
                     loop {
                         match setup_http2(&client).await {
@@ -1272,20 +1274,20 @@ pub async fn work_until(
                                         let client = client.clone();
                                         let report_tx = report_tx.clone();
                                         let mut client_state = client_state.clone();
-                                        let flag = flag.clone();
-
+                                        let s = s.clone();
                                         tokio::spawn(async move {
                                             // This is where HTTP2 loops to make all the requests for a given client and worker
                                             loop {
-                                                let (is_cancel, is_reconnect) = work_http2_or_flag(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    None,
-                                                    &flag,
-                                                )
-                                                .await;
+                                                let (is_cancel, is_reconnect) =
+                                                    work_http2_or_acquire(
+                                                        &client,
+                                                        &mut client_state,
+                                                        &report_tx,
+                                                        connection_time,
+                                                        None,
+                                                        &s,
+                                                    )
+                                                    .await;
 
                                                 if is_cancel || is_reconnect {
                                                     break is_cancel;
@@ -1316,7 +1318,7 @@ pub async fn work_until(
 
                             Err(err) => {
                                 report_tx.send_async(Err(err)).await.unwrap();
-                                if flag.is_signaled() {
+                                if s.is_closed() {
                                     break;
                                 }
                             }
@@ -1327,20 +1329,20 @@ pub async fn work_until(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        s.close();
 
         for f in futures {
             let _ = f.await;
         }
     } else {
-        let flag = Flag::new();
+        let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let mut client_state = ClientStateHttp1::default();
-                let flag = flag.clone();
+                let s = s.clone();
                 tokio::spawn(async move {
                     loop {
                         // This is where HTTP1 loops to make all the requests for a given client
@@ -1352,7 +1354,7 @@ pub async fn work_until(
                                     break;
                                 }
                             }
-                            _ = &flag => {
+                            _ = s.acquire() => {
                                 report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
                                 break;
                             }
@@ -1363,7 +1365,7 @@ pub async fn work_until(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        s.close();
 
         for f in futures {
             let _ = f.await;
@@ -1424,14 +1426,14 @@ pub async fn work_until_with_qps(
     let client = Arc::new(client);
 
     if client.is_http2() {
-        let flag = Flag::new();
+        let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let flag = flag.clone();
+                let s = s.clone();
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
@@ -1442,18 +1444,19 @@ pub async fn work_until_with_qps(
                                         let report_tx = report_tx.clone();
                                         let rx = rx.clone();
                                         let mut client_state = client_state.clone();
-                                        let flag = flag.clone();
+                                        let s = s.clone();
                                         tokio::spawn(async move {
                                             while let Ok(()) = rx.recv_async().await {
-                                                let (is_cancel, is_reconnect) = work_http2_or_flag(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    None,
-                                                    &flag,
-                                                )
-                                                .await;
+                                                let (is_cancel, is_reconnect) =
+                                                    work_http2_or_acquire(
+                                                        &client,
+                                                        &mut client_state,
+                                                        &report_tx,
+                                                        connection_time,
+                                                        None,
+                                                        &s,
+                                                    )
+                                                    .await;
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -1495,13 +1498,13 @@ pub async fn work_until_with_qps(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        s.close();
 
         for f in futures {
             let _ = f.await;
         }
     } else {
-        let flag = Flag::new();
+        let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1509,7 +1512,7 @@ pub async fn work_until_with_qps(
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let flag = flag.clone();
+                let s = s.clone();
                 tokio::spawn(async move {
                     while let Ok(()) = rx.recv_async().await {
                         tokio::select! {
@@ -1521,7 +1524,7 @@ pub async fn work_until_with_qps(
                                 }
                             }
 
-                            _ = &flag => {
+                            _ = s.acquire() => {
                                 report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
                                 break;
                             }
@@ -1532,7 +1535,7 @@ pub async fn work_until_with_qps(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        s.close();
 
         for f in futures {
             let _ = f.await;
@@ -1592,14 +1595,14 @@ pub async fn work_until_with_qps_latency_correction(
     let client = Arc::new(client);
 
     if client.is_http2() {
-        let flag = Flag::new();
+        let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let flag = flag.clone();
+                let s = s.clone();
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
@@ -1610,18 +1613,19 @@ pub async fn work_until_with_qps_latency_correction(
                                         let report_tx = report_tx.clone();
                                         let rx = rx.clone();
                                         let mut client_state = client_state.clone();
-                                        let flag = flag.clone();
+                                        let s = s.clone();
                                         tokio::spawn(async move {
                                             while let Ok(start) = rx.recv_async().await {
-                                                let (is_cancel, is_reconnect) = work_http2_or_flag(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    Some(start),
-                                                    &flag,
-                                                )
-                                                .await;
+                                                let (is_cancel, is_reconnect) =
+                                                    work_http2_or_acquire(
+                                                        &client,
+                                                        &mut client_state,
+                                                        &report_tx,
+                                                        connection_time,
+                                                        Some(start),
+                                                        &s,
+                                                    )
+                                                    .await;
                                                 if is_cancel || is_reconnect {
                                                     return is_cancel;
                                                 }
@@ -1663,13 +1667,13 @@ pub async fn work_until_with_qps_latency_correction(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        s.close();
 
         for f in futures {
             let _ = f.await;
         }
     } else {
-        let flag = Flag::new();
+        let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1677,7 +1681,7 @@ pub async fn work_until_with_qps_latency_correction(
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let flag = flag.clone();
+                let s = s.clone();
                 tokio::spawn(async move {
                     while let Ok(start) = rx.recv_async().await {
                         tokio::select! {
@@ -1689,7 +1693,7 @@ pub async fn work_until_with_qps_latency_correction(
                                     break;
                                 }
                             }
-                            _ = &flag => {
+                            _ = s.acquire() => {
                                 report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
                                 break;
                             }
@@ -1700,7 +1704,7 @@ pub async fn work_until_with_qps_latency_correction(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        flag.signal();
+        s.close();
 
         for f in futures {
             let _ = f.await;
