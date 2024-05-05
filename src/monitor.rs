@@ -3,7 +3,6 @@ use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers},
     ExecutableCommand,
 };
-use flume::TryRecvError;
 use hyper::http;
 use ratatui::{
     backend::CrosstermBackend,
