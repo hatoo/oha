@@ -461,7 +461,7 @@ async fn main() -> anyhow::Result<()> {
                         } => {}
                     _ = tokio::signal::ctrl_c() => {
                         // User pressed ctrl-c.
-                        let _ = printer::print_result(&mut std::io::stdout(),print_mode,start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
+                        let _ = printer::print_result(&mut std::io::stdout(), print_mode,start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
                         std::process::exit(libc::EXIT_SUCCESS);
                     }
                 }
