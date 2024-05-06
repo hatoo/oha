@@ -801,7 +801,7 @@ async fn work_http2_once(
     if let Some(start_latency_correction) = start_latency_correction {
         set_start_latency_correction(&mut res, start_latency_correction);
     }
-    report_tx.send_async(res).await.unwrap();
+    report_tx.send(res).unwrap();
     (is_cancel, is_reconnect)
 }
 
@@ -917,7 +917,7 @@ pub async fn work(
                     while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                         let res = client.work_http1(&mut client_state).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1061,7 +1061,7 @@ pub async fn work_with_qps(
                     while let Ok(()) = rx.recv_async().await {
                         let res = client.work_http1(&mut client_state).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1208,7 +1208,7 @@ pub async fn work_with_qps_latency_correction(
                         let mut res = client.work_http1(&mut client_state).await;
                         set_start_latency_correction(&mut res, start);
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).unwrap();
                         if is_cancel {
                             break;
                         }
@@ -1335,8 +1335,7 @@ pub async fn work_until(
                     loop {
                         let res = client.work_http1(&mut client_state).await;
                         let is_cancel = is_cancel_error(&res);
-                        // TODO: Fix the case when aborted right here
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).unwrap();
                         if is_cancel || is_end.load(Relaxed) {
                             break;
                         }
@@ -1515,7 +1514,7 @@ pub async fn work_until_with_qps(
                     while let Ok(()) = rx.recv_async().await {
                         let res = client.work_http1(&mut client_state).await;
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).unwrap();
                         if is_cancel || is_end.load(Relaxed) {
                             break;
                         }
@@ -1694,7 +1693,7 @@ pub async fn work_until_with_qps_latency_correction(
                         let mut res = client.work_http1(&mut client_state).await;
                         set_start_latency_correction(&mut res, start);
                         let is_cancel = is_cancel_error(&res);
-                        report_tx.send_async(res).await.unwrap();
+                        report_tx.send(res).unwrap();
                         if is_cancel || is_end.load(Relaxed) {
                             break;
                         }
