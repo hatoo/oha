@@ -5,13 +5,19 @@ use hyper::{
 };
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
-use std::{pin::Pin, sync::Arc, time::Instant};
+use std::{
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, Ordering::Relaxed},
+        Arc,
+    },
+    time::Instant,
+};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::{
-    signal::Signal,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -1317,32 +1323,22 @@ pub async fn work_until(
             let _ = f.await;
         }
     } else {
-        let mut signal = Signal::new();
+        let is_end = Arc::new(AtomicBool::new(false));
 
         let futures = (0..n_connections)
             .map(|_| {
                 let client = client.clone();
                 let report_tx = report_tx.clone();
                 let mut client_state = ClientStateHttp1::default();
-                let signal = signal.recv_signal();
+                let is_end = is_end.clone();
                 tokio::spawn(async move {
-                    tokio::select! {
-                        // This is where HTTP1 loops to make all the requests for a given client
-                        _ = async {
-                            loop {
-                                let res = client.work_http1(&mut client_state).await;
-                                let is_cancel = is_cancel_error(&res);
-                                report_tx.send_async(res).await.unwrap();
-                                if is_cancel {
-                                    break;
-                                }
-                            }
-                        } => {},
-                        _ = signal => {
-                            report_tx
-                                .send_async(Err(ClientError::Deadline))
-                                .await
-                                .unwrap();
+                    loop {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_cancel_error(&res);
+                        // TODO: Fix the case when aborted right here
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel || is_end.load(Relaxed) {
+                            break;
                         }
                     }
                 })
@@ -1350,10 +1346,18 @@ pub async fn work_until(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        signal.signal();
+        is_end.store(true, Relaxed);
 
         for f in futures {
-            let _ = f.await;
+            f.abort();
+            if let Err(e) = f.await {
+                if e.is_cancelled() {
+                    report_tx
+                        .send_async(Err(ClientError::Deadline))
+                        .await
+                        .unwrap();
+                }
+            }
         }
     };
 }
@@ -1498,7 +1502,7 @@ pub async fn work_until_with_qps(
             let _ = f.await;
         }
     } else {
-        let mut signal = Signal::new();
+        let is_end = Arc::new(AtomicBool::new(false));
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1506,21 +1510,14 @@ pub async fn work_until_with_qps(
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let signal = signal.recv_signal();
+                let is_end = is_end.clone();
                 tokio::spawn(async move {
-                    tokio::select! {
-                        _ = async {
-                            while let Ok(()) = rx.recv_async().await {
-                                let res = client.work_http1(&mut client_state).await;
-                                let is_cancel = is_cancel_error(&res);
-                                report_tx.send_async(res).await.unwrap();
-                                if is_cancel {
-                                    break;
-                                }
-                            }
-                        } => {},
-                        _ = signal => {
-                            report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
+                    while let Ok(()) = rx.recv_async().await {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_cancel_error(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel || is_end.load(Relaxed) {
+                            break;
                         }
                     }
                 })
@@ -1528,10 +1525,18 @@ pub async fn work_until_with_qps(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        signal.signal();
+        is_end.store(true, Relaxed);
 
         for f in futures {
-            let _ = f.await;
+            f.abort();
+            if let Err(e) = f.await {
+                if e.is_cancelled() {
+                    report_tx
+                        .send_async(Err(ClientError::Deadline))
+                        .await
+                        .unwrap();
+                }
+            }
         }
     }
 }
@@ -1675,7 +1680,7 @@ pub async fn work_until_with_qps_latency_correction(
             let _ = f.await;
         }
     } else {
-        let mut signal = Signal::new();
+        let is_end = Arc::new(AtomicBool::new(false));
 
         let futures = (0..n_connections)
             .map(|_| {
@@ -1683,22 +1688,15 @@ pub async fn work_until_with_qps_latency_correction(
                 let mut client_state = ClientStateHttp1::default();
                 let report_tx = report_tx.clone();
                 let rx = rx.clone();
-                let signal = signal.recv_signal();
+                let is_end = is_end.clone();
                 tokio::spawn(async move {
-                    tokio::select! {
-                        _ = async {
-                            while let Ok(start) = rx.recv_async().await {
-                                let mut res = client.work_http1(&mut client_state).await;
-                                set_start_latency_correction(&mut res, start);
-                                let is_cancel = is_cancel_error(&res);
-                                report_tx.send_async(res).await.unwrap();
-                                if is_cancel {
-                                    break;
-                                }
-                            }
-                        } => {}
-                        _ = signal => {
-                            report_tx.send_async(Err(ClientError::Deadline)).await.unwrap();
+                    while let Ok(start) = rx.recv_async().await {
+                        let mut res = client.work_http1(&mut client_state).await;
+                        set_start_latency_correction(&mut res, start);
+                        let is_cancel = is_cancel_error(&res);
+                        report_tx.send_async(res).await.unwrap();
+                        if is_cancel || is_end.load(Relaxed) {
+                            break;
                         }
                     }
                 })
@@ -1706,10 +1704,18 @@ pub async fn work_until_with_qps_latency_correction(
             .collect::<Vec<_>>();
 
         tokio::time::sleep_until(dead_line.into()).await;
-        signal.signal();
+        is_end.store(true, Relaxed);
 
         for f in futures {
-            let _ = f.await;
+            f.abort();
+            if let Err(e) = f.await {
+                if e.is_cancelled() {
+                    report_tx
+                        .send_async(Err(ClientError::Deadline))
+                        .await
+                        .unwrap();
+                }
+            }
         }
     }
 }
