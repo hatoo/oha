@@ -225,6 +225,9 @@
                 "max": {
                     "type": "number"
                 },
+                "min": {
+                    "type": "number"
+                },
                 "percentiles": {
                     "type": "object",
                     "properties": {
@@ -273,6 +276,7 @@
                 "mean",
                 "stddev",
                 "max",
+                "min",
                 "percentiles"
             ]
         },

@@ -1,5 +1,5 @@
 use crate::result_data::ResultData;
-use average::{Max, Variance};
+use average::{Max, Min, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
 use hyper::http::{self, StatusCode};
@@ -161,6 +161,7 @@ fn print_json<W: Write>(
         mean: f64,
         stddev: f64,
         max: f64,
+        min: f64,
         percentiles: BTreeMap<String, f64>,
     }
 
@@ -310,6 +311,7 @@ fn print_json<W: Write>(
         mean: variance.mean(),
         stddev: variance.sample_variance().sqrt(),
         max: rps.iter().collect::<Max>().max(),
+        min: rps.iter().collect::<Min>().min(),
         percentiles: rps_percentiles,
     };
 
