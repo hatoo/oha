@@ -217,7 +217,10 @@
                     "type": "number"
                 },
                 "stddev": {
-                    "type": "number"
+                    "type": [
+                        "number",
+                        "null"
+                    ]
                 },
                 "max": {
                     "type": "number"

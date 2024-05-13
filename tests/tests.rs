@@ -722,14 +722,14 @@ async fn test_json_schema() {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     const SCHEMA: &str = include_str!("../schema.json");
-    let schema: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
-    let schema = jsonschema::JSONSchema::compile(&schema).unwrap();
+    let schema_value: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
+    let schema = jsonschema::JSONSchema::compile(&schema_value).unwrap();
 
     let output_json: String = String::from_utf8(
         tokio::task::spawn_blocking(move || {
             Command::cargo_bin("oha")
                 .unwrap()
-                .args(["-n", "100", "--no-tui", "-j"])
+                .args(["-n", "10", "--no-tui", "-j"])
                 .arg(format!("http://127.0.0.1:{port}/"))
                 .assert()
                 .get_output()
@@ -745,7 +745,7 @@ async fn test_json_schema() {
         tokio::task::spawn_blocking(move || {
             Command::cargo_bin("oha")
                 .unwrap()
-                .args(["-n", "100", "--no-tui", "-j", "--stats-success-breakdown"])
+                .args(["-n", "10", "--no-tui", "-j", "--stats-success-breakdown"])
                 .arg(format!("http://127.0.0.1:{port}/"))
                 .assert()
                 .get_output()
@@ -761,6 +761,17 @@ async fn test_json_schema() {
     let value_stats_success_breakdown: serde_json::Value =
         serde_json::from_str(&output_json_stats_success_breakdown).unwrap();
 
-    assert!(schema.is_valid(&value));
-    assert!(schema.is_valid(&value_stats_success_breakdown));
+    if let Err(errors) = schema.validate(&value) {
+        for error in errors {
+            eprintln!("{}", error);
+        }
+        panic!("JSON schema validation failed\n{output_json}");
+    }
+
+    if let Err(errors) = schema.validate(&value_stats_success_breakdown) {
+        for error in errors {
+            eprintln!("{}", error);
+        }
+        panic!("JSON schema validation failed\n{output_json_stats_success_breakdown}");
+    }/* ?? */;
 }
