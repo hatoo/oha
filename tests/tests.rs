@@ -703,8 +703,8 @@ async fn test_unix_socket() {
     rx.try_recv().unwrap();
 }
 
-#[tokio::test]
-async fn test_google() {
+#[test]
+fn test_google() {
     Command::cargo_bin("oha")
         .unwrap()
         .args(["-n", "1", "--no-tui"])
@@ -712,4 +712,55 @@ async fn test_google() {
         .assert()
         .success()
         .stdout(predicates::str::contains("[200] 1 responses"));
+}
+
+#[tokio::test]
+async fn test_json_schema() {
+    let app = Router::new().route("/", get(|| async move { "Hello World" }));
+
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
+
+    const SCHEMA: &str = include_str!("../schema.json");
+    let schema: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
+    let schema = jsonschema::JSONSchema::compile(&schema).unwrap();
+
+    let output_json: String = String::from_utf8(
+        tokio::task::spawn_blocking(move || {
+            Command::cargo_bin("oha")
+                .unwrap()
+                .args(["-n", "100", "--no-tui", "-j"])
+                .arg(format!("http://127.0.0.1:{port}/"))
+                .assert()
+                .get_output()
+                .stdout
+                .clone()
+        })
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output_json_stats_success_breakdown: String = String::from_utf8(
+        tokio::task::spawn_blocking(move || {
+            Command::cargo_bin("oha")
+                .unwrap()
+                .args(["-n", "100", "--no-tui", "-j", "--stats-success-breakdown"])
+                .arg(format!("http://127.0.0.1:{port}/"))
+                .assert()
+                .get_output()
+                .stdout
+                .clone()
+        })
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+
+    let value: serde_json::Value = serde_json::from_str(&output_json).unwrap();
+    let value_stats_success_breakdown: serde_json::Value =
+        serde_json::from_str(&output_json_stats_success_breakdown).unwrap();
+
+    assert!(schema.is_valid(&value));
+    assert!(schema.is_valid(&value_stats_success_breakdown));
 }

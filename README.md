@@ -134,6 +134,11 @@ Options:
   -V, --version                       Print version
 ```
 
+# JSON output
+
+`oha` prints JSON output when `-j` option is set.
+The schema of JSON output is defined in [schema.json](./schema.json).
+
 # Benchmark
 
 ## Performance Comparison
