@@ -42,7 +42,7 @@ humantime = "2.0.0"
 libc = "0.2.147"
 serde = { version = "1.0.142", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "1.0.59"
+thiserror = "1.0.60"
 tokio = { version = "1.14.0", features = ["full"] }
 ratatui = { version = "0.26.1", default-features = false, features = [
     "crossterm",
