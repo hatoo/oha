@@ -1,0 +1,357 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "description": "JSON schema for the output of the `oha -j`",
+    "type": "object",
+    "properties": {
+        "summary": {
+            "description": "Important statistics",
+            "type": "object",
+            "properties": {
+                "successRate": {
+                    "description": "The number of success requests / All requests which isn't includes deadline",
+                    "type": "number"
+                },
+                "total": {
+                    "description": "Total duration in seconds",
+                    "type": "number"
+                },
+                "slowest": {
+                    "description": "The slowest request duration in seconds",
+                    "type": "number"
+                },
+                "fastest": {
+                    "description": "The fastest request duration in seconds",
+                    "type": "number"
+                },
+                "average": {
+                    "description": "The average request duration in seconds",
+                    "type": "number"
+                },
+                "requestsPerSec": {
+                    "description": "The number of requests per second",
+                    "type": "number"
+                },
+                "totalData": {
+                    "description": "Total data of HTTP bodies in bytes",
+                    "type": "integer"
+                },
+                "sizePerRequest": {
+                    "description": "The average size of HTTP bodies in bytes",
+                    "type": "integer"
+                },
+                "sizePerSec": {
+                    "description": "The average size of HTTP bodies per second in bytes",
+                    "type": "number"
+                }
+            },
+            "required": [
+                "successRate",
+                "total",
+                "slowest",
+                "fastest",
+                "average",
+                "requestsPerSec",
+                "totalData",
+                "sizePerRequest",
+                "sizePerSec"
+            ]
+        },
+        "responseTimeHistogram": {
+            "description": "The histogram of response time in seconds. The key is the response time in seconds and the value is the number of requests",
+            "type": "object",
+            "additionalProperties": {
+                "string": "integer"
+            }
+        },
+        "latencyPercentiles": {
+            "description": "The latency percentiles in seconds",
+            "type": "object",
+            "properties": {
+                "p10": {
+                    "type": "number"
+                },
+                "p25": {
+                    "type": "number"
+                },
+                "p50": {
+                    "type": "number"
+                },
+                "p75": {
+                    "type": "number"
+                },
+                "p90": {
+                    "type": "number"
+                },
+                "p95": {
+                    "type": "number"
+                },
+                "p99": {
+                    "type": "number"
+                },
+                "p99.9": {
+                    "type": "number"
+                },
+                "p99.99": {
+                    "type": "number"
+                }
+            },
+            "required": [
+                "p10",
+                "p25",
+                "p50",
+                "p75",
+                "p90",
+                "p95",
+                "p99",
+                "p99.9",
+                "p99.99"
+            ]
+        },
+        "responseTimeHistogramSuccessful": {
+            "description": "Only present if `--stats-success-breakdown` argument is passed. The histogram of response time in seconds for successful requests. The key is the response time in seconds and the value is the number of requests",
+            "type": "object",
+            "additionalProperties": {
+                "string": "integer"
+            }
+        },
+        "latencyPercentileSuccessful": {
+            "description": "Only present if `--stats-success-breakdown` argument is passed. The latency percentiles in seconds for successful requests",
+            "type": "object",
+            "properties": {
+                "p10": {
+                    "type": "number"
+                },
+                "p25": {
+                    "type": "number"
+                },
+                "p50": {
+                    "type": "number"
+                },
+                "p75": {
+                    "type": "number"
+                },
+                "p90": {
+                    "type": "number"
+                },
+                "p95": {
+                    "type": "number"
+                },
+                "p99": {
+                    "type": "number"
+                },
+                "p99.9": {
+                    "type": "number"
+                },
+                "p99.99": {
+                    "type": "number"
+                }
+            },
+            "required": [
+                "p10",
+                "p25",
+                "p50",
+                "p75",
+                "p90",
+                "p95",
+                "p99",
+                "p99.9",
+                "p99.99"
+            ]
+        },
+        "responseTimeHistogramNotSuccessful": {
+            "description": "Only present if `--stats-success-breakdown` argument is passed. The histogram of response time in seconds for not successful requests. The key is the response time in seconds and the value is the number of requests",
+            "type": "object",
+            "additionalProperties": {
+                "string": "integer"
+            }
+        },
+        "latencyPercentileNotSuccessful": {
+            "description": "Only present if `--stats-success-breakdown` argument is passed. The latency percentiles in seconds for not successful requests",
+            "type": "object",
+            "properties": {
+                "p10": {
+                    "type": "number"
+                },
+                "p25": {
+                    "type": "number"
+                },
+                "p50": {
+                    "type": "number"
+                },
+                "p75": {
+                    "type": "number"
+                },
+                "p90": {
+                    "type": "number"
+                },
+                "p95": {
+                    "type": "number"
+                },
+                "p99": {
+                    "type": "number"
+                },
+                "p99.9": {
+                    "type": "number"
+                },
+                "p99.99": {
+                    "type": "number"
+                }
+            },
+            "required": [
+                "p10",
+                "p25",
+                "p50",
+                "p75",
+                "p90",
+                "p95",
+                "p99",
+                "p99.9",
+                "p99.99"
+            ]
+        },
+        "rps": {
+            "description": "The statistics for requests per second. Note: the way of calculating rps over time isn't obvious, see source code for details.",
+            "type": "object",
+            "properties": {
+                "mean": {
+                    "type": "number"
+                },
+                "stddev": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "max": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
+                },
+                "percentiles": {
+                    "type": "object",
+                    "properties": {
+                        "p10": {
+                            "type": "number"
+                        },
+                        "p25": {
+                            "type": "number"
+                        },
+                        "p50": {
+                            "type": "number"
+                        },
+                        "p75": {
+                            "type": "number"
+                        },
+                        "p90": {
+                            "type": "number"
+                        },
+                        "p95": {
+                            "type": "number"
+                        },
+                        "p99": {
+                            "type": "number"
+                        },
+                        "p99.9": {
+                            "type": "number"
+                        },
+                        "p99.99": {
+                            "type": "number"
+                        }
+                    },
+                    "required": [
+                        "p10",
+                        "p25",
+                        "p50",
+                        "p75",
+                        "p90",
+                        "p95",
+                        "p99",
+                        "p99.9",
+                        "p99.99"
+                    ]
+                }
+            },
+            "required": [
+                "mean",
+                "stddev",
+                "max",
+                "min",
+                "percentiles"
+            ]
+        },
+        "details": {
+            "description": "The details of connection time. Note: `oha` uses keep-alive connections in default. So, the connection time may added only for the first request.",
+            "type": "object",
+            "properties": {
+                "DNSDialup": {
+                    "description": "The time of DNS resolution + TCP handshake in seconds",
+                    "type": "object",
+                    "properties": {
+                        "average": {
+                            "type": "number"
+                        },
+                        "fastest": {
+                            "type": "number"
+                        },
+                        "slowest": {
+                            "type": "number"
+                        }
+                    },
+                    "required": [
+                        "average",
+                        "fastest",
+                        "slowest"
+                    ]
+                },
+                "DNSLookup": {
+                    "description": "The time of DNS resolution in seconds",
+                    "type": "object",
+                    "properties": {
+                        "average": {
+                            "type": "number"
+                        },
+                        "fastest": {
+                            "type": "number"
+                        },
+                        "slowest": {
+                            "type": "number"
+                        }
+                    },
+                    "required": [
+                        "average",
+                        "fastest",
+                        "slowest"
+                    ]
+                }
+            },
+            "required": [
+                "DNSDialup",
+                "DNSLookup"
+            ]
+        },
+        "statusCodeDistribution": {
+            "description": "The distribution of status codes. The key is the status code and the value is the number of requests",
+            "type": "object",
+            "additionalProperties": {
+                "string": "integer"
+            }
+        },
+        "errorDistribution": {
+            "description": "The distribution of errors. The key is the error message and the value is the number of errors. Note: the error message is from internal libraries so the detail may change in future.",
+            "type": "object",
+            "additionalProperties": {
+                "string": "integer"
+            }
+        }
+    },
+    "required": [
+        "summary",
+        "responseTimeHistogram",
+        "latencyPercentiles",
+        "rps",
+        "details",
+        "statusCodeDistribution",
+        "errorDistribution"
+    ]
+}
