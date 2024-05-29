@@ -671,7 +671,7 @@ async fn test_unix_socket() {
             actix_web::App::new().service(actix_web::web::resource("/").to(move || {
                 let tx = tx.clone();
                 async move {
-                    tx.send_async(()).await.unwrap();
+                    tx.send(()).unwrap();
                     "Hello World"
                 }
             }))
