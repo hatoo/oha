@@ -942,28 +942,25 @@ pub async fn work_with_qps(
 ) {
     let (tx, rx) = flume::unbounded();
 
-    match query_limit {
-        QueryLimit::Qps(qps) => {
-            tokio::spawn(async move {
+    let work_queue = async move {
+        match query_limit {
+            QueryLimit::Qps(qps) => {
                 let start = std::time::Instant::now();
                 for i in 0..n_tasks {
                     tokio::time::sleep_until(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
-                    tx.send_async(()).await.unwrap();
+                    tx.send(())?;
                 }
-                // tx gone
-            });
-        }
-        QueryLimit::Burst(duration, rate) => {
-            tokio::spawn(async move {
+            }
+            QueryLimit::Burst(duration, rate) => {
                 let mut n = 0;
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        tx.send_async(()).await.unwrap();
+                        tx.send(())?;
                     }
                     n += rate;
                 }
@@ -971,13 +968,15 @@ pub async fn work_with_qps(
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
-                        tx.send_async(()).await.unwrap();
+                        tx.send(())?;
                     }
                 }
-                // tx gone
-            });
+            }
         }
-    }
+        // tx gone
+        drop(tx);
+        Ok::<(), flume::SendError<_>>(())
+    };
 
     let client = Arc::new(client);
 
@@ -1047,6 +1046,8 @@ pub async fn work_with_qps(
                 })
             })
             .collect::<Vec<_>>();
+
+        work_queue.await.unwrap();
         for f in futures {
             let _ = f.await;
         }
@@ -1069,6 +1070,8 @@ pub async fn work_with_qps(
                 })
             })
             .collect::<Vec<_>>();
+
+        work_queue.await.unwrap();
         for f in futures {
             let _ = f.await;
         }
@@ -1086,29 +1089,26 @@ pub async fn work_with_qps_latency_correction(
 ) {
     let (tx, rx) = flume::unbounded();
 
-    match query_limit {
-        QueryLimit::Qps(qps) => {
-            tokio::spawn(async move {
+    let work_queue = async move {
+        match query_limit {
+            QueryLimit::Qps(qps) => {
                 let start = std::time::Instant::now();
                 for i in 0..n_tasks {
                     tokio::time::sleep_until(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
-                    tx.send_async(std::time::Instant::now()).await.unwrap();
+                    tx.send(std::time::Instant::now())?;
                 }
-                // tx gone
-            });
-        }
-        QueryLimit::Burst(duration, rate) => {
-            tokio::spawn(async move {
+            }
+            QueryLimit::Burst(duration, rate) => {
                 let mut n = 0;
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     for _ in 0..rate {
-                        tx.send_async(now).await.unwrap();
+                        tx.send(now)?;
                     }
                     n += rate;
                 }
@@ -1117,13 +1117,16 @@ pub async fn work_with_qps_latency_correction(
                     tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     for _ in 0..n_tasks - n {
-                        tx.send_async(now).await.unwrap();
+                        tx.send(now)?;
                     }
                 }
-                // tx gone
-            });
+            }
         }
-    }
+
+        // tx gone
+        drop(tx);
+        Ok::<(), flume::SendError<_>>(())
+    };
 
     let client = Arc::new(client);
 
@@ -1193,6 +1196,8 @@ pub async fn work_with_qps_latency_correction(
                 })
             })
             .collect::<Vec<_>>();
+
+        work_queue.await.unwrap();
         for f in futures {
             let _ = f.await;
         }
@@ -1216,6 +1221,8 @@ pub async fn work_with_qps_latency_correction(
                 })
             })
             .collect::<Vec<_>>();
+
+        work_queue.await.unwrap();
         for f in futures {
             let _ = f.await;
         }
@@ -1383,9 +1390,7 @@ pub async fn work_until_with_qps(
                         (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
                     )
                     .await;
-                    if tx.send_async(()).await.is_err() {
-                        break;
-                    }
+                    let _ = tx.send(());
                 }
                 // tx gone
             });
@@ -1402,7 +1407,7 @@ pub async fn work_until_with_qps(
 
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        tx.send_async(()).await.unwrap();
+                        let _ = tx.send(());
                     }
                 }
                 // tx gone
@@ -1563,9 +1568,7 @@ pub async fn work_until_with_qps_latency_correction(
                     if now > dead_line {
                         break;
                     }
-                    if tx.send_async(now).await.is_err() {
-                        break;
-                    }
+                    let _ = tx.send(now);
                 }
                 // tx gone
             });
@@ -1581,7 +1584,7 @@ pub async fn work_until_with_qps_latency_correction(
                     }
 
                     for _ in 0..rate {
-                        tx.send_async(now).await.unwrap();
+                        let _ = tx.send(now);
                     }
                 }
                 // tx gone
