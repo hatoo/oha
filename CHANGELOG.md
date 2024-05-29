@@ -1,6 +1,10 @@
 # Unreleased
 
-# 1.4.4 (2024-06-20)
+# 1.4.5 (2024-05-29)
+
+- Some performance improvements
+
+# 1.4.4 (2024-04-20)
 
 - support Termux #464
 
