@@ -468,7 +468,6 @@ async fn main() -> anyhow::Result<()> {
             }
             .map(Ok),
         )
-        .boxed()
     } else {
         // Spawn monitor future which draws realtime tui
         tokio::spawn(
@@ -486,7 +485,6 @@ async fn main() -> anyhow::Result<()> {
             }
             .monitor(),
         )
-        .boxed()
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {
