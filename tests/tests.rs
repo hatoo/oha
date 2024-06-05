@@ -763,14 +763,14 @@ async fn test_json_schema() {
 
     if let Err(errors) = schema.validate(&value) {
         for error in errors {
-            eprintln!("{}", error);
+            eprintln!("{error}");
         }
         panic!("JSON schema validation failed\n{output_json}");
     }
 
     if let Err(errors) = schema.validate(&value_stats_success_breakdown) {
         for error in errors {
-            eprintln!("{}", error);
+            eprintln!("{error}");
         }
         panic!("JSON schema validation failed\n{output_json_stats_success_breakdown}");
     }/* ?? */;

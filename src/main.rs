@@ -648,10 +648,10 @@ fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
     #[cfg(unix)]
     if env::var("TERMUX_VERSION").is_ok() {
         let prefix = env::var("PREFIX")?;
-        let path = format!("{}/etc/resolv.conf", prefix);
-        let conf_data = std::fs::read(&path).context(format!("DNS: failed to load {}", path))?;
+        let path = format!("{prefix}/etc/resolv.conf");
+        let conf_data = std::fs::read(&path).context(format!("DNS: failed to load {path}"))?;
         return hickory_resolver::system_conf::parse_resolv_conf(conf_data)
-            .context(format!("DNS: failed to parse {}", path));
+            .context(format!("DNS: failed to parse {path}"));
     }
 
     hickory_resolver::system_conf::read_system_conf()
