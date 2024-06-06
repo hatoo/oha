@@ -371,7 +371,7 @@ fn print_summary<W: Write>(
         w,
         "{}",
         style.success_rate(
-            &format!("  Success rate:\t{:.2}%", success_rate),
+            &format!("  Success rate:\t{success_rate:.2}%"),
             success_rate
         )
     )?;
@@ -597,7 +597,7 @@ fn print_distribution<W: Write>(
         writeln!(
             w,
             "{}",
-            style.latency_distribution(&format!("  {:.2}% in {:.4} secs", p, v), *v)
+            style.latency_distribution(&format!("  {p:.2}% in {v:.4} secs"), *v)
         )?;
     }
 

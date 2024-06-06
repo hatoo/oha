@@ -61,7 +61,7 @@ mod tests {
     fn test_url_generator_dynamic() {
         let path_regex = "/[a-z][a-z][0-9]";
         let url_generator = UrlGenerator::new_dynamic(
-            RandRegex::compile(&format!(r"http://127\.0\.0\.1{}", path_regex), 4).unwrap(),
+            RandRegex::compile(&format!(r"http://127\.0\.0\.1{path_regex}"), 4).unwrap(),
         );
         let url = url_generator.generate(&mut thread_rng()).unwrap();
         assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
