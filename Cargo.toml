@@ -64,7 +64,7 @@ rand = "0.8"
 hickory-resolver = "0.24.0"
 rand_regex = "0.17.0"
 regex-syntax = "0.8.2"
-url = "2.4.0"
+url = "2.5.1"
 pin-project-lite = "0.2.13"
 http-body-util = "0.1.0"
 hyper-util = { version = "0.1.1", features = ["tokio"] }
