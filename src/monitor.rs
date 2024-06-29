@@ -431,6 +431,7 @@ impl Monitor {
                         modifiers: KeyModifiers::CONTROL,
                         ..
                     }) => {
+                        drop(raw_mode);
                         let _ = crate::printer::print_result(
                             &mut std::io::stdout(),
                             self.print_mode,
@@ -440,7 +441,6 @@ impl Monitor {
                             self.disable_color,
                             self.stats_success_breakdown,
                         );
-                        drop(raw_mode);
                         std::process::exit(libc::EXIT_SUCCESS);
                     }
                     _ => (),
