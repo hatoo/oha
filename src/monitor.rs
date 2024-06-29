@@ -64,11 +64,28 @@ pub struct Monitor {
     pub stats_success_breakdown: bool,
 }
 
-impl Monitor {
-    pub async fn monitor(self) -> Result<ResultData, std::io::Error> {
+struct IntoRawMode;
+
+impl IntoRawMode {
+    pub fn new() -> Result<Self, std::io::Error> {
         crossterm::terminal::enable_raw_mode()?;
         io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
         io::stdout().execute(crossterm::cursor::Hide)?;
+        Ok(IntoRawMode)
+    }
+}
+
+impl Drop for IntoRawMode {
+    fn drop(&mut self) {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
+        let _ = io::stdout().execute(crossterm::cursor::Show);
+    }
+}
+
+impl Monitor {
+    pub async fn monitor(self) -> Result<ResultData, std::io::Error> {
+        let raw_mode = IntoRawMode::new()?;
 
         let mut terminal = {
             let backend = CrosstermBackend::new(io::stdout());
@@ -414,9 +431,6 @@ impl Monitor {
                         modifiers: KeyModifiers::CONTROL,
                         ..
                     }) => {
-                        std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
-                        crossterm::terminal::disable_raw_mode()?;
-                        std::io::stdout().execute(crossterm::cursor::Show)?;
                         let _ = crate::printer::print_result(
                             &mut std::io::stdout(),
                             self.print_mode,
@@ -426,6 +440,7 @@ impl Monitor {
                             self.disable_color,
                             self.stats_success_breakdown,
                         );
+                        drop(raw_mode);
                         std::process::exit(libc::EXIT_SUCCESS);
                     }
                     _ => (),
@@ -438,10 +453,6 @@ impl Monitor {
                 tokio::time::sleep(per_frame - elapsed).await;
             }
         }
-
-        std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen)?;
-        crossterm::terminal::disable_raw_mode()?;
-        std::io::stdout().execute(crossterm::cursor::Show)?;
         Ok(all)
     }
 }
