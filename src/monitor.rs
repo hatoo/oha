@@ -58,7 +58,7 @@ pub struct Monitor {
     pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
     // When started
     pub start: std::time::Instant,
-    // Frame per scond of TUI
+    // Frame per second of TUI
     pub fps: usize,
     pub disable_color: bool,
     pub stats_success_breakdown: bool,
