@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.77
+ARG RUST_VERSION=1.79
 FROM docker.io/library/rust:${RUST_VERSION} AS build
 WORKDIR /app
 COPY . /app
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN cargo install --path .
+RUN strip /usr/local/cargo/bin/oha
 
 # Target image
 FROM registry.fedoraproject.org/fedora-minimal
