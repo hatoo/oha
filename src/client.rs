@@ -257,7 +257,8 @@ impl Stream {
         }
     }
     async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
-        let builder = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
+        let mut builder = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
+        builder.adaptive_window(true);
 
         match self {
             Stream::Tcp(stream) => {
