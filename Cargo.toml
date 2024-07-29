@@ -33,7 +33,7 @@ vsock = ["dep:tokio-vsock"]
 anyhow = "1.0.86"
 average = "0.15.1"
 byte-unit = "5.1.4"
-clap = { version = "4.5.9", features = ["derive"] }
+clap = { version = "4.5.11", features = ["derive"] }
 crossterm = "0.27"
 float-ord = "0.3.2"
 flume = "0.11"
