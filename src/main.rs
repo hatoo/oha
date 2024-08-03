@@ -189,7 +189,10 @@ Note: If qps is specified, burst will be ignored",
         long = "stats-success-breakdown"
     )]
     stats_success_breakdown: bool,
-    #[clap(help = "sqlite datebase url E.G test.db", long = "db-url")]
+    #[clap(
+        help = "Write succeeded requests to sqlite database url E.G test.db",
+        long = "db-url"
+    )]
     db_url: Option<String>,
 }
 
@@ -658,6 +661,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     if let Some(db_url) = opts.db_url {
+        eprintln!("Storing results to {db_url}");
         let _ = db::store(&db_url, start, res.success());
     }
 
