@@ -87,6 +87,11 @@ Note: If qps is specified, burst will be ignored",
     )]
     max_repeat: u32,
     #[clap(
+        help = "Dump target Urls <DUMP_URLS> times to debug --rand-regex-url",
+        long
+    )]
+    dump_urls: Option<usize>,
+    #[clap(
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
     )]
@@ -283,6 +288,15 @@ async fn main() -> anyhow::Result<()> {
     } else {
         UrlGenerator::new_static(Url::parse(&opts.url)?)
     };
+
+    if let Some(n) = opts.dump_urls {
+        let mut rng = thread_rng();
+        for _ in 0..n {
+            let url = url_generator.generate(&mut rng)?;
+            println!("{}", url);
+        }
+        return Ok(());
+    }
 
     let url = url_generator.generate(&mut thread_rng())?;
 
