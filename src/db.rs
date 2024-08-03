@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::client::{ClientError, RequestResult};
+use crate::client::RequestResult;
 
 fn create_db(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.execute(
@@ -29,7 +29,7 @@ pub fn store(
 
     let affected_rows =
         request_records
-            .into_iter()
+            .iter()
             .map(|req| {
                 conn.execute(
           "INSERT INTO loadtest (url, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4)",
