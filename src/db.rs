@@ -4,11 +4,13 @@ use crate::client::RequestResult;
 
 fn create_db(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.execute(
-        "CREATE TABLE loadtest (
-            url TEXT NOT NULL,
-            duration REAL,
-            status INTEGER,
-            len_bytes INTEGER
+        "CREATE TABLE oha (
+            start REAL NOT NULL,
+            start_latency_correction REAL,
+            end REAL NOT NULL,
+            duration REAL NOT NULL,
+            status INTEGER NOT NULL,
+            len_bytes INTEGER NOT NULL
         )",
         (),
     )
@@ -16,27 +18,24 @@ fn create_db(conn: &Connection) -> Result<usize, rusqlite::Error> {
 
 pub fn store(
     db_url: &str,
-    req_url: String,
+    start: std::time::Instant,
     request_records: &[RequestResult],
 ) -> Result<usize, rusqlite::Error> {
-    let conn = Connection::open(db_url)?;
+    let mut conn = Connection::open(db_url)?;
     _ = create_db(&conn);
 
-    let request_url = req_url
-        .replace("https", "")
-        .replace("http", "")
-        .replace("://", "");
-
+    let t = conn.transaction()?;
     let affected_rows =
         request_records
             .iter()
             .map(|req| {
-                conn.execute(
-          "INSERT INTO loadtest (url, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4)",
-        (&request_url, req.duration().as_secs_f32(), req.status.as_u16() as u32, req.len_bytes),
+                t.execute(
+          "INSERT INTO oha (start, start_latency_correction, end, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        ((req.start - start).as_secs_f64(), req.start_latency_correction.map(|d| (d-start).as_secs_f64()), (req.end - start).as_secs_f64(), req.duration().as_secs_f64(), req.status.as_u16() as i64, req.len_bytes)
         ).unwrap_or(0)
             })
             .sum();
+    t.commit()?;
 
     Ok(affected_rows)
 }
@@ -47,8 +46,7 @@ mod test_db {
 
     #[test]
     fn test_store() {
-        let conn = Connection::open_in_memory().unwrap();
-        let _ = create_db(&conn);
+        let start = std::time::Instant::now();
         let test_val = RequestResult {
             status: hyper::StatusCode::OK,
             len_bytes: 100,
@@ -58,8 +56,7 @@ mod test_db {
             end: std::time::Instant::now(),
         };
         let test_vec = vec![test_val.clone(), test_val.clone()];
-        let result = store("test.db", "test.com".to_owned(), &test_vec);
+        let result = store(":memory:", start, &test_vec);
         assert_eq!(result.unwrap(), 2);
-        std::fs::remove_file("test.db").unwrap();
     }
 }

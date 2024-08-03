@@ -658,7 +658,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     if let Some(db_url) = opts.db_url {
-        let _ = db::store(&db_url, opts.url, res.success());
+        let _ = db::store(&db_url, start, res.success());
     }
 
     Ok(())
