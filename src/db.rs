@@ -25,16 +25,22 @@ pub fn store(
     create_db(&conn)?;
 
     let t = conn.transaction()?;
-    let affected_rows =
-        request_records
-            .iter()
-            .map(|req| {
-                t.execute(
-          "INSERT INTO oha (start, start_latency_correction, end, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        ((req.start - start).as_secs_f64(), req.start_latency_correction.map(|d| (d-start).as_secs_f64()), (req.end - start).as_secs_f64(), req.duration().as_secs_f64(), req.status.as_u16() as i64, req.len_bytes)
-        ).unwrap_or(0)
-            })
-            .sum();
+    let mut affected_rows = 0;
+
+    for request in request_records {
+        affected_rows += t.execute(
+            "INSERT INTO oha (start, start_latency_correction, end, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (
+                (request.start - start).as_secs_f64(),
+                request.start_latency_correction.map(|d| (d - start).as_secs_f64()),
+                (request.end - start).as_secs_f64(),
+                request.duration().as_secs_f64(),
+                request.status.as_u16() as i64,
+                request.len_bytes,
+            ),
+        )?;
+    }
+
     t.commit()?;
 
     Ok(affected_rows)
