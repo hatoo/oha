@@ -22,7 +22,7 @@ pub fn store(
     request_records: &[RequestResult],
 ) -> Result<usize, rusqlite::Error> {
     let mut conn = Connection::open(db_url)?;
-    _ = create_db(&conn);
+    create_db(&conn)?;
 
     let t = conn.transaction()?;
     let affected_rows =
