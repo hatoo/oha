@@ -52,7 +52,7 @@ jobs:
           args: --release --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
           strip: true
       - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
+        uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}

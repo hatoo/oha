@@ -47,7 +47,7 @@ jobs:
       - uses: oven-sh/setup-bun@v1
       - run: bun run pgo.js --target ${{ matrix.target }} ${{ matrix.additional_args }}
       - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
+        uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/${{ matrix.target }}/pgo/${{ matrix.artifact_name }}
