@@ -56,10 +56,18 @@ struct Opts {
     #[clap(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
 When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
+You can change this behavior with `-w` option.
 Examples: -z 10s -z 3m.",
         short = 'z'
     )]
     duration: Option<Duration>,
+    #[clap(
+        help = "When the duration is reached, ongoing requests are waited",
+        short,
+        long,
+        default_value = "false"
+    )]
+    wait_ongoing_requests_after_deadline: bool,
     #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
     #[arg(
@@ -516,6 +524,7 @@ async fn main() -> anyhow::Result<()> {
                         start + duration.into(),
                         opts.n_connections,
                         opts.n_http2_parallel,
+                        opts.wait_ongoing_requests_after_deadline,
                     )
                     .await
                 }
@@ -532,6 +541,7 @@ async fn main() -> anyhow::Result<()> {
                             start + duration.into(),
                             opts.n_connections,
                             opts.n_http2_parallel,
+                            opts.wait_ongoing_requests_after_deadline,
                         )
                         .await
                     } else {
@@ -546,6 +556,7 @@ async fn main() -> anyhow::Result<()> {
                             start + duration.into(),
                             opts.n_connections,
                             opts.n_http2_parallel,
+                            opts.wait_ongoing_requests_after_deadline,
                         )
                         .await
                     }
@@ -561,6 +572,7 @@ async fn main() -> anyhow::Result<()> {
                         start + duration.into(),
                         opts.n_connections,
                         opts.n_http2_parallel,
+                        opts.wait_ongoing_requests_after_deadline,
                     )
                     .await
                 } else {
@@ -572,6 +584,7 @@ async fn main() -> anyhow::Result<()> {
                         start + duration.into(),
                         opts.n_connections,
                         opts.n_http2_parallel,
+                        opts.wait_ongoing_requests_after_deadline,
                     )
                     .await
                 }
