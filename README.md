@@ -98,8 +98,9 @@ Options:
           Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total. [default: 1]
   -z <DURATION>
           Duration of application to send requests. If duration is specified, n is ignored.
-          When the duration is reached, ongoing requests are aborted and counted as "aborted due to deadline"
+          On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as "aborted due to deadline"
           You can change this behavior with `-w` option.
+          Currently, on HTTP/2, When the duration is reached, ongoing requests are waited. `-w` option is ignored.
           Examples: -z 10s -z 3m.
   -w, --wait-ongoing-requests-after-deadline
           When the duration is reached, ongoing requests are waited
