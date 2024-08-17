@@ -201,7 +201,7 @@ impl Monitor {
                         ]
                         .as_ref(),
                     )
-                    .split(f.size());
+                    .split(f.area());
 
                 let mid = Layout::default()
                     .direction(Direction::Horizontal)
