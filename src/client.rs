@@ -1372,6 +1372,7 @@ pub async fn work_until(
 }
 
 /// Run until dead_line by n workers limit to qps works in a second
+#[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
@@ -1556,6 +1557,7 @@ pub async fn work_until_with_qps(
 }
 
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
+#[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps_latency_correction(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
