@@ -1,5 +1,9 @@
 # Unreleased
 
+- Add `--wait-ongoing-requests-after-deadline` option
+- Add `--db-url` option to save results to SQLite database
+- Add `--dump-urls` option to debug random URL generation
+
 # 1.4.5 (2024-05-29)
 
 - Some performance improvements

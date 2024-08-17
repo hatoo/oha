@@ -1237,6 +1237,7 @@ pub async fn work_until(
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
+    wait_ongoing_requests_after_deadline: bool,
 ) {
     let client = Arc::new(client);
     if client.is_http2() {
@@ -1353,11 +1354,17 @@ pub async fn work_until(
         tokio::time::sleep_until(dead_line.into()).await;
         is_end.store(true, Relaxed);
 
-        for f in futures {
-            f.abort();
-            if let Err(e) = f.await {
-                if e.is_cancelled() {
-                    report_tx.send(Err(ClientError::Deadline)).unwrap();
+        if wait_ongoing_requests_after_deadline {
+            for f in futures {
+                let _ = f.await;
+            }
+        } else {
+            for f in futures {
+                f.abort();
+                if let Err(e) = f.await {
+                    if e.is_cancelled() {
+                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+                    }
                 }
             }
         }
@@ -1365,6 +1372,7 @@ pub async fn work_until(
 }
 
 /// Run until dead_line by n workers limit to qps works in a second
+#[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
@@ -1373,6 +1381,7 @@ pub async fn work_until_with_qps(
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
+    wait_ongoing_requests_after_deadline: bool,
 ) {
     let rx = match query_limit {
         QueryLimit::Qps(qps) => {
@@ -1530,11 +1539,17 @@ pub async fn work_until_with_qps(
         tokio::time::sleep_until(dead_line.into()).await;
         is_end.store(true, Relaxed);
 
-        for f in futures {
-            f.abort();
-            if let Err(e) = f.await {
-                if e.is_cancelled() {
-                    report_tx.send(Err(ClientError::Deadline)).unwrap();
+        if wait_ongoing_requests_after_deadline {
+            for f in futures {
+                let _ = f.await;
+            }
+        } else {
+            for f in futures {
+                f.abort();
+                if let Err(e) = f.await {
+                    if e.is_cancelled() {
+                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+                    }
                 }
             }
         }
@@ -1542,6 +1557,7 @@ pub async fn work_until_with_qps(
 }
 
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
+#[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps_latency_correction(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
@@ -1550,6 +1566,7 @@ pub async fn work_until_with_qps_latency_correction(
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
+    wait_ongoing_requests_after_deadline: bool,
 ) {
     let (tx, rx) = flume::unbounded();
     match query_limit {
@@ -1706,11 +1723,17 @@ pub async fn work_until_with_qps_latency_correction(
         tokio::time::sleep_until(dead_line.into()).await;
         is_end.store(true, Relaxed);
 
-        for f in futures {
-            f.abort();
-            if let Err(e) = f.await {
-                if e.is_cancelled() {
-                    report_tx.send(Err(ClientError::Deadline)).unwrap();
+        if wait_ongoing_requests_after_deadline {
+            for f in futures {
+                let _ = f.await;
+            }
+        } else {
+            for f in futures {
+                f.abort();
+                if let Err(e) = f.await {
+                    if e.is_cancelled() {
+                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+                    }
                 }
             }
         }
