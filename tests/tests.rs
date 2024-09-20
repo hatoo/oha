@@ -723,7 +723,7 @@ async fn test_json_schema() {
 
     const SCHEMA: &str = include_str!("../schema.json");
     let schema_value: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
-    let schema = jsonschema::JSONSchema::compile(&schema_value).unwrap();
+    let validator = jsonschema::validator_for(&schema_value).unwrap();
 
     let output_json: String = String::from_utf8(
         tokio::task::spawn_blocking(move || {
@@ -761,14 +761,14 @@ async fn test_json_schema() {
     let value_stats_success_breakdown: serde_json::Value =
         serde_json::from_str(&output_json_stats_success_breakdown).unwrap();
 
-    if let Err(errors) = schema.validate(&value) {
+    if let Err(errors) = validator.validate(&value) {
         for error in errors {
             eprintln!("{error}");
         }
         panic!("JSON schema validation failed\n{output_json}");
     }
 
-    if let Err(errors) = schema.validate(&value_stats_success_breakdown) {
+    if let Err(errors) = validator.validate(&value_stats_success_breakdown) {
         for error in errors {
             eprintln!("{error}");
         }
