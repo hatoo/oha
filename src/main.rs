@@ -11,6 +11,7 @@ use hyper::http::{
 use printer::PrintMode;
 use rand::prelude::*;
 use rand_regex::Regex;
+use ratatui::crossterm;
 use result_data::ResultData;
 use std::{env, io::Read, str::FromStr};
 use url::Url;

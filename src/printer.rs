@@ -3,6 +3,7 @@ use average::{Max, Min, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
 use hyper::http::{self, StatusCode};
+use ratatui::crossterm;
 use std::{
     collections::BTreeMap,
     io::Write,
