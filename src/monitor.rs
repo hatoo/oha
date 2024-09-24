@@ -4,6 +4,7 @@ use crossterm::{
     ExecutableCommand,
 };
 use hyper::http;
+use ratatui::crossterm;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},

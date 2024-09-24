@@ -2002,7 +2002,6 @@ dependencies = [
  "byte-unit",
  "bytes",
  "clap",
- "crossterm",
  "float-cmp",
  "float-ord",
  "flume",
