@@ -469,6 +469,17 @@ async fn main() -> anyhow::Result<()> {
         unix_socket: opts.unix_socket,
         #[cfg(feature = "vsock")]
         vsock_addr: opts.vsock_addr.map(|v| v.0),
+        #[cfg(feature = "rustls")]
+        // Cache rustls_native_certs::load_native_certs() because it's expensive.
+        root_cert_store: {
+            let mut root_cert_store = rustls::RootCertStore::empty();
+            for cert in
+                rustls_native_certs::load_native_certs().expect("could not load platform certs")
+            {
+                root_cert_store.add(cert).unwrap();
+            }
+            std::sync::Arc::new(root_cert_store)
+        },
     };
 
     if !opts.no_pre_lookup {

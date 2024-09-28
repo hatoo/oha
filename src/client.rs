@@ -176,6 +176,8 @@ pub struct Client {
     pub unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
     pub vsock_addr: Option<tokio_vsock::VsockAddr>,
+    #[cfg(feature = "rustls")]
+    pub root_cert_store: Arc<rustls::RootCertStore>,
 }
 
 struct ClientStateHttp1 {
@@ -411,12 +413,8 @@ impl Client {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
-        let mut root_cert_store = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()? {
-            root_cert_store.add(cert).ok(); // ignore error
-        }
         let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_cert_store)
+            .with_root_certificates(self.root_cert_store.clone())
             .with_no_client_auth();
         if self.insecure {
             config
