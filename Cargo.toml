@@ -89,7 +89,7 @@ predicates = "3.1.0"
 regex = "1.10.5"
 
 [target.'cfg(unix)'.dev-dependencies]
-tempfile = "3.10.1"
+tempfile = "3.13.0"
 actix-web = "4"
 
 [profile.pgo]
