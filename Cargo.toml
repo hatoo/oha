@@ -83,7 +83,7 @@ assert_cmd = "2.0.14"
 axum = { version = "0.7", features = ["http2"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
-jsonschema = "0.20.0"
+jsonschema = "0.21.0"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
 regex = "1.10.5"
