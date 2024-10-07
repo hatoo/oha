@@ -76,7 +76,7 @@ jemallocator = "0.5.4"
 
 [target.x86_64-unknown-linux-musl.dependencies]
 # Workaround for release CI
-aws-lc-rs = { version = "1.8.1", features = ["bindgen"] }
+aws-lc-rs = { version = "1.10.0", features = ["bindgen"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
