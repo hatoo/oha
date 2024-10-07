@@ -36,7 +36,7 @@ byte-unit = "5.1.4"
 clap = { version = "4.5.9", features = ["derive"] }
 float-ord = "0.3.2"
 flume = "0.11"
-futures = "0.3.30"
+futures = "0.3.31"
 humantime = "2.1.0"
 libc = "0.2.155"
 serde = { version = "1.0.204", features = ["derive"] }
