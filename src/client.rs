@@ -1,4 +1,4 @@
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{Body, Incoming},
     http,
@@ -505,11 +505,7 @@ impl Client {
                     let mut status = parts.status;
 
                     let mut len_sum = 0;
-                    while let Some(chunk) = futures::future::poll_fn(|cx| {
-                        Incoming::poll_frame(Pin::new(&mut stream), cx)
-                    })
-                    .await
-                    {
+                    while let Some(chunk) = stream.frame().await {
                         len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
@@ -595,11 +591,7 @@ impl Client {
                     let status = parts.status;
 
                     let mut len_sum = 0;
-                    while let Some(chunk) = futures::future::poll_fn(|cx| {
-                        Incoming::poll_frame(Pin::new(&mut stream), cx)
-                    })
-                    .await
-                    {
+                    while let Some(chunk) = stream.frame().await {
                         len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
