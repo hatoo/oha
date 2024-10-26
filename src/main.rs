@@ -1,7 +1,6 @@
 use anyhow::Context;
 use clap::Parser;
 use crossterm::tty::IsTty;
-use futures::prelude::*;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
 use hyper::http::{
@@ -489,25 +488,22 @@ async fn main() -> anyhow::Result<()> {
 
     let data_collector = if opts.no_tui || !std::io::stdout().is_tty() {
         // When `--no-tui` is enabled, just collect all data.
-        tokio::spawn(
-            async move {
-                let mut all: ResultData = Default::default();
-                tokio::select! {
-                    _ = async {
-                            while let Ok(report) = result_rx.recv_async().await {
-                                all.push(report);
-                            }
-                        } => {}
-                    _ = tokio::signal::ctrl_c() => {
-                        // User pressed ctrl-c.
-                        let _ = printer::print_result(&mut std::io::stdout(), print_mode, start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
-                        std::process::exit(libc::EXIT_SUCCESS);
-                    }
+        tokio::spawn(async move {
+            let mut all: ResultData = Default::default();
+            tokio::select! {
+                _ = async {
+                        while let Ok(report) = result_rx.recv_async().await {
+                            all.push(report);
+                        }
+                    } => {}
+                _ = tokio::signal::ctrl_c() => {
+                    // User pressed ctrl-c.
+                    let _ = printer::print_result(&mut std::io::stdout(), print_mode, start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
+                    std::process::exit(libc::EXIT_SUCCESS);
                 }
-                all
             }
-            .map(Ok),
-        )
+            Ok(all)
+        })
     } else {
         // Spawn monitor future which draws realtime tui
         tokio::spawn(
