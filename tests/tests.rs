@@ -761,17 +761,17 @@ async fn test_json_schema() {
     let value_stats_success_breakdown: serde_json::Value =
         serde_json::from_str(&output_json_stats_success_breakdown).unwrap();
 
-    if let Err(errors) = validator.validate(&value) {
-        for error in errors {
+    if validator.validate(&value).is_err() {
+        for error in validator.iter_errors(&value) {
             eprintln!("{error}");
         }
         panic!("JSON schema validation failed\n{output_json}");
     }
 
-    if let Err(errors) = validator.validate(&value_stats_success_breakdown) {
-        for error in errors {
+    if validator.validate(&value_stats_success_breakdown).is_err() {
+        for error in validator.iter_errors(&value_stats_success_breakdown) {
             eprintln!("{error}");
         }
         panic!("JSON schema validation failed\n{output_json_stats_success_breakdown}");
-    }/* ?? */;
+    }
 }
