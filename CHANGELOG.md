@@ -1,5 +1,9 @@
 # Unreleased
 
+# 1.4.7 (2024-10-26)
+
+- [rustls] Cache HTTPS certs
+
 # 1.4.6 (2024-08-17)
 
 - Add `--wait-ongoing-requests-after-deadline` option
