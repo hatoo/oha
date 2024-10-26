@@ -260,7 +260,10 @@ impl Stream {
     }
     async fn handshake_http2(self) -> Result<SendRequestHttp2, ClientError> {
         let mut builder = hyper::client::conn::http2::Builder::new(TokioExecutor::new());
-        builder.adaptive_window(true);
+        builder
+            // from nghttp2's default
+            .initial_stream_window_size((1 << 30) - 1)
+            .initial_connection_window_size((1 << 30) - 1);
 
         match self {
             Stream::Tcp(stream) => {
