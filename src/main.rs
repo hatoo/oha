@@ -450,7 +450,6 @@ async fn main() -> anyhow::Result<()> {
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
 
-    // client_builder builds client for each workers
     let client = client::Client {
         http_version,
         url_generator,
