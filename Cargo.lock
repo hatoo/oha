@@ -511,18 +511,18 @@ dependencies = [
 
 [[package]]
 name = "bit-set"
-version = "0.5.3"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0700ddab506f33b20a03b13996eccd309a48e5ff77d0d95926aa0210fb4e95f1"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
 dependencies = [
  "bit-vec",
 ]
 
 [[package]]
 name = "bit-vec"
-version = "0.6.3"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitflags"
@@ -1034,9 +1034,9 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fancy-regex"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "531e46835a22af56d1e3b66f04844bed63158bc094a628bec1d321d9b4c44bf2"
+checksum = "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298"
 dependencies = [
  "bit-set",
  "regex-automata",
@@ -1814,9 +1814,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.25.1"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171833d21b20822ecc6d51973a16c4b4db886818e250677884ea2e4e68ae0eed"
+checksum = "39ae663abb3bb9e77538ee88a0eb69cbd3f62a8bf2018f848fbc60c2cdec024d"
 dependencies = [
  "ahash 0.8.11",
  "base64",
@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "oha"
-version = "1.4.6"
+version = "1.4.7"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -2561,9 +2561,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.25.1"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a09429915e07f85cce6e077d4150cbec376d87b5a9cf6ee31c22e578acbc738e"
+checksum = "c152a23ee0e5947ee31d9cfebc873a5aa3a249da9e59d2e76cd7416a13cc9a5d"
 dependencies = [
  "ahash 0.8.11",
  "fluent-uri",
