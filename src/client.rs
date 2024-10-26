@@ -1,12 +1,8 @@
-use http_body_util::Full;
-use hyper::{
-    body::{Body, Incoming},
-    http,
-};
+use http_body_util::{BodyExt, Full};
+use hyper::http;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
-    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc,
@@ -485,10 +481,7 @@ impl Client {
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
                 send_request
             };
-            while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
-                .await
-                .is_err()
-            {
+            while send_request.ready().await.is_err() {
                 // This gets hit when the connection for HTTP/1.1 faults
                 // This re-connects
                 start = std::time::Instant::now();
@@ -505,11 +498,7 @@ impl Client {
                     let mut status = parts.status;
 
                     let mut len_sum = 0;
-                    while let Some(chunk) = futures::future::poll_fn(|cx| {
-                        Incoming::poll_frame(Pin::new(&mut stream), cx)
-                    })
-                    .await
-                    {
+                    while let Some(chunk) = stream.frame().await {
                         len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
@@ -595,11 +584,7 @@ impl Client {
                     let status = parts.status;
 
                     let mut len_sum = 0;
-                    while let Some(chunk) = futures::future::poll_fn(|cx| {
-                        Incoming::poll_frame(Pin::new(&mut stream), cx)
-                    })
-                    .await
-                    {
+                    while let Some(chunk) = stream.frame().await {
                         len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
@@ -663,10 +648,7 @@ impl Client {
                 (stream, Some(send_request))
             };
 
-        while futures::future::poll_fn(|ctx| send_request.poll_ready(ctx))
-            .await
-            .is_err()
-        {
+        while send_request.ready().await.is_err() {
             let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
             send_request = stream;
         }
@@ -683,9 +665,7 @@ impl Client {
         let mut status = parts.status;
 
         let mut len_sum = 0;
-        while let Some(chunk) =
-            futures::future::poll_fn(|cx| Incoming::poll_frame(Pin::new(&mut stream), cx)).await
-        {
+        while let Some(chunk) = stream.frame().await {
             len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
         }
 

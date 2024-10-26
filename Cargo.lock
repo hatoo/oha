@@ -2190,7 +2190,6 @@ dependencies = [
  "float-cmp 0.10.0",
  "float-ord",
  "flume",
- "futures",
  "hickory-resolver",
  "http-body-util",
  "humantime",
