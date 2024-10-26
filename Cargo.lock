@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "oha"
-version = "1.4.6"
+version = "1.4.7"
 dependencies = [
  "actix-web",
  "anyhow",
