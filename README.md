@@ -84,7 +84,7 @@ And the binary will be available at `target/[target-triple]/pgo/oha`.
 ```sh
 Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation.
 
-Usage: oha [FLAGS] [OPTIONS] <url>
+Usage: oha [OPTIONS] <URL>
 
 Arguments:
   <URL>  Target URL.

@@ -31,30 +31,30 @@ mod url_generator;
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Parser)]
-#[clap(author, about, version, override_usage = "oha [FLAGS] [OPTIONS] <url>")]
+#[command(version, about, long_about = None)]
 #[command(arg_required_else_help(true))]
 struct Opts {
-    #[clap(help = "Target URL.")]
+    #[arg(help = "Target URL.")]
     url: String,
-    #[structopt(
+    #[arg(
         help = "Number of requests to run.",
         short = 'n',
         default_value = "200"
     )]
     n_requests: usize,
-    #[clap(
+    #[arg(
         help = "Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`.",
         short = 'c',
         default_value = "50"
     )]
     n_connections: usize,
-    #[clap(
+    #[arg(
         help = "Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total.",
         short = 'p',
         default_value = "1"
     )]
     n_http2_parallel: usize,
-    #[clap(
+    #[arg(
         help = "Duration of application to send requests. If duration is specified, n is ignored.
 On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
 You can change this behavior with `-w` option.
@@ -63,14 +63,14 @@ Examples: -z 10s -z 3m.",
         short = 'z'
     )]
     duration: Option<Duration>,
-    #[clap(
+    #[arg(
         help = "When the duration is reached, ongoing requests are waited",
         short,
         long,
         default_value = "false"
     )]
     wait_ongoing_requests_after_deadline: bool,
-    #[clap(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
+    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
     query_per_second: Option<usize>,
     #[arg(
         help = "Introduce delay between a predefined number of requests.
@@ -85,121 +85,121 @@ Note: If qps is specified, burst will be ignored",
     )]
     burst_requests: Option<usize>,
 
-    #[clap(
+    #[arg(
         help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
         default_value = "false",
         long
     )]
     rand_regex_url: bool,
-    #[clap(
+    #[arg(
         help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
         default_value = "4",
         long
     )]
     max_repeat: u32,
-    #[clap(
+    #[arg(
         help = "Dump target Urls <DUMP_URLS> times to debug --rand-regex-url",
         long
     )]
     dump_urls: Option<usize>,
-    #[clap(
+    #[arg(
         help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
         long = "latency-correction"
     )]
     latency_correction: bool,
-    #[clap(help = "No realtime tui", long = "no-tui")]
+    #[arg(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
-    #[clap(help = "Print results as JSON", short, long)]
+    #[arg(help = "Print results as JSON", short, long)]
     json: bool,
-    #[clap(help = "Frame per second for tui.", default_value = "16", long = "fps")]
+    #[arg(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
-    #[clap(
+    #[arg(
         help = "HTTP method",
         short = 'm',
         long = "method",
         default_value = "GET"
     )]
     method: http::Method,
-    #[clap(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H')]
+    #[arg(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H')]
     headers: Vec<String>,
-    #[clap(help = "Timeout for each request. Default to infinite.", short = 't')]
+    #[arg(help = "Timeout for each request. Default to infinite.", short = 't')]
     timeout: Option<humantime::Duration>,
-    #[clap(help = "HTTP Accept Header.", short = 'A')]
+    #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[clap(help = "HTTP request body.", short = 'd')]
+    #[arg(help = "HTTP request body.", short = 'd')]
     body_string: Option<String>,
-    #[clap(help = "HTTP request body from file.", short = 'D')]
+    #[arg(help = "HTTP request body from file.", short = 'D')]
     body_path: Option<std::path::PathBuf>,
-    #[clap(help = "Content-Type.", short = 'T')]
+    #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
-    #[clap(help = "Basic authentication, username:password", short = 'a')]
+    #[arg(help = "Basic authentication, username:password", short = 'a')]
     basic_auth: Option<String>,
     /*
-    #[structopt(help = "HTTP proxy", short = "x")]
+    #[arg(help = "HTTP proxy", short = "x")]
     proxy: Option<String>,
     */
-    #[clap(
+    #[arg(
         help = "HTTP version. Available values 0.9, 1.0, 1.1.",
         long = "http-version"
     )]
     http_version: Option<String>,
-    #[clap(help = "Use HTTP/2. Shorthand for --http-version=2", long = "http2")]
+    #[arg(help = "Use HTTP/2. Shorthand for --http-version=2", long = "http2")]
     http2: bool,
-    #[clap(help = "HTTP Host header", long = "host")]
+    #[arg(help = "HTTP Host header", long = "host")]
     host: Option<String>,
-    #[clap(help = "Disable compression.", long = "disable-compression")]
+    #[arg(help = "Disable compression.", long = "disable-compression")]
     disable_compression: bool,
-    #[clap(
+    #[arg(
         help = "Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2.",
         default_value = "10",
         short = 'r',
         long = "redirect"
     )]
     redirect: usize,
-    #[clap(
+    #[arg(
         help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
-    #[clap(
+    #[arg(
         help = "*Not* perform a DNS lookup at beginning to cache it",
         long = "no-pre-lookup",
         default_value = "false"
     )]
     no_pre_lookup: bool,
-    #[clap(help = "Lookup only ipv6.", long = "ipv6")]
+    #[arg(help = "Lookup only ipv6.", long = "ipv6")]
     ipv6: bool,
-    #[clap(help = "Lookup only ipv4.", long = "ipv4")]
+    #[arg(help = "Lookup only ipv4.", long = "ipv4")]
     ipv4: bool,
-    #[clap(help = "Accept invalid certs.", long = "insecure")]
+    #[arg(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
-    #[clap(
+    #[arg(
         help = "Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'",
         long = "connect-to"
     )]
     connect_to: Vec<ConnectToEntry>,
-    #[clap(help = "Disable the color scheme.", long = "disable-color")]
+    #[arg(help = "Disable the color scheme.", long = "disable-color")]
     disable_color: bool,
     #[cfg(unix)]
-    #[clap(
+    #[arg(
         help = "Connect to a unix socket instead of the domain in the URL. Only for non-HTTPS URLs.",
         long = "unix-socket",
         group = "socket-type"
     )]
     unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
-    #[clap(
+    #[arg(
         help = "Connect to a VSOCK socket using 'cid:port' instead of the domain in the URL. Only for non-HTTPS URLs.",
         long = "vsock-addr",
         group = "socket-type"
     )]
     vsock_addr: Option<VsockAddr>,
-    #[clap(
+    #[arg(
         help = "Include a response status code successful or not successful breakdown for the time histogram and distribution statistics",
         long = "stats-success-breakdown"
     )]
     stats_success_breakdown: bool,
-    #[clap(
+    #[arg(
         help = "Write succeeded requests to sqlite database url E.G test.db",
         long = "db-url"
     )]
