@@ -76,7 +76,7 @@ And the binary will be available at `target/[target-triple]/pgo/oha`.
 You can install with [x-cmd](https://www.x-cmd.com).
 
 ```sh
-x env use procs
+x env use oha
 ```
 
 # Platform
