@@ -71,6 +71,14 @@ bun run pgo.js
 
 And the binary will be available at `target/[target-triple]/pgo/oha`.
 
+## X-CMD
+
+You can install with [x-cmd](https://www.x-cmd.com).
+
+```sh
+x env use procs
+```
+
 # Platform
 
 - Linux - Tested on Ubuntu 18.04 gnome-terminal
