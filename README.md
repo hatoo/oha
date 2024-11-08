@@ -47,6 +47,14 @@ You can enable VSOCK support by enabling `vsock` feature.
     apt update
     apt install oha
 
+## X-CMD (Linux, macOS, Windows WSL/GitBash)
+
+You can install with [x-cmd](https://www.x-cmd.com).
+
+```sh
+x env use oha
+```
+
 ## Containerized
 
 You can also build and create a container image including oha
@@ -70,14 +78,6 @@ bun run pgo.js
 ```
 
 And the binary will be available at `target/[target-triple]/pgo/oha`.
-
-## X-CMD
-
-You can install with [x-cmd](https://www.x-cmd.com).
-
-```sh
-x env use oha
-```
 
 # Platform
 
