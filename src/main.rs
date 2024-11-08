@@ -12,7 +12,7 @@ use rand::prelude::*;
 use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
-use std::{env, io::Read, str::FromStr};
+use std::{convert::Infallible, env, io::Read, str::FromStr, usize};
 use url::Url;
 use url_generator::UrlGenerator;
 
@@ -427,7 +427,7 @@ async fn main() -> anyhow::Result<()> {
         PrintMode::Text
     };
 
-    let (result_tx, result_rx) = flume::unbounded();
+    let (result_tx, result_rx) = batch_channel::unbounded();
 
     // When panics, reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(|info| {
@@ -489,22 +489,31 @@ async fn main() -> anyhow::Result<()> {
     let data_collector = if opts.no_tui || !std::io::stdout().is_tty() {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(async move {
-            let mut all: ResultData = Default::default();
+            let mut all = Vec::new();
             tokio::select! {
                 _ = async {
-                        while let Ok(report) = result_rx.recv_async().await {
-                            all.push(report);
+                    loop {
+                        let data = result_rx.recv_batch(usize::MAX).await;
+                        if data.is_empty() {
+                            break;
                         }
-                    } => {}
+
+                        all.extend(data);
+                    }
+                } => {}
                 _ = tokio::signal::ctrl_c() => {
                     // User pressed ctrl-c.
+                    /*
                     let _ = printer::print_result(&mut std::io::stdout(), print_mode, start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
-                    std::process::exit(libc::EXIT_SUCCESS);
+                    std::process::exit(libc::EXIT_SUCCESS)
+                    */
                 }
-            }
-            Ok(all)
+            };
+            Ok::<_, Infallible>(all)
         })
     } else {
+        todo!()
+        /*
         // Spawn monitor future which draws realtime tui
         tokio::spawn(
             monitor::Monitor {
@@ -521,6 +530,7 @@ async fn main() -> anyhow::Result<()> {
             }
             .monitor(),
         )
+        */
     };
     if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {
@@ -669,7 +679,14 @@ async fn main() -> anyhow::Result<()> {
 
     let duration = start.elapsed();
 
-    let res: ResultData = data_collector.await??;
+    let res = {
+        let all = data_collector.await??;
+        let mut res = ResultData::default();
+        for data in all {
+            res.push(data);
+        }
+        res
+    };
 
     printer::print_result(
         &mut std::io::stdout(),
