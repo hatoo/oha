@@ -803,6 +803,38 @@ fn set_start_latency_correction<E>(
 }
 
 /// Run n tasks by m workers
+pub async fn work_debug(
+    client: Client,
+    _report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+) -> Result<(), ClientError> {
+    let mut rng = StdRng::from_entropy();
+    let url = client.url_generator.generate(&mut rng)?;
+    println!("URL: {}", url);
+
+    let request = client.request(&url)?;
+
+    println!("{:#?}", request);
+
+    let response = if client.is_http2() {
+        let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
+        client_state.send_request(request).await?
+    } else {
+        let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
+
+        send_request.send_request(request).await?
+    };
+
+    let (parts, body) = response.into_parts();
+    let body = body.collect().await.unwrap().to_bytes();
+
+    let response = http::Response::from_parts(parts, body);
+
+    println!("{:#?}", response);
+
+    Ok(())
+}
+
+/// Run n tasks by m workers
 pub async fn work(
     client: Client,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
