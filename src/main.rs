@@ -203,7 +203,10 @@ Note: If qps is specified, burst will be ignored",
         long = "db-url"
     )]
     db_url: Option<String>,
-    #[arg(long, help = "Do request once and print the request and response")]
+    #[arg(
+        long,
+        help = "Perform a single request and dump the request and response"
+    )]
     debug: bool,
 }
 
