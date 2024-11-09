@@ -203,6 +203,11 @@ Note: If qps is specified, burst will be ignored",
         long = "db-url"
     )]
     db_url: Option<String>,
+    #[arg(
+        long,
+        help = "Perform a single request and dump the request and response"
+    )]
+    debug: bool,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -429,16 +434,6 @@ async fn main() -> anyhow::Result<()> {
 
     let (result_tx, result_rx) = flume::unbounded();
 
-    // When panics, reset terminal mode and exit immediately.
-    std::panic::set_hook(Box::new(|info| {
-        use crossterm::ExecutableCommand;
-        let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
-        let _ = crossterm::terminal::disable_raw_mode();
-        let _ = std::io::stdout().execute(crossterm::cursor::Show);
-        eprintln!("{info}");
-        std::process::exit(libc::EXIT_FAILURE);
-    }));
-
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
         (false, false) => Default::default(),
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
@@ -486,7 +481,8 @@ async fn main() -> anyhow::Result<()> {
 
     let start = std::time::Instant::now();
 
-    let data_collector = if opts.no_tui || !std::io::stdout().is_tty() {
+    let no_tui = opts.no_tui || !std::io::stdout().is_tty() || opts.debug;
+    let data_collector = if no_tui {
         // When `--no-tui` is enabled, just collect all data.
         tokio::spawn(async move {
             let mut all: ResultData = Default::default();
@@ -522,7 +518,24 @@ async fn main() -> anyhow::Result<()> {
             .monitor(),
         )
     };
-    if let Some(duration) = opts.duration.take() {
+    // When panics, reset terminal mode and exit immediately.
+    std::panic::set_hook(Box::new(move |info| {
+        if !no_tui {
+            use crossterm::ExecutableCommand;
+            let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
+            let _ = crossterm::terminal::disable_raw_mode();
+            let _ = std::io::stdout().execute(crossterm::cursor::Show);
+        }
+        eprintln!("{info}");
+        std::process::exit(libc::EXIT_FAILURE);
+    }));
+
+    if opts.debug {
+        if let Err(e) = client::work_debug(client, result_tx).await {
+            eprintln!("{e}");
+        }
+        std::process::exit(libc::EXIT_SUCCESS);
+    } else if let Some(duration) = opts.duration.take() {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => {

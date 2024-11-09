@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add `--debug` option to check actual request/response
+
 # 1.4.7 (2024-10-26)
 
 - [rustls] Cache HTTPS certs

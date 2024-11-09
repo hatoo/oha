@@ -180,6 +180,8 @@ Options:
           Include a response status code successful or not successful breakdown for the time histogram and distribution statistics
       --db-url <DB_URL>
           Write succeeded requests to sqlite database url E.G test.db
+      --debug
+          Perform a single request and dump the request and response
   -h, --help
           Print help
   -V, --version
