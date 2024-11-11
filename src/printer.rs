@@ -9,6 +9,7 @@ use std::{
     io::Write,
     time::{Duration, Instant},
 };
+use crate::colors;
 
 #[derive(Clone, Copy)]
 struct StyleScheme {
@@ -24,11 +25,11 @@ impl StyleScheme {
     fn success_rate(self, text: &str, success_rate: f64) -> StyledContent<&str> {
         if self.color_enabled {
             if success_rate >= 100.0 {
-                text.green().bold()
+                text.with(colors::SUCCESS).bold()
             } else if success_rate >= 99.0 {
-                text.yellow().bold()
+                text.with(colors::WARNING).bold()
             } else {
-                text.red().bold()
+                text.with(colors::ERROR).bold()
             }
         } else {
             self.no_color(text).bold()
@@ -36,21 +37,21 @@ impl StyleScheme {
     }
     fn fastest(self, text: &str) -> StyledContent<&str> {
         if self.color_enabled {
-            text.green()
+            text.with(colors::FASTEST)
         } else {
             self.no_color(text)
         }
     }
     fn slowest(self, text: &str) -> StyledContent<&str> {
         if self.color_enabled {
-            text.yellow()
+            text.with(colors::SLOWEST)
         } else {
             self.no_color(text)
         }
     }
     fn average(self, text: &str) -> StyledContent<&str> {
         if self.color_enabled {
-            text.cyan()
+            text.with(colors::AVERAGE)
         } else {
             self.no_color(text)
         }
@@ -59,11 +60,11 @@ impl StyleScheme {
     fn latency_distribution(self, text: &str, label: f64) -> StyledContent<&str> {
         if self.color_enabled {
             if label <= 0.3 {
-                text.green()
+                text.with(colors::FASTEST)
             } else if label <= 0.8 {
-                text.yellow()
+                text.with(colors::AVERAGE)
             } else {
-                text.red()
+                text.with(colors::SLOWEST)
             }
         } else {
             self.no_color(text)
@@ -73,11 +74,11 @@ impl StyleScheme {
     fn status_distribution(self, text: &str, status: StatusCode) -> StyledContent<&str> {
         if self.color_enabled {
             if status.is_success() {
-                text.green()
+                text.with(colors::SUCCESS)
             } else if status.is_client_error() {
-                text.yellow()
+                text.with(colors::WARNING)
             } else if status.is_server_error() {
-                text.red()
+                text.with(colors::ERROR)
             } else {
                 text.white()
             }

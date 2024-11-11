@@ -24,6 +24,7 @@ mod printer;
 mod result_data;
 mod timescale;
 mod url_generator;
+mod colors;
 
 #[cfg(unix)]
 #[global_allocator]

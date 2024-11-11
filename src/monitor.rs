@@ -14,13 +14,8 @@ use ratatui::{
     Terminal,
 };
 use std::{collections::BTreeMap, io};
-
-use crate::{
-    client::{ClientError, RequestResult},
-    printer::PrintMode,
-    result_data::{MinMaxMean, ResultData},
-    timescale::{TimeLabel, TimeScale},
-};
+use ratatui::prelude::Stylize;
+use crate::{client::{ClientError, RequestResult}, colors, printer::PrintMode, result_data::{MinMaxMean, ResultData}, timescale::{TimeLabel, TimeScale}};
 
 /// When the monitor ends
 pub enum EndLine {
@@ -46,9 +41,9 @@ impl ColorScheme {
     }
 
     fn set_colors(&mut self) {
-        self.light_blue = Some(Color::Cyan);
-        self.green = Some(Color::Green);
-        self.yellow = Some(Color::Yellow);
+        self.light_blue = Some(Color::from(colors::FASTEST));
+        self.green = Some(Color::from(colors::SUCCESS));
+        self.yellow = Some(Color::from(colors::WARNING));
     }
 }
 
@@ -68,7 +63,7 @@ pub struct Monitor {
 struct IntoRawMode;
 
 impl IntoRawMode {
-    pub fn new() -> Result<Self, std::io::Error> {
+    pub fn new() -> Result<Self, io::Error> {
         crossterm::terminal::enable_raw_mode()?;
         io::stdout().execute(crossterm::terminal::EnterAlternateScreen)?;
         io::stdout().execute(crossterm::cursor::Hide)?;
@@ -85,7 +80,7 @@ impl Drop for IntoRawMode {
 }
 
 impl Monitor {
-    pub async fn monitor(self) -> Result<ResultData, std::io::Error> {
+    pub async fn monitor(self) -> Result<ResultData, io::Error> {
         let raw_mode = IntoRawMode::new()?;
 
         let mut terminal = {
@@ -225,25 +220,22 @@ impl Monitor {
                     EndLine::NumQuery(n) => format!("{} / {}", all.len(), n),
                 };
                 let gauge = Gauge::default()
-                    .block(Block::default().title("Progress").borders(Borders::ALL))
-                    .gauge_style(Style::default().fg(colors.light_blue.unwrap_or(Color::White)))
+                    .block(Block::default().title("Progress").title_style(Style::default().bold().fg(Color::White)).borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)).bg(Color::from(colors::BACKGROUND)))
+                    .gauge_style(Style::default().bg(Color::from(colors::BACKGROUND)).fg(Color::from(colors::FASTEST)))
                     .label(Span::raw(gauge_label))
                     .ratio(progress);
                 f.render_widget(gauge, row4[0]);
 
                 let last_1_timescale = {
                     let success = all.success();
-                    let index = match success.binary_search_by(|probe| {
+                    let index = success.binary_search_by(|probe| {
                         (now - probe.end)
                             .as_secs_f64()
                             .partial_cmp(&timescale.as_secs_f64())
                             // Should be fine
                             .unwrap()
                             .reverse()
-                    }) {
-                        Ok(i) => i,
-                        Err(i) => i,
-                    };
+                    }).unwrap_or_else(|i| i);
 
                     &success[index..]
                 };
@@ -290,11 +282,12 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let stats_title = format!("stats for last {timescale}");
+                let stats_title = format!("Stats for last {timescale}");
                 let stats = Paragraph::new(stats_text).block(
                     Block::default()
                         .title(Span::raw(stats_title))
-                        .borders(Borders::ALL),
+                        .title_style(Style::default().bold())
+                        .style(Style::default().bg(Color::from(colors::BACKGROUND))),
                 );
                 f.render_widget(stats, mid[0]);
 
@@ -311,7 +304,8 @@ impl Monitor {
                 let stats2 = Paragraph::new(stats2_text).block(
                     Block::default()
                         .title("Status code distribution")
-                        .borders(Borders::ALL),
+                        .title_style(Style::default().bold())
+                        .style(Style::default().bg(Color::from(colors::BACKGROUND))),
                 );
                 f.render_widget(stats2, mid[1]);
 
@@ -324,8 +318,9 @@ impl Monitor {
                     .collect::<Vec<_>>();
                 let errors = Paragraph::new(errors_text).block(
                     Block::default()
+                        .style(Style::default().bg(Color::from(colors::BACKGROUND)))
                         .title("Error distribution")
-                        .borders(Borders::ALL),
+                        .title_style(Style::default().bold()),
                 );
                 f.render_widget(errors, row4[2]);
 
@@ -345,8 +340,8 @@ impl Monitor {
                             .title(Span::raw(title))
                             .style(
                                 Style::default()
-                                    .fg(colors.green.unwrap_or(Color::Reset))
-                                    .bg(Color::Reset),
+                                    .fg(Color::from(colors::REQUEST_HISTOGRAM))
+                                    .bg(Color::from(colors::BACKGROUND)),
                             )
                             .borders(Borders::ALL),
                     )
@@ -392,9 +387,10 @@ impl Monitor {
                             .title("Response time histogram")
                             .style(
                                 Style::default()
-                                    .fg(colors.yellow.unwrap_or(Color::Reset))
-                                    .bg(Color::Reset),
+                                    .fg(Color::from(colors::RESPONSE_HISTOGRAM))
+                                    .bg(Color::from(colors::BACKGROUND)),
                             )
+                            .title_style(Style::default().bold())
                             .borders(Borders::ALL),
                     )
                     .data(resp_histo_data_str.as_slice())
@@ -434,7 +430,7 @@ impl Monitor {
                     }) => {
                         drop(raw_mode);
                         let _ = crate::printer::print_result(
-                            &mut std::io::stdout(),
+                            &mut io::stdout(),
                             self.print_mode,
                             self.start,
                             &all,
