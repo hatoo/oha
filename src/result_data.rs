@@ -193,6 +193,7 @@ mod tests {
     ) -> Result<RequestResult, ClientError> {
         let now = Instant::now();
         Ok(RequestResult {
+            url: "http://example.com".to_string(),
             start_latency_correction: None,
             start: now,
             connection_time: Some(ConnectionTime {

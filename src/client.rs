@@ -30,6 +30,8 @@ pub struct ConnectionTime {
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
+    // Request URL
+    pub url: String,
     // When the query should started
     pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
@@ -523,6 +525,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        url: url.to_string(),
                         start_latency_correction: None,
                         start,
                         end,
@@ -591,6 +594,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        url: url.to_string(),
                         start_latency_correction: None,
                         start,
                         end,

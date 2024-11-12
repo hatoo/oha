@@ -5,6 +5,7 @@ use crate::client::RequestResult;
 fn create_db(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.execute(
         "CREATE TABLE oha (
+            url TEXT NOT NULL,
             start REAL NOT NULL,
             start_latency_correction REAL,
             end REAL NOT NULL,
@@ -29,8 +30,9 @@ pub fn store(
 
     for request in request_records {
         affected_rows += t.execute(
-            "INSERT INTO oha (start, start_latency_correction, end, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO oha (url, start, start_latency_correction, end, duration, status, len_bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             (
+                &request.url.to_string(),
                 (request.start - start).as_secs_f64(),
                 request.start_latency_correction.map(|d| (d - start).as_secs_f64()),
                 (request.end - start).as_secs_f64(),
@@ -54,6 +56,7 @@ mod test_db {
     fn test_store() {
         let start = std::time::Instant::now();
         let test_val = RequestResult {
+            url: "http://example.com".to_string(),
             status: hyper::StatusCode::OK,
             len_bytes: 100,
             start_latency_correction: None,
