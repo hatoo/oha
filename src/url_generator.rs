@@ -70,4 +70,20 @@ mod tests {
             .captures(url.path())
             .is_some());
     }
+
+    #[test]
+    fn test_url_generator_dynamic_consistency() {
+        let url_generator = UrlGenerator::new_dynamic(
+            RandRegex::compile(r"http://127\.0\.0\.1/[a-z][a-z][0-9]", 4).unwrap(),
+        );
+
+        for _ in 0..100 {
+            let rng = SmallRng::from_entropy();
+
+            assert_eq!(
+                url_generator.generate(&mut rng.clone()).unwrap(),
+                url_generator.generate(&mut rng.clone()).unwrap()
+            );
+        }
+    }
 }
