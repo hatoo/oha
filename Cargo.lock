@@ -2203,6 +2203,7 @@ dependencies = [
  "pin-project-lite",
  "predicates",
  "rand",
+ "rand_core",
  "rand_regex",
  "ratatui",
  "regex",

@@ -3,6 +3,7 @@ use hyper::http;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
+    borrow::Cow,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc,
@@ -14,6 +15,7 @@ use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::{
+    pcg64si::Pcg64Si,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -30,6 +32,7 @@ pub struct ConnectionTime {
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
+    pub rng: Pcg64Si,
     // When the query should started
     pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
@@ -177,28 +180,28 @@ pub struct Client {
 }
 
 struct ClientStateHttp1 {
-    rng: StdRng,
+    rng: Pcg64Si,
     send_request: Option<SendRequestHttp1>,
 }
 
 impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
-            rng: StdRng::from_entropy(),
+            rng: SeedableRng::from_entropy(),
             send_request: None,
         }
     }
 }
 
 struct ClientStateHttp2 {
-    rng: StdRng,
+    rng: Pcg64Si,
     send_request: SendRequestHttp2,
 }
 
 impl Clone for ClientStateHttp2 {
     fn clone(&self) -> Self {
         Self {
-            rng: StdRng::from_entropy(),
+            rng: SeedableRng::from_entropy(),
             send_request: self.send_request.clone(),
         }
     }
@@ -313,6 +316,11 @@ impl Client {
         // It automatically caches the result
         self.dns.lookup(&url, &mut rng).await?;
         Ok(())
+    }
+
+    pub fn generate_url(&self, rng: &mut Pcg64Si) -> Result<(Cow<Url>, Pcg64Si), ClientError> {
+        let snapshot = *rng;
+        Ok((self.url_generator.generate(rng)?, snapshot))
     }
 
     async fn client<R: Rng>(
@@ -467,7 +475,7 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
@@ -523,6 +531,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        rng,
                         start_latency_correction: None,
                         start,
                         end,
@@ -573,7 +582,7 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let connection_time: Option<ConnectionTime> = None;
 
@@ -591,6 +600,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        rng,
                         start_latency_correction: None,
                         start,
                         end,
@@ -760,7 +770,7 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
 }
 
 async fn setup_http2(client: &Client) -> Result<(ConnectionTime, ClientStateHttp2), ClientError> {
-    let mut rng = StdRng::from_entropy();
+    let mut rng = SeedableRng::from_entropy();
     let url = client.url_generator.generate(&mut rng)?;
     let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
 
@@ -804,7 +814,7 @@ fn set_start_latency_correction<E>(
 
 /// Run n tasks by m workers
 pub async fn work_debug(
-    client: Client,
+    client: Arc<Client>,
     _report_tx: flume::Sender<Result<RequestResult, ClientError>>,
 ) -> Result<(), ClientError> {
     let mut rng = StdRng::from_entropy();
@@ -836,7 +846,7 @@ pub async fn work_debug(
 
 /// Run n tasks by m workers
 pub async fn work(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_connections: usize,
@@ -844,8 +854,6 @@ pub async fn work(
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -947,7 +955,7 @@ pub async fn work(
 
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
@@ -991,8 +999,6 @@ pub async fn work_with_qps(
         drop(tx);
         Ok::<(), flume::SendError<_>>(())
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -1094,7 +1100,7 @@ pub async fn work_with_qps(
 
 /// n tasks by m workers limit to qps works in a second with latency correction
 pub async fn work_with_qps_latency_correction(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
@@ -1141,8 +1147,6 @@ pub async fn work_with_qps_latency_correction(
         drop(tx);
         Ok::<(), flume::SendError<_>>(())
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -1245,14 +1249,13 @@ pub async fn work_with_qps_latency_correction(
 
 /// Run until dead_line by n workers
 pub async fn work_until(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
-    let client = Arc::new(client);
     if client.is_http2() {
         // Using semaphore to control the deadline
         // Maybe there is a better concurrent primitive to do this
@@ -1387,7 +1390,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
@@ -1433,8 +1436,6 @@ pub async fn work_until_with_qps(
             rx
         }
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
@@ -1572,7 +1573,7 @@ pub async fn work_until_with_qps(
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps_latency_correction(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
@@ -1617,8 +1618,6 @@ pub async fn work_until_with_qps_latency_correction(
             });
         }
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
