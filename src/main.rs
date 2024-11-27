@@ -697,7 +697,7 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(db_url) = opts.db_url {
         eprintln!("Storing results to {db_url}");
-        let _ = db::store(&client, &db_url, start, res.success());
+        db::store(&client, &db_url, start, res.success())?;
     }
 
     Ok(())
