@@ -43,6 +43,8 @@ impl UrlGenerator {
 
 #[cfg(test)]
 mod tests {
+    use crate::pcg64si::Pcg64Si;
+
     use super::*;
     use rand_regex::Regex as RandRegex;
     use regex::Regex;
@@ -78,7 +80,7 @@ mod tests {
         );
 
         for _ in 0..100 {
-            let rng = SmallRng::from_entropy();
+            let rng: Pcg64Si = SeedableRng::from_entropy();
 
             assert_eq!(
                 url_generator.generate(&mut rng.clone()).unwrap(),

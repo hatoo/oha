@@ -53,7 +53,7 @@ pub fn store(
 #[cfg(test)]
 mod test_db {
     use hyper::{HeaderMap, Method, Version};
-    use rand::{rngs::SmallRng, SeedableRng};
+    use rand::SeedableRng;
 
     use crate::{client::Dns, url_generator::UrlGenerator};
 
@@ -63,7 +63,7 @@ mod test_db {
     fn test_store() {
         let start = std::time::Instant::now();
         let test_val = RequestResult {
-            rng: SmallRng::seed_from_u64(0),
+            rng: SeedableRng::seed_from_u64(0),
             status: hyper::StatusCode::OK,
             len_bytes: 100,
             start_latency_correction: None,

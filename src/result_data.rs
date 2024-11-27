@@ -179,7 +179,7 @@ impl ResultData {
 #[cfg(test)]
 mod tests {
     use float_cmp::assert_approx_eq;
-    use rand::{rngs::SmallRng, SeedableRng};
+    use rand::SeedableRng;
 
     use super::*;
     use crate::client::{ClientError, ConnectionTime, RequestResult};
@@ -194,7 +194,7 @@ mod tests {
     ) -> Result<RequestResult, ClientError> {
         let now = Instant::now();
         Ok(RequestResult {
-            rng: SmallRng::seed_from_u64(0),
+            rng: SeedableRng::seed_from_u64(0),
             start_latency_correction: None,
             start: now,
             connection_time: Some(ConnectionTime {

@@ -20,6 +20,7 @@ mod client;
 mod db;
 mod histogram;
 mod monitor;
+mod pcg64si;
 mod printer;
 mod result_data;
 mod timescale;

@@ -15,6 +15,7 @@ use tokio::net::TcpStream;
 use url::{ParseError, Url};
 
 use crate::{
+    pcg64si::Pcg64Si,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -31,7 +32,7 @@ pub struct ConnectionTime {
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
-    pub rng: SmallRng,
+    pub rng: Pcg64Si,
     // When the query should started
     pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
@@ -179,28 +180,28 @@ pub struct Client {
 }
 
 struct ClientStateHttp1 {
-    rng: SmallRng,
+    rng: Pcg64Si,
     send_request: Option<SendRequestHttp1>,
 }
 
 impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
-            rng: SmallRng::from_entropy(),
+            rng: SeedableRng::from_entropy(),
             send_request: None,
         }
     }
 }
 
 struct ClientStateHttp2 {
-    rng: SmallRng,
+    rng: Pcg64Si,
     send_request: SendRequestHttp2,
 }
 
 impl Clone for ClientStateHttp2 {
     fn clone(&self) -> Self {
         Self {
-            rng: SmallRng::from_entropy(),
+            rng: SeedableRng::from_entropy(),
             send_request: self.send_request.clone(),
         }
     }
@@ -317,7 +318,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn generate_url(&self, rng: &mut SmallRng) -> Result<(Cow<Url>, SmallRng), ClientError> {
+    pub fn generate_url(&self, rng: &mut Pcg64Si) -> Result<(Cow<Url>, Pcg64Si), ClientError> {
         let snapshot = rng.clone();
         Ok((self.url_generator.generate(rng)?, snapshot))
     }
@@ -769,7 +770,7 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
 }
 
 async fn setup_http2(client: &Client) -> Result<(ConnectionTime, ClientStateHttp2), ClientError> {
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SeedableRng::from_entropy();
     let url = client.url_generator.generate(&mut rng)?;
     let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
 
