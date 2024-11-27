@@ -3,6 +3,7 @@ use hyper::http;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
+    borrow::Cow,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc,
@@ -30,6 +31,7 @@ pub struct ConnectionTime {
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
+    pub rng: SmallRng,
     // When the query should started
     pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
@@ -177,28 +179,28 @@ pub struct Client {
 }
 
 struct ClientStateHttp1 {
-    rng: StdRng,
+    rng: SmallRng,
     send_request: Option<SendRequestHttp1>,
 }
 
 impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
-            rng: StdRng::from_entropy(),
+            rng: SmallRng::from_entropy(),
             send_request: None,
         }
     }
 }
 
 struct ClientStateHttp2 {
-    rng: StdRng,
+    rng: SmallRng,
     send_request: SendRequestHttp2,
 }
 
 impl Clone for ClientStateHttp2 {
     fn clone(&self) -> Self {
         Self {
-            rng: StdRng::from_entropy(),
+            rng: SmallRng::from_entropy(),
             send_request: self.send_request.clone(),
         }
     }
@@ -313,6 +315,11 @@ impl Client {
         // It automatically caches the result
         self.dns.lookup(&url, &mut rng).await?;
         Ok(())
+    }
+
+    pub fn generate_url(&self, rng: &mut SmallRng) -> Result<(Cow<Url>, SmallRng), ClientError> {
+        let snapshot = rng.clone();
+        Ok((self.url_generator.generate(rng)?, snapshot))
     }
 
     async fn client<R: Rng>(
@@ -467,7 +474,7 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
@@ -523,6 +530,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        rng,
                         start_latency_correction: None,
                         start,
                         end,
@@ -573,7 +581,7 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let connection_time: Option<ConnectionTime> = None;
 
@@ -591,6 +599,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        rng,
                         start_latency_correction: None,
                         start,
                         end,
@@ -760,7 +769,7 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
 }
 
 async fn setup_http2(client: &Client) -> Result<(ConnectionTime, ClientStateHttp2), ClientError> {
-    let mut rng = StdRng::from_entropy();
+    let mut rng = SmallRng::from_entropy();
     let url = client.url_generator.generate(&mut rng)?;
     let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
 
