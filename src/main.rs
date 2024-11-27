@@ -12,7 +12,7 @@ use rand::prelude::*;
 use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
-use std::{env, io::Read, str::FromStr};
+use std::{env, io::Read, str::FromStr, sync::Arc};
 use url::Url;
 use url_generator::UrlGenerator;
 
@@ -444,7 +444,7 @@ async fn main() -> anyhow::Result<()> {
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
 
-    let client = client::Client {
+    let client = Arc::new(client::Client {
         http_version,
         url_generator,
         method: opts.method,
@@ -473,7 +473,7 @@ async fn main() -> anyhow::Result<()> {
             }
             std::sync::Arc::new(root_cert_store)
         },
-    };
+    });
 
     if !opts.no_pre_lookup {
         client.pre_lookup().await?;
@@ -540,7 +540,7 @@ async fn main() -> anyhow::Result<()> {
             Some(0) | None => match opts.burst_duration {
                 None => {
                     client::work_until(
-                        client,
+                        client.clone(),
                         result_tx,
                         start + duration.into(),
                         opts.n_connections,
@@ -552,7 +552,7 @@ async fn main() -> anyhow::Result<()> {
                 Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_until_with_qps_latency_correction(
-                            client,
+                            client.clone(),
                             result_tx,
                             client::QueryLimit::Burst(
                                 burst_duration.into(),
@@ -567,7 +567,7 @@ async fn main() -> anyhow::Result<()> {
                         .await
                     } else {
                         client::work_until_with_qps(
-                            client,
+                            client.clone(),
                             result_tx,
                             client::QueryLimit::Burst(
                                 burst_duration.into(),
@@ -586,7 +586,7 @@ async fn main() -> anyhow::Result<()> {
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_until_with_qps_latency_correction(
-                        client,
+                        client.clone(),
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         start,
@@ -598,7 +598,7 @@ async fn main() -> anyhow::Result<()> {
                     .await
                 } else {
                     client::work_until_with_qps(
-                        client,
+                        client.clone(),
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         start,
@@ -616,7 +616,7 @@ async fn main() -> anyhow::Result<()> {
             Some(0) | None => match opts.burst_duration {
                 None => {
                     client::work(
-                        client,
+                        client.clone(),
                         result_tx,
                         opts.n_requests,
                         opts.n_connections,
@@ -627,7 +627,7 @@ async fn main() -> anyhow::Result<()> {
                 Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_with_qps_latency_correction(
-                            client,
+                            client.clone(),
                             result_tx,
                             client::QueryLimit::Burst(
                                 burst_duration.into(),
@@ -640,7 +640,7 @@ async fn main() -> anyhow::Result<()> {
                         .await
                     } else {
                         client::work_with_qps(
-                            client,
+                            client.clone(),
                             result_tx,
                             client::QueryLimit::Burst(
                                 burst_duration.into(),
@@ -657,7 +657,7 @@ async fn main() -> anyhow::Result<()> {
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_with_qps_latency_correction(
-                        client,
+                        client.clone(),
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
@@ -667,7 +667,7 @@ async fn main() -> anyhow::Result<()> {
                     .await
                 } else {
                     client::work_with_qps(
-                        client,
+                        client.clone(),
                         result_tx,
                         client::QueryLimit::Qps(qps),
                         opts.n_requests,
@@ -696,7 +696,7 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(db_url) = opts.db_url {
         eprintln!("Storing results to {db_url}");
-        let _ = db::store(&db_url, start, res.success());
+        let _ = db::store(&client, &db_url, start, res.success());
     }
 
     Ok(())

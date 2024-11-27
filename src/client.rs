@@ -813,7 +813,7 @@ fn set_start_latency_correction<E>(
 
 /// Run n tasks by m workers
 pub async fn work_debug(
-    client: Client,
+    client: Arc<Client>,
     _report_tx: flume::Sender<Result<RequestResult, ClientError>>,
 ) -> Result<(), ClientError> {
     let mut rng = StdRng::from_entropy();
@@ -845,7 +845,7 @@ pub async fn work_debug(
 
 /// Run n tasks by m workers
 pub async fn work(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_connections: usize,
@@ -853,8 +853,6 @@ pub async fn work(
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -956,7 +954,7 @@ pub async fn work(
 
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
@@ -1000,8 +998,6 @@ pub async fn work_with_qps(
         drop(tx);
         Ok::<(), flume::SendError<_>>(())
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -1103,7 +1099,7 @@ pub async fn work_with_qps(
 
 /// n tasks by m workers limit to qps works in a second with latency correction
 pub async fn work_with_qps_latency_correction(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
@@ -1150,8 +1146,6 @@ pub async fn work_with_qps_latency_correction(
         drop(tx);
         Ok::<(), flume::SendError<_>>(())
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let futures = (0..n_connections)
@@ -1254,14 +1248,13 @@ pub async fn work_with_qps_latency_correction(
 
 /// Run until dead_line by n workers
 pub async fn work_until(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
-    let client = Arc::new(client);
     if client.is_http2() {
         // Using semaphore to control the deadline
         // Maybe there is a better concurrent primitive to do this
@@ -1396,7 +1389,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
@@ -1442,8 +1435,6 @@ pub async fn work_until_with_qps(
             rx
         }
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
@@ -1581,7 +1572,7 @@ pub async fn work_until_with_qps(
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps_latency_correction(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
@@ -1626,8 +1617,6 @@ pub async fn work_until_with_qps_latency_correction(
             });
         }
     };
-
-    let client = Arc::new(client);
 
     if client.is_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
