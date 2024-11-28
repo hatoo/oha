@@ -171,6 +171,7 @@ pub struct Client {
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
     pub insecure: bool,
+    pub proxy_url: Option<Url>,
     #[cfg(unix)]
     pub unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
@@ -369,7 +370,12 @@ impl Client {
                 Err(_) => Err(ClientError::Timeout),
             };
         }
-        let addr = self.dns.lookup(url, rng).await?;
+        // HTTP
+        let addr = if let Some(proxy_url) = &self.proxy_url {
+            self.dns.lookup(proxy_url, rng).await?
+        } else {
+            self.dns.lookup(url, rng).await?
+        };
         let dns_lookup = Instant::now();
         let stream =
             tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
@@ -451,11 +457,13 @@ impl Client {
 
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
         let mut builder = http::Request::builder()
-            .uri(if self.is_http2() {
-                &url[..]
-            } else {
-                &url[url::Position::BeforePath..]
-            })
+            .uri(
+                if self.is_http2() || (url.scheme() == "http" && self.proxy_url.is_some()) {
+                    &url[..]
+                } else {
+                    &url[url::Position::BeforePath..]
+                },
+            )
             .method(self.method.clone())
             .version(self.http_version);
 

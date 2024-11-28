@@ -86,6 +86,7 @@ mod test_db {
             redirect_limit: 0,
             disable_keepalive: false,
             insecure: false,
+            proxy_url: None,
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(feature = "vsock")]

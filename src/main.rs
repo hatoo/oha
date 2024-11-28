@@ -134,10 +134,8 @@ Note: If qps is specified, burst will be ignored",
     content_type: Option<String>,
     #[arg(help = "Basic authentication, username:password", short = 'a')]
     basic_auth: Option<String>,
-    /*
-    #[arg(help = "HTTP proxy", short = "x")]
-    proxy: Option<String>,
-    */
+    #[arg(help = "HTTP proxy", short = 'x')]
+    proxy: Option<Url>,
     #[arg(
         help = "HTTP version. Available values 0.9, 1.0, 1.1.",
         long = "http-version"
@@ -459,6 +457,7 @@ async fn main() -> anyhow::Result<()> {
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
+        proxy_url: opts.proxy,
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
         #[cfg(feature = "vsock")]
