@@ -136,10 +136,18 @@ Note: If qps is specified, burst will be ignored",
     basic_auth: Option<String>,
     #[arg(help = "HTTP proxy", short = 'x')]
     proxy: Option<Url>,
-    #[arg(help = "Use HTTP/2 to connect to proxy", long = "proxy-http2")]
+    #[arg(
+        help = "HTTP version to connect to proxy. Available values 0.9, 1.0, 1.1, 2.",
+        long = "proxy-http-version"
+    )]
+    proxy_http_version: Option<String>,
+    #[arg(
+        help = "Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2",
+        long = "proxy-http2"
+    )]
     proxy_http2: bool,
     #[arg(
-        help = "HTTP version. Available values 0.9, 1.0, 1.1.",
+        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2.",
         long = "http-version"
     )]
     http_version: Option<String>,
