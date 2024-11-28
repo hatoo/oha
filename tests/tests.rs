@@ -703,6 +703,74 @@ async fn test_unix_socket() {
     rx.try_recv().unwrap();
 }
 
+#[tokio::test]
+async fn test_proxy_http_http() {
+    let (tx, rx) = flume::unbounded();
+    let (listener, port) = bind_port().await;
+    let proxy_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    let client = http_mitm_proxy::DefaultClient::new().unwrap();
+    let proxy = http_mitm_proxy::MitmProxy::<&'static rcgen::CertifiedKey>::new(None, None);
+    let proxy_server = proxy
+        .bind(
+            ("127.0.0.1", proxy_port),
+            service_fn(move |mut req| {
+                let client = client.clone();
+
+                async move {
+                    req.headers_mut()
+                        .insert("x-oha-test-through-proxy", "true".parse().unwrap());
+
+                    let (res, _) = client.send_request(req).await?;
+
+                    Ok::<_, http_mitm_proxy::default_client::Error>(res)
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    tokio::spawn(proxy_server);
+
+    tokio::spawn(async move {
+        loop {
+            let tx = tx.clone();
+            let (tcp, _) = listener.accept().await.unwrap();
+            hyper::server::conn::http1::Builder::new()
+                .serve_connection(
+                    TokioIo::new(tcp),
+                    service_fn(move |req| {
+                        let tx = tx.clone();
+
+                        async move {
+                            tx.send(req).unwrap();
+                            Ok::<_, Infallible>(Response::new("Hello World".to_string()))
+                        }
+                    }),
+                )
+                .await
+                .unwrap();
+        }
+    });
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(["--no-tui", "--debug", "-x"])
+            .arg(format!("http://127.0.0.1:{proxy_port}/"))
+            .arg(format!("http://127.0.0.1:{port}/"))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    let req = rx.try_recv().unwrap();
+
+    assert_eq!(
+        req.headers().get("x-oha-test-through-proxy").unwrap(),
+        "true"
+    );
+}
+
 #[test]
 fn test_google() {
     Command::cargo_bin("oha")
