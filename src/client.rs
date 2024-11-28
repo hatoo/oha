@@ -640,8 +640,8 @@ impl Client {
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
+            let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
             if url.scheme() == "https" {
-                let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
                 let req = http::Request::builder()
                     .method(Method::CONNECT)
                     .uri(format!(
@@ -671,7 +671,6 @@ impl Client {
 
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
             } else {
-                let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
                 let send_request = stream.handshake_http2().await?;
                 let dialup = std::time::Instant::now();
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
