@@ -1,14 +1,21 @@
 use std::{
     convert::Infallible,
+    error::Error as StdError,
+    future::Future,
     net::{Ipv6Addr, SocketAddr},
-    sync::atomic::AtomicU16,
+    sync::{atomic::AtomicU16, Arc},
 };
 
 use assert_cmd::Command;
 use axum::{extract::Path, response::Redirect, routing::get, Router};
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
-use hyper::{http, service::service_fn};
+use http_mitm_proxy::MitmProxy;
+use hyper::{
+    body::{Body, Incoming},
+    http,
+    service::{service_fn, HttpService},
+};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
 // Port 5111- is reserved for testing
@@ -703,17 +710,82 @@ async fn test_unix_socket() {
     rx.try_recv().unwrap();
 }
 
-#[tokio::test]
-async fn test_proxy_http_http() {
-    let (tx, rx) = flume::unbounded();
-    let (listener, port) = bind_port().await;
-    let proxy_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+fn make_root_cert() -> rcgen::CertifiedKey {
+    let mut param = rcgen::CertificateParams::default();
 
-    let client = http_mitm_proxy::DefaultClient::new().unwrap();
-    let proxy = http_mitm_proxy::MitmProxy::<&'static rcgen::CertifiedKey>::new(None, None);
-    let proxy_server = proxy
-        .bind(
-            ("127.0.0.1", proxy_port),
+    param.distinguished_name = rcgen::DistinguishedName::new();
+    param.distinguished_name.push(
+        rcgen::DnType::CommonName,
+        rcgen::DnValue::Utf8String("<HTTP-MITM-PROXY CA>".to_string()),
+    );
+    param.key_usages = vec![
+        rcgen::KeyUsagePurpose::KeyCertSign,
+        rcgen::KeyUsagePurpose::CrlSign,
+    ];
+    param.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+
+    let key_pair = rcgen::KeyPair::generate().unwrap();
+    let cert = param.self_signed(&key_pair).unwrap();
+
+    rcgen::CertifiedKey { cert, key_pair }
+}
+
+async fn bind_proxy<S>(service: S, http2: bool) -> (u16, impl Future<Output = ()>)
+where
+    S: HttpService<Incoming> + Clone + Send + 'static,
+    S::Error: Into<Box<dyn StdError + Send + Sync>>,
+    S::ResBody: Send + Sync + 'static,
+    <S::ResBody as Body>::Data: Send,
+    <S::ResBody as Body>::Error: Into<Box<dyn StdError + Send + Sync>>,
+    S::Future: Send,
+{
+    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tcp_listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .unwrap();
+
+    let cert = make_root_cert();
+    let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(cert), None));
+
+    let serve = async move {
+        loop {
+            let (stream, _) = tcp_listener.accept().await.unwrap();
+
+            let proxy = proxy.clone();
+            let service = service.clone();
+            tokio::spawn(async move {
+                if http2 {
+                    hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                        .serve_connection(
+                            TokioIo::new(stream),
+                            MitmProxy::wrap_service(proxy, service),
+                        )
+                        .await
+                        .unwrap();
+                } else {
+                    hyper::server::conn::http1::Builder::new()
+                        .serve_connection(
+                            TokioIo::new(stream),
+                            MitmProxy::wrap_service(proxy, service),
+                        )
+                        .await
+                        .unwrap();
+                }
+            });
+        }
+    };
+
+    (port, serve)
+}
+
+#[tokio::test]
+async fn test_proxy_to_http() {
+    for http2 in [false, true] {
+        let (tx, rx) = flume::unbounded();
+        let (listener, port) = bind_port().await;
+
+        let client = http_mitm_proxy::DefaultClient::new().unwrap();
+        let (proxy_port, proxy_server) = bind_proxy(
             service_fn(move |mut req| {
                 let client = client.clone();
 
@@ -726,49 +798,52 @@ async fn test_proxy_http_http() {
                     Ok::<_, http_mitm_proxy::default_client::Error>(res)
                 }
             }),
+            http2,
         )
+        .await;
+
+        tokio::spawn(proxy_server);
+        tokio::spawn(async move {
+            loop {
+                let tx = tx.clone();
+                let (tcp, _) = listener.accept().await.unwrap();
+                hyper::server::conn::http1::Builder::new()
+                    .serve_connection(
+                        TokioIo::new(tcp),
+                        service_fn(move |req| {
+                            let tx = tx.clone();
+
+                            async move {
+                                tx.send(req).unwrap();
+                                Ok::<_, Infallible>(Response::new("Hello World".to_string()))
+                            }
+                        }),
+                    )
+                    .await
+                    .unwrap();
+            }
+        });
+
+        tokio::task::spawn_blocking(move || {
+            let mut p = Command::cargo_bin("oha").unwrap();
+            p.args(["--no-tui", "--debug", "-x"])
+                .arg(format!("http://127.0.0.1:{proxy_port}/"))
+                .arg(format!("http://127.0.0.1:{port}/"));
+            if http2 {
+                p.arg("--proxy-http2");
+            }
+            p.assert().success();
+        })
         .await
         .unwrap();
-    tokio::spawn(proxy_server);
 
-    tokio::spawn(async move {
-        loop {
-            let tx = tx.clone();
-            let (tcp, _) = listener.accept().await.unwrap();
-            hyper::server::conn::http1::Builder::new()
-                .serve_connection(
-                    TokioIo::new(tcp),
-                    service_fn(move |req| {
-                        let tx = tx.clone();
+        let req = rx.try_recv().unwrap();
 
-                        async move {
-                            tx.send(req).unwrap();
-                            Ok::<_, Infallible>(Response::new("Hello World".to_string()))
-                        }
-                    }),
-                )
-                .await
-                .unwrap();
-        }
-    });
-    tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
-            .args(["--no-tui", "--debug", "-x"])
-            .arg(format!("http://127.0.0.1:{proxy_port}/"))
-            .arg(format!("http://127.0.0.1:{port}/"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
-
-    let req = rx.try_recv().unwrap();
-
-    assert_eq!(
-        req.headers().get("x-oha-test-through-proxy").unwrap(),
-        "true"
-    );
+        assert_eq!(
+            req.headers().get("x-oha-test-through-proxy").unwrap(),
+            "true"
+        );
+    }
 }
 
 #[test]
