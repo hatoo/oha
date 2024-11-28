@@ -446,7 +446,7 @@ impl Client {
         stream: S,
         url: &Url,
         is_http2: bool,
-    ) -> Result<tokio_native_tls::TlsStream<TcpStream>, ClientError>
+    ) -> Result<tokio_native_tls::TlsStream<S>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
