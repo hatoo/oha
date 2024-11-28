@@ -500,6 +500,7 @@ impl Client {
                 tokio::spawn(conn);
                 Ok((dns_lookup, send_request))
             } else {
+                // Send full URL in request() for HTTP proxy
                 Ok((dns_lookup, stream.handshake_http1(false).await?))
             }
         } else {
@@ -632,10 +633,42 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-        let (dns_lookup, stream) = self.client(url, rng).await?;
-        let send_request = stream.handshake_http2().await?;
-        let dialup = std::time::Instant::now();
-        Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+        if let Some(proxy_url) = &self.proxy_url {
+            if url.scheme() == "https" {
+                let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
+                let mut send_request = stream.handshake_http2().await?;
+                let req = http::Request::builder()
+                    .method(Method::CONNECT)
+                    .uri(format!(
+                        "{}:{}",
+                        url.host_str().unwrap(),
+                        url.port_or_known_default().unwrap()
+                    ))
+                    .body(http_body_util::Full::default())?;
+                let res = send_request.send_request(req).await?;
+                let stream = hyper::upgrade::on(res).await?;
+                let dialup = std::time::Instant::now();
+                let stream = self.connect_tls(TokioIo::new(stream), url).await?;
+                let (send_request, conn) = hyper::client::conn::http2::handshake(
+                    TokioExecutor::new(),
+                    TokioIo::new(stream),
+                )
+                .await?;
+                tokio::spawn(conn);
+
+                Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+            } else {
+                let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
+                let send_request = stream.handshake_http2().await?;
+                let dialup = std::time::Instant::now();
+                Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+            }
+        } else {
+            let (dns_lookup, stream) = self.client(url, rng).await?;
+            let send_request = stream.handshake_http2().await?;
+            let dialup = std::time::Instant::now();
+            Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+        }
     }
 
     async fn work_http2(
