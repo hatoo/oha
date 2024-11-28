@@ -683,7 +683,6 @@ impl Client {
                     send_request.send_request(req).await?
                 };
                 let stream = hyper::upgrade::on(res).await?;
-                let dialup = std::time::Instant::now();
                 let stream = self.connect_tls(TokioIo::new(stream), url, true).await?;
                 let (send_request, conn) =
                     hyper::client::conn::http2::Builder::new(TokioExecutor::new())
@@ -693,6 +692,7 @@ impl Client {
                         .handshake(TokioIo::new(stream))
                         .await?;
                 tokio::spawn(conn);
+                let dialup = std::time::Instant::now();
 
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
             } else {
