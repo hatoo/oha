@@ -1,5 +1,5 @@
 use http_body_util::{BodyExt, Full};
-use hyper::http;
+use hyper::{http, Method, Version};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
@@ -11,7 +11,10 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
-use tokio::net::TcpStream;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+};
 use url::{ParseError, Url};
 
 use crate::{
@@ -228,32 +231,48 @@ enum Stream {
 }
 
 impl Stream {
-    async fn handshake_http1(self) -> Result<SendRequestHttp1, ClientError> {
+    async fn handshake_http1(self, with_upgrade: bool) -> Result<SendRequestHttp1, ClientError> {
         match self {
             Stream::Tcp(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
             Stream::Tls(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
             #[cfg(unix)]
             Stream::Unix(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
             #[cfg(feature = "vsock")]
             Stream::Vsock(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
         }
@@ -371,11 +390,7 @@ impl Client {
             };
         }
         // HTTP
-        let addr = if let Some(proxy_url) = &self.proxy_url {
-            self.dns.lookup(proxy_url, rng).await?
-        } else {
-            self.dns.lookup(url, rng).await?
-        };
+        let addr = self.dns.lookup(url, rng).await?;
         let dns_lookup = Instant::now();
         let stream =
             tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
@@ -446,13 +461,67 @@ impl Client {
         Ok(Stream::Tls(stream))
     }
 
+    #[cfg(feature = "rustls")]
+    async fn connect_tls<S>(
+        &self,
+        stream: S,
+        url: &Url,
+    ) -> Result<tokio_rustls::client::TlsStream<S>, ClientError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        let mut config = rustls::ClientConfig::builder()
+            .with_root_certificates(self.root_cert_store.clone())
+            .with_no_client_auth();
+        if self.insecure {
+            config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
+        }
+        if self.is_http2() {
+            config.alpn_protocols = vec![b"h2".to_vec()];
+        }
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+        let domain = rustls_pki_types::ServerName::try_from(
+            url.host_str().ok_or(ClientError::HostNotFound)?,
+        )?;
+        let stream = connector.connect(domain.to_owned(), stream).await?;
+
+        Ok(stream)
+    }
+
     async fn client_http1<R: Rng>(
         &self,
         url: &Url,
         rng: &mut R,
     ) -> Result<(Instant, SendRequestHttp1), ClientError> {
-        let (dns_lookup, stream) = self.client(url, rng).await?;
-        Ok((dns_lookup, stream.handshake_http1().await?))
+        if let Some(proxy_url) = &self.proxy_url {
+            let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
+            if url.scheme() == "https" {
+                // Do CONNECT request to proxy
+                let mut send_request = stream.handshake_http1(true).await?;
+                let req = http::Request::builder()
+                    .method(Method::CONNECT)
+                    .uri(format!(
+                        "{}:{}",
+                        url.host_str().unwrap(),
+                        url.port_or_known_default().unwrap()
+                    ))
+                    .body(http_body_util::Full::default())?;
+                let res = send_request.send_request(req).await?;
+                let stream = hyper::upgrade::on(res).await?;
+                let stream = self.connect_tls(TokioIo::new(stream), url).await?;
+                let (send_request, conn) =
+                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok((dns_lookup, send_request))
+            } else {
+                Ok((dns_lookup, stream.handshake_http1(false).await?))
+            }
+        } else {
+            let (dns_lookup, stream) = self.client(url, rng).await?;
+            Ok((dns_lookup, stream.handshake_http1(false).await?))
+        }
     }
 
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
