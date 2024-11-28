@@ -313,10 +313,12 @@ impl Stream {
 }
 
 impl Client {
+    #[inline]
     fn is_http2(&self) -> bool {
         self.http_version == http::Version::HTTP_2
     }
 
+    #[inline]
     fn is_proxy_http2(&self) -> bool {
         self.proxy_http_version == http::Version::HTTP_2
     }
@@ -537,10 +539,11 @@ impl Client {
         }
     }
 
+    #[inline]
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
         let mut builder = http::Request::builder()
             .uri(
-                if self.is_http2() || (url.scheme() == "http" && self.proxy_url.is_some()) {
+                if self.is_http2() || (self.proxy_url.is_some() && url.scheme() == "http") {
                     &url[..]
                 } else {
                     &url[url::Position::BeforePath..]
