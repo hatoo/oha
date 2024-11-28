@@ -317,6 +317,23 @@ impl Client {
         self.http_version == http::Version::HTTP_2
     }
 
+    fn is_proxy_http2(&self) -> bool {
+        self.proxy_http_version == http::Version::HTTP_2
+    }
+
+    fn is_work_http2(&self) -> bool {
+        if self.proxy_url.is_some() {
+            let url = self.url_generator.generate(&mut thread_rng()).unwrap();
+            if url.scheme() == "https" {
+                self.is_http2()
+            } else {
+                self.is_proxy_http2()
+            }
+        } else {
+            self.is_http2()
+        }
+    }
+
     /// Perform a DNS lookup to cache it
     /// This is useful to avoid DNS lookup latency at the first concurrent requests
     pub async fn pre_lookup(&self) -> Result<(), ClientError> {
@@ -348,6 +365,7 @@ impl Client {
         &self,
         url: &Url,
         rng: &mut R,
+        is_http2: bool,
     ) -> Result<(Instant, Stream), ClientError> {
         // TODO: Allow the connect timeout to be configured
         let timeout_duration = tokio::time::Duration::from_secs(5);
@@ -357,7 +375,8 @@ impl Client {
             let dns_lookup = Instant::now();
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
-            let stream = tokio::time::timeout(timeout_duration, self.tls_client(addr, url)).await;
+            let stream =
+                tokio::time::timeout(timeout_duration, self.tls_client(addr, url, is_http2)).await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, stream)),
                 Ok(Err(err)) => Err(err),
@@ -409,11 +428,12 @@ impl Client {
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
+        is_http2: bool,
     ) -> Result<Stream, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
-        let stream = self.connect_tls(stream, url).await?;
+        let stream = self.connect_tls(stream, url, is_http2).await?;
 
         Ok(Stream::Tls(stream))
     }
@@ -423,6 +443,7 @@ impl Client {
         &self,
         stream: S,
         url: &Url,
+        is_http2: bool,
     ) -> Result<tokio_native_tls::TlsStream<TcpStream>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -434,7 +455,7 @@ impl Client {
                 .danger_accept_invalid_hostnames(true);
         }
 
-        if self.is_http2() {
+        if is_http2 {
             connector_builder.request_alpns(&["h2"]);
         }
 
@@ -451,6 +472,7 @@ impl Client {
         &self,
         stream: S,
         url: &Url,
+        is_http2: bool,
     ) -> Result<tokio_rustls::client::TlsStream<S>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -463,7 +485,7 @@ impl Client {
                 .dangerous()
                 .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
         }
-        if self.is_http2() {
+        if is_http2 {
             config.alpn_protocols = vec![b"h2".to_vec()];
         }
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
@@ -481,7 +503,7 @@ impl Client {
         rng: &mut R,
     ) -> Result<(Instant, SendRequestHttp1), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
-            let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
+            let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
             if url.scheme() == "https" {
                 // Do CONNECT request to proxy
                 let req = http::Request::builder()
@@ -500,7 +522,7 @@ impl Client {
                     send_request.send_request(req).await?
                 };
                 let stream = hyper::upgrade::on(res).await?;
-                let stream = self.connect_tls(TokioIo::new(stream), url).await?;
+                let stream = self.connect_tls(TokioIo::new(stream), url, false).await?;
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
                 tokio::spawn(conn);
@@ -510,7 +532,7 @@ impl Client {
                 Ok((dns_lookup, stream.handshake_http1(false).await?))
             }
         } else {
-            let (dns_lookup, stream) = self.client(url, rng).await?;
+            let (dns_lookup, stream) = self.client(url, rng, false).await?;
             Ok((dns_lookup, stream.handshake_http1(false).await?))
         }
     }
@@ -640,7 +662,7 @@ impl Client {
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
-            let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
+            let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
             if url.scheme() == "https" {
                 let req = http::Request::builder()
                     .method(Method::CONNECT)
@@ -659,7 +681,7 @@ impl Client {
                 };
                 let stream = hyper::upgrade::on(res).await?;
                 let dialup = std::time::Instant::now();
-                let stream = self.connect_tls(TokioIo::new(stream), url).await?;
+                let stream = self.connect_tls(TokioIo::new(stream), url, true).await?;
                 let (send_request, conn) =
                     hyper::client::conn::http2::Builder::new(TokioExecutor::new())
                         // from nghttp2's default
@@ -676,7 +698,7 @@ impl Client {
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
             }
         } else {
-            let (dns_lookup, stream) = self.client(url, rng).await?;
+            let (dns_lookup, stream) = self.client(url, rng, true).await?;
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
             Ok((ConnectionTime { dns_lookup, dialup }, send_request))
@@ -931,7 +953,7 @@ pub async fn work_debug(
 
     println!("{:#?}", request);
 
-    let response = if client.is_http2() {
+    let response = if client.is_work_http2() {
         let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
         client_state.send_request(request).await?
     } else {
@@ -961,7 +983,7 @@ pub async fn work(
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
-    if client.is_http2() {
+    if client.is_work_http2() {
         let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
@@ -1106,7 +1128,7 @@ pub async fn work_with_qps(
         Ok::<(), flume::SendError<_>>(())
     };
 
-    if client.is_http2() {
+    if client.is_work_http2() {
         let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
@@ -1254,7 +1276,7 @@ pub async fn work_with_qps_latency_correction(
         Ok::<(), flume::SendError<_>>(())
     };
 
-    if client.is_http2() {
+    if client.is_work_http2() {
         let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
@@ -1362,7 +1384,7 @@ pub async fn work_until(
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
-    if client.is_http2() {
+    if client.is_work_http2() {
         // Using semaphore to control the deadline
         // Maybe there is a better concurrent primitive to do this
         let s = Arc::new(tokio::sync::Semaphore::new(0));
@@ -1543,7 +1565,7 @@ pub async fn work_until_with_qps(
         }
     };
 
-    if client.is_http2() {
+    if client.is_work_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
@@ -1725,7 +1747,7 @@ pub async fn work_until_with_qps_latency_correction(
         }
     };
 
-    if client.is_http2() {
+    if client.is_work_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
