@@ -1,5 +1,5 @@
 use http_body_util::{BodyExt, Full};
-use hyper::{http, Method, Version};
+use hyper::{http, Method};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
@@ -404,7 +404,6 @@ impl Client {
         }
     }
 
-    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
     async fn tls_client(
         &self,
         addr: (std::net::IpAddr, u16),
@@ -413,6 +412,20 @@ impl Client {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
+        let stream = self.connect_tls(stream, url).await?;
+
+        Ok(Stream::Tls(stream))
+    }
+
+    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+    async fn connect_tls<S>(
+        &self,
+        stream: S,
+        url: &Url,
+    ) -> Result<tokio_native_tls::TlsStream<TcpStream>, ClientError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         let mut connector_builder = native_tls::TlsConnector::builder();
         if self.insecure {
             connector_builder
@@ -429,36 +442,7 @@ impl Client {
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
 
-        Ok(Stream::Tls(stream))
-    }
-
-    #[cfg(feature = "rustls")]
-    async fn tls_client(
-        &self,
-        addr: (std::net::IpAddr, u16),
-        url: &Url,
-    ) -> Result<Stream, ClientError> {
-        let stream = tokio::net::TcpStream::connect(addr).await?;
-        stream.set_nodelay(true)?;
-
-        let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(self.root_cert_store.clone())
-            .with_no_client_auth();
-        if self.insecure {
-            config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
-        }
-        if self.is_http2() {
-            config.alpn_protocols = vec![b"h2".to_vec()];
-        }
-        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-        let domain = rustls_pki_types::ServerName::try_from(
-            url.host_str().ok_or(ClientError::HostNotFound)?,
-        )?;
-        let stream = connector.connect(domain.to_owned(), stream).await?;
-
-        Ok(Stream::Tls(stream))
+        Ok(stream)
     }
 
     #[cfg(feature = "rustls")]
