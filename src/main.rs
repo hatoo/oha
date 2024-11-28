@@ -136,6 +136,8 @@ Note: If qps is specified, burst will be ignored",
     basic_auth: Option<String>,
     #[arg(help = "HTTP proxy", short = 'x')]
     proxy: Option<Url>,
+    #[arg(help = "Use HTTP/2 to connect to proxy", long = "proxy-http2")]
+    proxy_http2: bool,
     #[arg(
         help = "HTTP version. Available values 0.9, 1.0, 1.1.",
         long = "http-version"
@@ -445,6 +447,11 @@ async fn main() -> anyhow::Result<()> {
 
     let client = Arc::new(client::Client {
         http_version,
+        proxy_http_version: if opts.proxy_http2 {
+            http::Version::HTTP_2
+        } else {
+            http::Version::HTTP_11
+        },
         url_generator,
         method: opts.method,
         headers,

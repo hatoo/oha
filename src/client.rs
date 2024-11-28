@@ -165,6 +165,7 @@ pub enum ClientError {
 
 pub struct Client {
     pub http_version: http::Version,
+    pub proxy_http_version: http::Version,
     pub url_generator: UrlGenerator,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
@@ -483,7 +484,6 @@ impl Client {
             let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
             if url.scheme() == "https" {
                 // Do CONNECT request to proxy
-                let mut send_request = stream.handshake_http1(true).await?;
                 let req = http::Request::builder()
                     .method(Method::CONNECT)
                     .uri(format!(
@@ -492,7 +492,13 @@ impl Client {
                         url.port_or_known_default().unwrap()
                     ))
                     .body(http_body_util::Full::default())?;
-                let res = send_request.send_request(req).await?;
+                let res = if self.proxy_http_version == http::Version::HTTP_2 {
+                    let mut send_request = stream.handshake_http2().await?;
+                    send_request.send_request(req).await?
+                } else {
+                    let mut send_request = stream.handshake_http1(true).await?;
+                    send_request.send_request(req).await?
+                };
                 let stream = hyper::upgrade::on(res).await?;
                 let stream = self.connect_tls(TokioIo::new(stream), url).await?;
                 let (send_request, conn) =
@@ -636,7 +642,6 @@ impl Client {
         if let Some(proxy_url) = &self.proxy_url {
             if url.scheme() == "https" {
                 let (dns_lookup, stream) = self.client(proxy_url, rng).await?;
-                let mut send_request = stream.handshake_http2().await?;
                 let req = http::Request::builder()
                     .method(Method::CONNECT)
                     .uri(format!(
@@ -645,15 +650,23 @@ impl Client {
                         url.port_or_known_default().unwrap()
                     ))
                     .body(http_body_util::Full::default())?;
-                let res = send_request.send_request(req).await?;
+                let res = if self.proxy_http_version == http::Version::HTTP_2 {
+                    let mut send_request = stream.handshake_http2().await?;
+                    send_request.send_request(req).await?
+                } else {
+                    let mut send_request = stream.handshake_http1(true).await?;
+                    send_request.send_request(req).await?
+                };
                 let stream = hyper::upgrade::on(res).await?;
                 let dialup = std::time::Instant::now();
                 let stream = self.connect_tls(TokioIo::new(stream), url).await?;
-                let (send_request, conn) = hyper::client::conn::http2::handshake(
-                    TokioExecutor::new(),
-                    TokioIo::new(stream),
-                )
-                .await?;
+                let (send_request, conn) =
+                    hyper::client::conn::http2::Builder::new(TokioExecutor::new())
+                        // from nghttp2's default
+                        .initial_stream_window_size((1 << 30) - 1)
+                        .initial_connection_window_size((1 << 30) - 1)
+                        .handshake(TokioIo::new(stream))
+                        .await?;
                 tokio::spawn(conn);
 
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
