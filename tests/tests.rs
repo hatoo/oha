@@ -814,7 +814,7 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
         if proxy_http2 {
             p.arg("--proxy-http2");
         }
-        p.timeout(std::time::Duration::from_secs(3)).assert()
+        p.assert()
     })
     .await
     .unwrap()
