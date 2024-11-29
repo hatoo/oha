@@ -802,23 +802,25 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
 
     tokio::spawn(proxy_serve);
 
-    tokio::task::spawn_blocking(move || {
-        let scheme = if https { "https" } else { "http" };
-        let mut p = Command::cargo_bin("oha").unwrap();
-        p.args(["--no-tui", "--debug", "--insecure", "-x"])
-            .arg(format!("http://127.0.0.1:{proxy_port}/"))
-            .arg(format!("{scheme}://example.com/"));
-        if http2 {
-            p.arg("--http2");
-        }
-        if proxy_http2 {
-            p.arg("--proxy-http2");
-        }
-        p.assert()
-    })
-    .await
-    .unwrap()
-    .success();
+    let cargo_bin = Command::cargo_bin("oha").unwrap();
+    let mut proc = tokio::process::Command::new(cargo_bin.get_program());
+    std::mem::drop(cargo_bin);
+
+    let scheme = if https { "https" } else { "http" };
+    proc.args(["--no-tui", "--debug", "--insecure", "-x"])
+        .arg(format!("http://127.0.0.1:{proxy_port}/"))
+        .arg(format!("{scheme}://example.com/"));
+    if http2 {
+        proc.arg("--http2");
+    }
+    if proxy_http2 {
+        proc.arg("--proxy-http2");
+    }
+
+    proc.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    proc.spawn().unwrap().wait().await.unwrap();
 
     let req = rx.try_recv().unwrap();
 
@@ -828,7 +830,7 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test]
 async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
