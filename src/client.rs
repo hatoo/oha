@@ -541,16 +541,20 @@ impl Client {
 
     #[inline]
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
+        let use_proxy = self.proxy_url.is_some() && url.scheme() == "http";
+
         let mut builder = http::Request::builder()
-            .uri(
-                if self.is_http2() || (self.proxy_url.is_some() && url.scheme() == "http") {
-                    &url[..]
-                } else {
-                    &url[url::Position::BeforePath..]
-                },
-            )
+            .uri(if self.is_http2() || use_proxy {
+                &url[..]
+            } else {
+                &url[url::Position::BeforePath..]
+            })
             .method(self.method.clone())
-            .version(self.http_version);
+            .version(if use_proxy {
+                self.proxy_http_version
+            } else {
+                self.http_version
+            });
 
         *builder
             .headers_mut()
