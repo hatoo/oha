@@ -822,11 +822,15 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
     assert!(String::from_utf8(stdout).unwrap().contains("Hello World"),);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 64)]
+#[tokio::test]
 async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
-            for proxy_http2 in [false] {
+            for proxy_http2 in [
+                false,
+                // true
+                // Skip Proxy server on HTTP/2 beacause it's buggy on httm-mitm-proxy
+            ] {
                 test_proxy_with_setting(https, http2, proxy_http2).await;
             }
         }
