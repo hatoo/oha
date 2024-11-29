@@ -779,61 +779,60 @@ where
     (port, serve)
 }
 
-#[tokio::test]
+async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
+    dbg!((https, http2, proxy_http2));
+    let (tx, rx) = flume::unbounded();
+
+    let (proxy_port, proxy_serve) = bind_proxy(
+        service_fn(move |mut req| {
+            let tx = tx.clone();
+            async move {
+                req.headers_mut()
+                    .insert("x-oha-test-through-proxy", "true".parse().unwrap());
+
+                tx.send(req).unwrap();
+
+                let res = Response::new("Hello World".to_string());
+                Ok::<_, Infallible>(res)
+            }
+        }),
+        proxy_http2,
+    )
+    .await;
+
+    tokio::spawn(proxy_serve);
+
+    tokio::task::spawn_blocking(move || {
+        let scheme = if https { "https" } else { "http" };
+        let mut p = Command::cargo_bin("oha").unwrap();
+        p.args(["--no-tui", "--debug", "--insecure", "-x"])
+            .arg(format!("http://127.0.0.1:{proxy_port}/"))
+            .arg(format!("{scheme}://example.com/"));
+        if http2 {
+            p.arg("--http2");
+        }
+        if proxy_http2 {
+            p.arg("--proxy-http2");
+        }
+        p.assert().success()
+    })
+    .await
+    .unwrap();
+
+    let req = rx.try_recv().unwrap();
+
+    assert_eq!(
+        req.headers().get("x-oha-test-through-proxy").unwrap(),
+        "true"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
-            for proxy_http2 in [
-                false, // Currently, The test on proxy server on HTTP/2 will fail.
-                      // I don't know this is a issue of either oha or http-mitm-proxy.
-                      // But I think this is not a critical because the proxy server on HTTP/2 seems not common.
-                      /*, true */
-            ] {
-                let (tx, rx) = flume::unbounded();
-
-                let (proxy_port, proxy_serve) = bind_proxy(
-                    service_fn(move |mut req| {
-                        dbg!(&req);
-                        let tx = tx.clone();
-                        async move {
-                            req.headers_mut()
-                                .insert("x-oha-test-through-proxy", "true".parse().unwrap());
-
-                            tx.send(req).unwrap();
-
-                            let res = Response::new("Hello World".to_string());
-                            Ok::<_, Infallible>(res)
-                        }
-                    }),
-                    proxy_http2,
-                )
-                .await;
-
-                tokio::spawn(proxy_serve);
-
-                tokio::task::spawn_blocking(move || {
-                    let scheme = if https { "https" } else { "http" };
-                    let mut p = Command::cargo_bin("oha").unwrap();
-                    p.args(["--no-tui", "--debug", "--insecure", "-x"])
-                        .arg(format!("http://127.0.0.1:{proxy_port}/"))
-                        .arg(format!("{scheme}://example.com/"));
-                    if http2 {
-                        p.arg("--http2");
-                    }
-                    if proxy_http2 {
-                        p.arg("--proxy-http2");
-                    }
-                    dbg!(p.assert().success().get_output());
-                })
-                .await
-                .unwrap();
-
-                let req = rx.try_recv().unwrap();
-
-                assert_eq!(
-                    req.headers().get("x-oha-test-through-proxy").unwrap(),
-                    "true"
-                );
+            for proxy_http2 in [false, true] {
+                test_proxy_with_setting(https, http2, proxy_http2).await;
             }
         }
     }
