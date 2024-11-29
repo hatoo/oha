@@ -814,10 +814,11 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
         if proxy_http2 {
             p.arg("--proxy-http2");
         }
-        p.assert().success()
+        p.timeout(std::time::Duration::from_secs(3)).assert()
     })
     .await
-    .unwrap();
+    .unwrap()
+    .success();
 
     let req = rx.try_recv().unwrap();
 
