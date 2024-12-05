@@ -104,3 +104,8 @@ lto = true
 debug = false
 incremental = false
 overflow-checks = false
+
+# For full test on proxy
+# See test_proxy() on tests/proxy.rs
+# [patch.crates-io]
+# tokio-rustls = { git = "https://github.com/rustls/tokio-rustls" }

@@ -780,8 +780,6 @@ where
 }
 
 async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
-    dbg!((https, http2, proxy_http2));
-
     let (proxy_port, proxy_serve) = bind_proxy(
         service_fn(|_req| async {
             let res = Response::new("Hello World".to_string());
@@ -826,11 +824,11 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
 async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
-            for proxy_http2 in [
-                false,
-                // true
-                // Skip Proxy server on HTTP/2 beacause it's buggy on httm-mitm-proxy
-            ] {
+            for proxy_http2 in [false, true] {
+                if https && proxy_http2 {
+                    // Waiting for https://github.com/rustls/tokio-rustls/pull/93 is released
+                    continue;
+                }
                 test_proxy_with_setting(https, http2, proxy_http2).await;
             }
         }
