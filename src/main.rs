@@ -134,12 +134,20 @@ Note: If qps is specified, burst will be ignored",
     content_type: Option<String>,
     #[arg(help = "Basic authentication, username:password", short = 'a')]
     basic_auth: Option<String>,
-    /*
-    #[arg(help = "HTTP proxy", short = "x")]
-    proxy: Option<String>,
-    */
+    #[arg(help = "HTTP proxy", short = 'x')]
+    proxy: Option<Url>,
     #[arg(
-        help = "HTTP version. Available values 0.9, 1.0, 1.1.",
+        help = "HTTP version to connect to proxy. Available values 0.9, 1.0, 1.1, 2.",
+        long = "proxy-http-version"
+    )]
+    proxy_http_version: Option<String>,
+    #[arg(
+        help = "Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2",
+        long = "proxy-http2"
+    )]
+    proxy_http2: bool,
+    #[arg(
+        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2.",
         long = "http-version"
     )]
     http_version: Option<String>,
@@ -278,19 +286,23 @@ impl FromStr for VsockAddr {
 async fn main() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
 
-    let http_version: http::Version = match (opts.http2, opts.http_version) {
+    let parse_http_version = |is_http2: bool, version: Option<&str>| match (is_http2, version) {
         (true, Some(_)) => anyhow::bail!("--http2 and --http-version are exclusive"),
-        (true, None) => http::Version::HTTP_2,
+        (true, None) => Ok(http::Version::HTTP_2),
         (false, Some(http_version)) => match http_version.trim() {
-            "0.9" => http::Version::HTTP_09,
-            "1.0" => http::Version::HTTP_10,
-            "1.1" => http::Version::HTTP_11,
-            "2.0" | "2" => http::Version::HTTP_2,
+            "0.9" => Ok(http::Version::HTTP_09),
+            "1.0" => Ok(http::Version::HTTP_10),
+            "1.1" => Ok(http::Version::HTTP_11),
+            "2.0" | "2" => Ok(http::Version::HTTP_2),
             "3.0" | "3" => anyhow::bail!("HTTP/3 is not supported yet."),
             _ => anyhow::bail!("Unknown HTTP version. Valid versions are 0.9, 1.0, 1.1, 2."),
         },
-        (false, None) => http::Version::HTTP_11,
+        (false, None) => Ok(http::Version::HTTP_11),
     };
+
+    let http_version: http::Version = parse_http_version(opts.http2, opts.http_version.as_deref())?;
+    let proxy_http_version: http::Version =
+        parse_http_version(opts.proxy_http2, opts.proxy_http_version.as_deref())?;
 
     let url_generator = if opts.rand_regex_url {
         // Almost URL has dot in domain, so disable dot in regex for convenience.
@@ -447,6 +459,7 @@ async fn main() -> anyhow::Result<()> {
 
     let client = Arc::new(client::Client {
         http_version,
+        proxy_http_version,
         url_generator,
         method: opts.method,
         headers,
@@ -459,6 +472,7 @@ async fn main() -> anyhow::Result<()> {
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         insecure: opts.insecure,
+        proxy_url: opts.proxy,
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
         #[cfg(feature = "vsock")]

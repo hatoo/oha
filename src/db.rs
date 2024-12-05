@@ -74,6 +74,7 @@ mod test_db {
         let test_vec = vec![test_val.clone(), test_val.clone()];
         let client = Client {
             http_version: Version::HTTP_11,
+            proxy_http_version: Version::HTTP_11,
             url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
             method: Method::GET,
             headers: HeaderMap::new(),
@@ -86,6 +87,7 @@ mod test_db {
             redirect_limit: 0,
             disable_keepalive: false,
             insecure: false,
+            proxy_url: None,
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(feature = "vsock")]

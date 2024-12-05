@@ -1,14 +1,21 @@
 use std::{
     convert::Infallible,
+    error::Error as StdError,
+    future::Future,
     net::{Ipv6Addr, SocketAddr},
-    sync::atomic::AtomicU16,
+    sync::{atomic::AtomicU16, Arc},
 };
 
 use assert_cmd::Command;
 use axum::{extract::Path, response::Redirect, routing::get, Router};
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
-use hyper::{http, service::service_fn};
+use http_mitm_proxy::MitmProxy;
+use hyper::{
+    body::{Body, Incoming},
+    http,
+    service::{service_fn, HttpService},
+};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
 // Port 5111- is reserved for testing
@@ -701,6 +708,131 @@ async fn test_unix_socket() {
     .unwrap();
 
     rx.try_recv().unwrap();
+}
+
+fn make_root_cert() -> rcgen::CertifiedKey {
+    let mut param = rcgen::CertificateParams::default();
+
+    param.distinguished_name = rcgen::DistinguishedName::new();
+    param.distinguished_name.push(
+        rcgen::DnType::CommonName,
+        rcgen::DnValue::Utf8String("<HTTP-MITM-PROXY CA>".to_string()),
+    );
+    param.key_usages = vec![
+        rcgen::KeyUsagePurpose::KeyCertSign,
+        rcgen::KeyUsagePurpose::CrlSign,
+    ];
+    param.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+
+    let key_pair = rcgen::KeyPair::generate().unwrap();
+    let cert = param.self_signed(&key_pair).unwrap();
+
+    rcgen::CertifiedKey { cert, key_pair }
+}
+
+async fn bind_proxy<S>(service: S, http2: bool) -> (u16, impl Future<Output = ()>)
+where
+    S: HttpService<Incoming> + Clone + Send + 'static,
+    S::Error: Into<Box<dyn StdError + Send + Sync>>,
+    S::ResBody: Send + Sync + 'static,
+    <S::ResBody as Body>::Data: Send,
+    <S::ResBody as Body>::Error: Into<Box<dyn StdError + Send + Sync>>,
+    S::Future: Send,
+{
+    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tcp_listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .unwrap();
+
+    let cert = make_root_cert();
+    let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(cert), None));
+
+    let serve = async move {
+        loop {
+            let (stream, _) = tcp_listener.accept().await.unwrap();
+
+            let proxy = proxy.clone();
+            let service = service.clone();
+            tokio::spawn(async move {
+                if http2 {
+                    let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                        .serve_connection(
+                            TokioIo::new(stream),
+                            MitmProxy::wrap_service(proxy, service),
+                        )
+                        .await;
+                } else {
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .preserve_header_case(true)
+                        .title_case_headers(true)
+                        .serve_connection(
+                            TokioIo::new(stream),
+                            MitmProxy::wrap_service(proxy, service),
+                        )
+                        .with_upgrades()
+                        .await;
+                }
+            });
+        }
+    };
+
+    (port, serve)
+}
+
+async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
+    let (proxy_port, proxy_serve) = bind_proxy(
+        service_fn(|_req| async {
+            let res = Response::new("Hello World".to_string());
+            Ok::<_, Infallible>(res)
+        }),
+        proxy_http2,
+    )
+    .await;
+
+    tokio::spawn(proxy_serve);
+
+    let cargo_bin = Command::cargo_bin("oha").unwrap();
+    let mut proc = tokio::process::Command::new(cargo_bin.get_program());
+    std::mem::drop(cargo_bin);
+
+    let scheme = if https { "https" } else { "http" };
+    proc.args(["--no-tui", "--debug", "--insecure", "-x"])
+        .arg(format!("http://127.0.0.1:{proxy_port}/"))
+        .arg(format!("{scheme}://example.com/"));
+    if http2 {
+        proc.arg("--http2");
+    }
+    if proxy_http2 {
+        proc.arg("--proxy-http2");
+    }
+
+    proc.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let stdout = proc
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .await
+        .unwrap()
+        .stdout;
+
+    assert!(String::from_utf8(stdout).unwrap().contains("Hello World"),);
+}
+
+#[tokio::test]
+async fn test_proxy() {
+    for https in [false, true] {
+        for http2 in [false, true] {
+            for proxy_http2 in [false, true] {
+                if https && proxy_http2 {
+                    // Waiting for https://github.com/rustls/tokio-rustls/pull/93 is released
+                    continue;
+                }
+                test_proxy_with_setting(https, http2, proxy_http2).await;
+            }
+        }
+    }
 }
 
 #[test]
