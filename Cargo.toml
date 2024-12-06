@@ -83,7 +83,7 @@ assert_cmd = "2.0.14"
 axum = { version = "0.7", features = ["http2"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
-http-mitm-proxy = "0.11.0"
+http-mitm-proxy = "0.12.0"
 jsonschema = "0.26.0"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
@@ -104,8 +104,3 @@ lto = true
 debug = false
 incremental = false
 overflow-checks = false
-
-# For full test on proxy
-# See test_proxy() on tests/proxy.rs
-# [patch.crates-io]
-# tokio-rustls = { git = "https://github.com/rustls/tokio-rustls" }
