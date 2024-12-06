@@ -282,11 +282,10 @@ Currently dynamic scheme, host and port with keep-alive are not works well.
 
 Feel free to help us!
 
-Here are some issues to improving.
+Here are some areas which need improving.
 
 - Write tests
 - Improve tui design.
   - Show more information?
-  - There are no color in realtime tui now. I want help from someone who has some color sense.
 - Improve speed
   - I'm new to tokio. I think there are some space to optimize query scheduling.
