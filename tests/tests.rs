@@ -825,10 +825,6 @@ async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
             for proxy_http2 in [false, true] {
-                if https && proxy_http2 {
-                    // Waiting for https://github.com/rustls/tokio-rustls/pull/93 is released
-                    continue;
-                }
                 test_proxy_with_setting(https, http2, proxy_http2).await;
             }
         }
