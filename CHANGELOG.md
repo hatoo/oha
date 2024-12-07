@@ -1,5 +1,7 @@
 # Unreleased
 
+# 1.5.0 (2024-12-07)
+
 - Add `--debug` option to check actual request/response
 - Switch colors to justified latency thresholds (fixes #609) #610 
 - Fix Running with -q hangs #603 
