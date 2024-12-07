@@ -121,7 +121,7 @@ Options:
           Rates of requests for burst. Default is 1
           Note: If qps is specified, burst will be ignored
       --rand-regex-url
-          Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
+          Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive do not work well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
       --max-repeat <MAX_REPEAT>
           A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become. [default: 4]
       --dump-urls <DUMP_URLS>
@@ -150,8 +150,14 @@ Options:
           Content-Type.
   -a <BASIC_AUTH>
           Basic authentication, username:password
+  -x <PROXY>
+          HTTP proxy
+      --proxy-http-version <PROXY_HTTP_VERSION>
+          HTTP version to connect to proxy. Available values 0.9, 1.0, 1.1, 2.
+      --proxy-http2
+          Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2
       --http-version <HTTP_VERSION>
-          HTTP version. Available values 0.9, 1.0, 1.1.
+          HTTP version. Available values 0.9, 1.0, 1.1, 2.
       --http2
           Use HTTP/2. Shorthand for --http-version=2
       --host <HOST>
