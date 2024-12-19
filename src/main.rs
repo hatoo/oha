@@ -34,7 +34,7 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[command(version, about, long_about = None)]
 #[command(arg_required_else_help(true))]
 struct Opts {
-    #[arg(help = "Target URL.")]
+    #[arg(help = "Target URL or file with multiple URLs.")]
     url: String,
     #[arg(
         help = "Number of requests to run.",
