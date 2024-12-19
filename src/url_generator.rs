@@ -1,6 +1,10 @@
 use std::{borrow::Cow, string::FromUtf8Error};
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 
 use rand::prelude::*;
+use rand::seq::SliceRandom;
 use rand_regex::Regex;
 use thiserror::Error;
 use url::{ParseError, Url};
@@ -8,6 +12,7 @@ use url::{ParseError, Url};
 #[derive(Clone, Debug)]
 pub enum UrlGenerator {
     Static(Url),
+    MultiStatic(Vec<Url>),
     Dynamic(Regex),
 }
 
@@ -17,11 +22,26 @@ pub enum UrlGeneratorError {
     ParseError(ParseError, String),
     #[error(transparent)]
     FromUtf8Error(#[from] FromUtf8Error),
+    #[error("No valid URLs found")]
+    NoURLsError(),
 }
 
 impl UrlGenerator {
     pub fn new_static(url: Url) -> Self {
         Self::Static(url)
+    }
+
+    pub fn new_multi_static(filename: &str) -> io::Result<Self> {
+        let path = Path::new(filename);
+        let file = File::open(path)?;
+        let reader = io::BufReader::new(file);
+
+        let urls: Vec<Url> = reader
+            .lines().flatten()
+            .map(|url_str| Url::parse(&url_str).unwrap())
+            .collect();
+
+        Ok(Self::MultiStatic(urls))
     }
 
     pub fn new_dynamic(regex: Regex) -> Self {
@@ -31,6 +51,13 @@ impl UrlGenerator {
     pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Url>, UrlGeneratorError> {
         match self {
             Self::Static(url) => Ok(Cow::Borrowed(url)),
+            Self::MultiStatic(urls) => {
+                if let Some(random_url) = urls.choose(&mut rand::thread_rng()) {
+                    Ok(Cow::Borrowed(random_url))
+                } else {
+                    Err(UrlGeneratorError::NoURLsError())
+                }
+            }
             Self::Dynamic(regex) => {
                 let generated = Distribution::<Result<String, FromUtf8Error>>::sample(regex, rng)?;
                 Ok(Cow::Owned(Url::parse(generated.as_str()).map_err(|e| {
