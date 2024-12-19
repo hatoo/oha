@@ -98,7 +98,7 @@ Note: If qps is specified, burst will be ignored",
         long
     )]
     urls_from_file: bool,
-    
+
     #[arg(
         help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
         default_value = "4",

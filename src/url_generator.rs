@@ -1,7 +1,7 @@
-use std::{borrow::Cow, string::FromUtf8Error};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use std::{borrow::Cow, string::FromUtf8Error};
 
 use rand::prelude::*;
 use rand::seq::SliceRandom;
@@ -37,7 +37,8 @@ impl UrlGenerator {
         let reader = io::BufReader::new(file);
 
         let urls: Vec<Url> = reader
-            .lines().flatten()
+            .lines()
+            .flatten()
             .map(|url_str| Url::parse(&url_str).unwrap())
             .collect();
 
