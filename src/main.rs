@@ -34,7 +34,7 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[command(version, about, long_about = None)]
 #[command(arg_required_else_help(true))]
 struct Opts {
-    #[arg(help = "Target URL.")]
+    #[arg(help = "Target URL or file with multiple URLs.")]
     url: String,
     #[arg(
         help = "Number of requests to run.",
@@ -91,6 +91,14 @@ Note: If qps is specified, burst will be ignored",
         long
     )]
     rand_regex_url: bool,
+
+    #[arg(
+        help = "Read the URLs to query from a file",
+        default_value = "false",
+        long
+    )]
+    urls_from_file: bool,
+
     #[arg(
         help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
         default_value = "4",
@@ -318,6 +326,8 @@ async fn main() -> anyhow::Result<()> {
             })
             .collect();
         UrlGenerator::new_dynamic(Regex::compile(&dot_disabled, opts.max_repeat)?)
+    } else if opts.urls_from_file {
+        UrlGenerator::new_multi_static(&opts.url)?
     } else {
         UrlGenerator::new_static(Url::parse(&opts.url)?)
     };
