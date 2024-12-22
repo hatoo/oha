@@ -12,7 +12,14 @@ use rand::prelude::*;
 use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
-use std::{env, io::Read, str::FromStr, sync::Arc};
+use std::{
+    env,
+    fs::File,
+    io::{BufRead, Read},
+    path::Path,
+    str::FromStr,
+    sync::Arc,
+};
 use url::Url;
 use url_generator::UrlGenerator;
 
@@ -327,7 +334,17 @@ async fn main() -> anyhow::Result<()> {
             .collect();
         UrlGenerator::new_dynamic(Regex::compile(&dot_disabled, opts.max_repeat)?)
     } else if opts.urls_from_file {
-        UrlGenerator::new_multi_static(&opts.url)?
+        let path = Path::new(opts.url.as_str());
+        let file = File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+
+        let urls: Vec<Url> = reader
+            .lines()
+            .map_while(Result::ok)
+            .filter(|line| !line.trim().is_empty())
+            .map(|url_str| Url::parse(&url_str))
+            .collect::<Result<Vec<_>, _>>()?;
+        UrlGenerator::new_multi_static(urls)
     } else {
         UrlGenerator::new_static(Url::parse(&opts.url)?)
     };

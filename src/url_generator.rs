@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::{self, BufRead};
-use std::path::Path;
 use std::{borrow::Cow, string::FromUtf8Error};
 
 use rand::prelude::*;
@@ -33,23 +30,9 @@ impl UrlGenerator {
         Self::Static(url)
     }
 
-    pub fn new_multi_static(filename: &str) -> Result<Self, UrlGeneratorError> {
-        let path = Path::new(filename);
-        let file = File::open(path)?;
-        let reader = io::BufReader::new(file);
-
-        let urls: Vec<Url> = reader
-            .lines()
-            .map_while(Result::ok)
-            .filter(|line| !line.trim().is_empty())
-            .map(|url_str| {
-                Url::parse(&url_str).map_err(|e| {
-                    UrlGeneratorError::Parse(e, format!("Failed to parse URL '{}': {}", url_str, e))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self::MultiStatic(urls))
+    pub fn new_multi_static(urls: Vec<Url>) -> Self {
+        assert!(!urls.is_empty());
+        Self::MultiStatic(urls)
     }
 
     pub fn new_dynamic(regex: Regex) -> Self {
@@ -84,8 +67,7 @@ mod tests {
     use super::*;
     use rand_regex::Regex as RandRegex;
     use regex::Regex;
-    use std::{fs, net::Ipv4Addr};
-    use tempfile::NamedTempFile;
+    use std::net::Ipv4Addr;
     use url::{Host, Url};
 
     #[test]
@@ -98,37 +80,20 @@ mod tests {
 
     #[test]
     fn test_url_generator_multistatic() {
-        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
         let urls = vec![
             "http://127.0.0.1/a1",
             "http://127.0.0.1/b2",
             "http://127.0.0.1/c3",
         ];
-        let file_content = urls.join("\n") + "\n\n";
-        fs::write(temp_file.path(), file_content).expect("Failed to write to temporary file");
 
         let url_generator =
-            UrlGenerator::new_multi_static(temp_file.path().to_str().unwrap()).unwrap();
+            UrlGenerator::new_multi_static(urls.iter().map(|u| Url::parse(u).unwrap()).collect());
 
         for _ in 0..10 {
             let url = url_generator.generate(&mut thread_rng()).unwrap();
             assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
             assert!(urls.contains(&url.as_str()));
         }
-    }
-
-    #[test]
-    fn test_url_generator_multistatic_errors() {
-        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
-        let file_content = "https://127.0.0.1\n\nno url\n";
-        fs::write(temp_file.path(), file_content).expect("Failed to write to temporary file");
-
-        let url_generator = UrlGenerator::new_multi_static(temp_file.path().to_str().unwrap());
-
-        assert!(
-            url_generator.is_err(),
-            "Parsing should have failed with an error!"
-        );
     }
 
     #[test]
@@ -150,6 +115,28 @@ mod tests {
         let url_generator = UrlGenerator::new_dynamic(
             RandRegex::compile(r"http://127\.0\.0\.1/[a-z][a-z][0-9]", 4).unwrap(),
         );
+
+        for _ in 0..100 {
+            let rng: Pcg64Si = SeedableRng::from_entropy();
+
+            assert_eq!(
+                url_generator.generate(&mut rng.clone()).unwrap(),
+                url_generator.generate(&mut rng.clone()).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_url_generator_multi_consistency() {
+        let urls = vec![
+            "http://example.com/a1",
+            "http://example.com/a2",
+            "http://example.com/a3",
+            "http://example.com/a4",
+            "http://example.com/a5",
+        ];
+        let url_generator =
+            UrlGenerator::new_multi_static(urls.iter().map(|u| Url::parse(u).unwrap()).collect());
 
         for _ in 0..100 {
             let rng: Pcg64Si = SeedableRng::from_entropy();
