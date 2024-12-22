@@ -24,6 +24,8 @@ pub enum UrlGeneratorError {
     FromUtf8Error(#[from] FromUtf8Error),
     #[error("No valid URLs found")]
     NoURLsError(),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
 }
 
 impl UrlGenerator {
@@ -31,16 +33,24 @@ impl UrlGenerator {
         Self::Static(url)
     }
 
-    pub fn new_multi_static(filename: &str) -> io::Result<Self> {
+    pub fn new_multi_static(filename: &str) -> Result<Self, UrlGeneratorError> {
         let path = Path::new(filename);
         let file = File::open(path)?;
         let reader = io::BufReader::new(file);
 
         let urls: Vec<Url> = reader
             .lines()
-            .flatten()
-            .map(|url_str| Url::parse(&url_str).unwrap())
-            .collect();
+            .map_while(Result::ok)
+            .filter(|line| !line.trim().is_empty())
+            .map(|url_str| {
+                Url::parse(&url_str).map_err(|e| {
+                    UrlGeneratorError::ParseError(
+                        e,
+                        format!("Failed to parse URL '{}': {}", url_str, e),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self::MultiStatic(urls))
     }
@@ -53,7 +63,7 @@ impl UrlGenerator {
         match self {
             Self::Static(url) => Ok(Cow::Borrowed(url)),
             Self::MultiStatic(urls) => {
-                if let Some(random_url) = urls.choose(&mut rand::thread_rng()) {
+                if let Some(random_url) = urls.choose(rng) {
                     Ok(Cow::Borrowed(random_url))
                 } else {
                     Err(UrlGeneratorError::NoURLsError())
@@ -76,7 +86,8 @@ mod tests {
     use super::*;
     use rand_regex::Regex as RandRegex;
     use regex::Regex;
-    use std::net::Ipv4Addr;
+    use std::{fs, net::Ipv4Addr};
+    use tempfile::NamedTempFile;
     use url::{Host, Url};
 
     #[test]
@@ -85,6 +96,41 @@ mod tests {
         let url = url_generator.generate(&mut thread_rng()).unwrap();
         assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
         assert_eq!(url.path(), "/test");
+    }
+
+    #[test]
+    fn test_url_generator_multistatic() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let urls = vec![
+            "http://127.0.0.1/a1",
+            "http://127.0.0.1/b2",
+            "http://127.0.0.1/c3",
+        ];
+        let file_content = urls.join("\n") + "\n\n";
+        fs::write(temp_file.path(), file_content).expect("Failed to write to temporary file");
+
+        let url_generator =
+            UrlGenerator::new_multi_static(temp_file.path().to_str().unwrap()).unwrap();
+
+        for _ in 0..10 {
+            let url = url_generator.generate(&mut thread_rng()).unwrap();
+            assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
+            assert!(urls.contains(&url.as_str()));
+        }
+    }
+
+    #[test]
+    fn test_url_generator_multistatic_errors() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let file_content = "https://127.0.0.1\n\nno url\n";
+        fs::write(temp_file.path(), file_content).expect("Failed to write to temporary file");
+
+        let url_generator = UrlGenerator::new_multi_static(temp_file.path().to_str().unwrap());
+
+        assert!(
+            url_generator.is_err(),
+            "Parsing should have failed with an error!"
+        );
     }
 
     #[test]
