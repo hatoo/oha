@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_url_generator_multistatic() {
-        let urls = vec![
+        let urls = [
             "http://127.0.0.1/a1",
             "http://127.0.0.1/b2",
             "http://127.0.0.1/c3",
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_url_generator_multi_consistency() {
-        let urls = vec![
+        let urls = [
             "http://example.com/a1",
             "http://example.com/a2",
             "http://example.com/a3",
