@@ -19,13 +19,13 @@ pub enum UrlGenerator {
 #[derive(Error, Debug)]
 pub enum UrlGeneratorError {
     #[error("{0}, generated url: {1}")]
-    ParseError(ParseError, String),
+    Parse(ParseError, String),
     #[error(transparent)]
-    FromUtf8Error(#[from] FromUtf8Error),
+    FromUtf8(#[from] FromUtf8Error),
     #[error("No valid URLs found")]
-    NoURLsError(),
+    NoURLs(),
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 }
 
 impl UrlGenerator {
@@ -44,10 +44,7 @@ impl UrlGenerator {
             .filter(|line| !line.trim().is_empty())
             .map(|url_str| {
                 Url::parse(&url_str).map_err(|e| {
-                    UrlGeneratorError::ParseError(
-                        e,
-                        format!("Failed to parse URL '{}': {}", url_str, e),
-                    )
+                    UrlGeneratorError::Parse(e, format!("Failed to parse URL '{}': {}", url_str, e))
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -66,14 +63,15 @@ impl UrlGenerator {
                 if let Some(random_url) = urls.choose(rng) {
                     Ok(Cow::Borrowed(random_url))
                 } else {
-                    Err(UrlGeneratorError::NoURLsError())
+                    Err(UrlGeneratorError::NoURLs())
                 }
             }
             Self::Dynamic(regex) => {
                 let generated = Distribution::<Result<String, FromUtf8Error>>::sample(regex, rng)?;
-                Ok(Cow::Owned(Url::parse(generated.as_str()).map_err(|e| {
-                    UrlGeneratorError::ParseError(e, generated)
-                })?))
+                Ok(Cow::Owned(
+                    Url::parse(generated.as_str())
+                        .map_err(|e| UrlGeneratorError::Parse(e, generated))?,
+                ))
             }
         }
     }
