@@ -1568,7 +1568,7 @@ dependencies = [
  "native-tls",
  "rcgen",
  "rustls",
- "thiserror 2.0.4",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-native-tls",
  "tokio-rustls",
@@ -2330,7 +2330,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.4",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-native-tls",
  "tokio-rustls",
@@ -3325,11 +3325,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.4"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f49a1853cf82743e3b7950f77e0f4d622ca36cf4317cba00c767838bac8d490"
+checksum = "f072643fd0190df67a8bab670c20ef5d8737177d6ac6b2e9a236cb096206b2cc"
 dependencies = [
- "thiserror-impl 2.0.4",
+ "thiserror-impl 2.0.9",
 ]
 
 [[package]]
@@ -3345,9 +3345,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.4"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8381894bb3efe0c4acac3ded651301ceee58a15d47c2e34885ed1908ad667061"
+checksum = "7b50fa271071aae2e6ee85f842e2e28ba8cd2c5fb67f11fcb1fd70b276f9e7d4"
 dependencies = [
  "proc-macro2",
  "quote",
