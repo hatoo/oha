@@ -980,7 +980,7 @@ pub async fn work_debug(
 }
 
 /// Run n tasks by m workers
-pub async fn work(
+pub async fn _work(
     client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
