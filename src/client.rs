@@ -1135,7 +1135,7 @@ pub async fn work2(
                                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                                     let res = client.work_http1(&mut client_state).await;
                                     let is_cancel = is_cancel_error(&res);
-                                    report_tx.send(res).unwrap();
+                                    report_tx.send_async(res).await.unwrap();
                                     if is_cancel {
                                         break;
                                     }
@@ -1151,34 +1151,11 @@ pub async fn work2(
                 })
             })
             .collect::<Vec<_>>();
-
-        for handle in handles {
-            let _ = tokio::task::block_in_place(move || handle.join());
-        }
-
-        /*
-        let futures = (0..n_connections)
-            .map(|_| {
-                let report_tx = report_tx.clone();
-                let counter = counter.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    let mut client_state = ClientStateHttp1::default();
-                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel {
-                            break;
-                        }
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        for f in futures {
-            let _ = f.await;
-        }
-        */
+        tokio::task::block_in_place(|| {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
     };
 }
 
