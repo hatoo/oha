@@ -1088,6 +1088,103 @@ pub async fn work(
     };
 }
 
+/// Run n tasks by m workers
+pub async fn work2(
+    client: Arc<Client>,
+    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    n_tasks: usize,
+    n_connections: usize,
+    _n_http2_parallel: usize,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let counter = Arc::new(AtomicUsize::new(0));
+
+    if client.is_work_http2() {
+        todo!()
+    } else {
+        let num_threads = 15; //num_cpus::get();
+
+        let handles = (0..num_threads)
+            .filter_map(|i| {
+                let num_connection = n_connections / num_threads
+                    + (if (n_connections % num_threads) > i {
+                        1
+                    } else {
+                        0
+                    });
+                if num_connection > 0 {
+                    Some(num_connection)
+                } else {
+                    None
+                }
+            })
+            .map(|num_connection| {
+                let report_tx = report_tx.clone();
+                let counter = counter.clone();
+                let client = client.clone();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    let futures = (0..num_connection)
+                        .map(|_| {
+                            let report_tx = report_tx.clone();
+                            let counter = counter.clone();
+                            let client = client.clone();
+                            rt.spawn(async move {
+                                let mut client_state = ClientStateHttp1::default();
+                                while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                    let res = client.work_http1(&mut client_state).await;
+                                    let is_cancel = is_cancel_error(&res);
+                                    report_tx.send(res).unwrap();
+                                    if is_cancel {
+                                        break;
+                                    }
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    rt.block_on(async {
+                        for f in futures {
+                            let _ = f.await;
+                        }
+                    });
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            let _ = tokio::task::block_in_place(move || handle.join());
+        }
+
+        /*
+        let futures = (0..n_connections)
+            .map(|_| {
+                let report_tx = report_tx.clone();
+                let counter = counter.clone();
+                let client = client.clone();
+                tokio::spawn(async move {
+                    let mut client_state = ClientStateHttp1::default();
+                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                        let res = client.work_http1(&mut client_state).await;
+                        let is_cancel = is_cancel_error(&res);
+                        report_tx.send(res).unwrap();
+                        if is_cancel {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        for f in futures {
+            let _ = f.await;
+        }
+        */
+    };
+}
+
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
     client: Arc<Client>,

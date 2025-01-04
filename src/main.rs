@@ -659,7 +659,7 @@ async fn run() -> anyhow::Result<()> {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => {
-                    client::work(
+                    client::work2(
                         client.clone(),
                         result_tx,
                         opts.n_requests,
