@@ -297,8 +297,7 @@ impl FromStr for VsockAddr {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run() -> anyhow::Result<()> {
     let mut opts: Opts = Opts::parse();
 
     let parse_http_version = |is_http2: bool, version: Option<&str>| match (is_http2, version) {
@@ -757,4 +756,19 @@ fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
 
     hickory_resolver::system_conf::read_system_conf()
         .context("DNS: failed to load /etc/resolv.conf")
+}
+
+fn main() {
+    let num_workers_threads = std::env::var("TOKIO_WORKER_THREADS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        // Prefer to use physical cores rather than logical one because it's more performant empirically.
+        .unwrap_or(num_cpus::get_physical());
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(num_workers_threads)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(run()).unwrap();
 }
