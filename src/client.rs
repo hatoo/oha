@@ -1123,14 +1123,17 @@ pub async fn work2(
                 let counter = counter.clone();
                 let client = client.clone();
                 std::thread::spawn(move || {
-                    let rt = tokio::runtime::LocalRuntime::new().unwrap();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
 
                     let futures = (0..num_connection)
                         .map(|_| {
                             let report_tx = report_tx.clone();
                             let counter = counter.clone();
                             let client = client.clone();
-                            rt.spawn_local(async move {
+                            rt.spawn(async move {
                                 let mut client_state = ClientStateHttp1::default();
                                 while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                                     let res = client.work_http1(&mut client_state).await;
