@@ -1102,7 +1102,7 @@ pub async fn work2(
     if client.is_work_http2() {
         todo!()
     } else {
-        let num_threads = 16; //num_cpus::get();
+        let num_threads = num_cpus::get_physical();
 
         let handles = (0..num_threads)
             .filter_map(|i| {
