@@ -1122,35 +1122,31 @@ pub async fn work2(
                 let report_tx = report_tx.clone();
                 let counter = counter.clone();
                 let client = client.clone();
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap();
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
 
-                    let futures = (0..num_connection)
-                        .map(|_| {
-                            let report_tx = report_tx.clone();
-                            let counter = counter.clone();
-                            let client = client.clone();
-                            rt.spawn(async move {
-                                let mut client_state = ClientStateHttp1::default();
-                                while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                    let res = client.work_http1(&mut client_state).await;
-                                    let is_cancel = is_cancel_error(&res);
-                                    report_tx.send_async(res).await.unwrap();
-                                    if is_cancel {
-                                        break;
-                                    }
+                std::thread::spawn(move || {
+                    let local = tokio::task::LocalSet::new();
+
+                    (0..num_connection).for_each(|_| {
+                        let report_tx = report_tx.clone();
+                        let counter = counter.clone();
+                        let client = client.clone();
+                        local.spawn_local(async move {
+                            let mut client_state = ClientStateHttp1::default();
+                            while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                let res = client.work_http1(&mut client_state).await;
+                                let is_cancel = is_cancel_error(&res);
+                                report_tx.send_async(res).await.unwrap();
+                                if is_cancel {
+                                    break;
                                 }
-                            })
-                        })
-                        .collect::<Vec<_>>();
-                    rt.block_on(async {
-                        for f in futures {
-                            let _ = f.await;
-                        }
+                            }
+                        });
                     });
+                    rt.block_on(local);
                 })
             })
             .collect::<Vec<_>>();
