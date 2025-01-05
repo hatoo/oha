@@ -33,9 +33,12 @@ mod result_data;
 mod timescale;
 mod url_generator;
 
-#[cfg(unix)]
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
