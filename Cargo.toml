@@ -81,7 +81,7 @@ aws-lc-rs = { version = "1.8.1", features = ["bindgen"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.14"
-axum = { version = "0.7", features = ["http2"] }
+axum = { version = "0.8.1", features = ["http2"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
 http-mitm-proxy = "0.12.0"

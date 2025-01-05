@@ -102,7 +102,7 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (listener, port) = bind_port().await;
 
     let app = Router::new().route(
-        "/:n",
+        "/{n}",
         get(move |Path(x): Path<usize>| async move {
             Ok::<_, Infallible>(if x == n {
                 tx.send(()).unwrap();
