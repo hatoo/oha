@@ -1130,7 +1130,7 @@ pub async fn work2(
                 std::thread::spawn(move || {
                     let local = tokio::task::LocalSet::new();
 
-                    (0..num_connection).for_each(|_| {
+                    for _ in 0..num_connection {
                         let report_tx = report_tx.clone();
                         let counter = counter.clone();
                         let client = client.clone();
@@ -1145,7 +1145,7 @@ pub async fn work2(
                                 }
                             }
                         });
-                    });
+                    }
                     rt.block_on(local);
                 })
             })
