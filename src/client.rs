@@ -1134,7 +1134,7 @@ pub async fn work2(
                         let report_tx = report_tx.clone();
                         let counter = counter.clone();
                         let client = client.clone();
-                        local.spawn_local(async move {
+                        local.spawn_local(Box::pin(async move {
                             let mut client_state = ClientStateHttp1::default();
                             while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                                 let res = client.work_http1(&mut client_state).await;
@@ -1144,7 +1144,7 @@ pub async fn work2(
                                     break;
                                 }
                             }
-                        });
+                        }));
                     }
                     rt.block_on(local);
                 })
