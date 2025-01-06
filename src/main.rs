@@ -529,22 +529,13 @@ async fn run() -> anyhow::Result<()> {
     let no_tui = opts.no_tui || !std::io::stdout().is_tty() || opts.debug;
     let data_collector = if no_tui {
         // When `--no-tui` is enabled, just collect all data.
-        tokio::spawn(async move {
+        async {
             let mut all: ResultData = Default::default();
-            tokio::select! {
-                _ = async {
-                        while let Ok(res) = result_rx.recv_async().await {
-                            all.merge(res);
-                        }
-                    } => {}
-                _ = tokio::signal::ctrl_c() => {
-                    // User pressed ctrl-c.
-                    let _ = printer::print_result(&mut std::io::stdout(), print_mode, start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
-                    std::process::exit(libc::EXIT_SUCCESS);
-                }
+            while let Ok(res) = result_rx.recv_async().await {
+                all.merge(res);
             }
-            Ok::<_, Infallible>(all)
-        })
+            all
+        }
     } else {
         todo!()
         // Spawn monitor future which draws realtime tui
@@ -742,7 +733,7 @@ async fn run() -> anyhow::Result<()> {
 
     let duration = start.elapsed();
 
-    let res: ResultData = data_collector.await??;
+    let res: ResultData = data_collector.await;
 
     printer::print_result(
         &mut std::io::stdout(),

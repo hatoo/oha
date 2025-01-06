@@ -1105,6 +1105,7 @@ pub async fn work2(
     } else {
         let num_threads = num_cpus::get_physical();
 
+        let token = tokio_util::sync::CancellationToken::new();
         let handles = (0..num_threads)
             .filter_map(|i| {
                 let num_connection = n_connections / num_threads
@@ -1128,6 +1129,7 @@ pub async fn work2(
                     .build()
                     .unwrap();
 
+                let token = token.clone();
                 std::thread::spawn(move || {
                     let local = tokio::task::LocalSet::new();
 
@@ -1135,16 +1137,23 @@ pub async fn work2(
                         let report_tx = report_tx.clone();
                         let counter = counter.clone();
                         let client = client.clone();
+                        let token = token.clone();
                         local.spawn_local(Box::pin(async move {
-                            let mut client_state = ClientStateHttp1::default();
                             let mut result_data = ResultData::default();
-                            while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                let res = client.work_http1(&mut client_state).await;
-                                let is_cancel = is_cancel_error(&res);
-                                result_data.push(res);
-                                if is_cancel {
-                                    break;
-                                }
+
+                            tokio::select! {
+                                _ = token.cancelled() => {}
+                                _ = async {
+                                    let mut client_state = ClientStateHttp1::default();
+                                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                        let res = client.work_http1(&mut client_state).await;
+                                        let is_cancel = is_cancel_error(&res);
+                                        result_data.push(res);
+                                        if is_cancel {
+                                            break;
+                                        }
+                                    }
+                                } => {}
                             }
                             report_tx.send(result_data).unwrap();
                         }));
@@ -1153,6 +1162,12 @@ pub async fn work2(
                 })
             })
             .collect::<Vec<_>>();
+
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            token.cancel();
+        });
+
         tokio::task::block_in_place(|| {
             for handle in handles {
                 let _ = handle.join();

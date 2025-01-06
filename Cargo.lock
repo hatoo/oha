@@ -2348,6 +2348,7 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
  "tokio-rustls",
+ "tokio-util",
  "tokio-vsock",
  "url",
 ]
