@@ -19,6 +19,7 @@ use url::{ParseError, Url};
 
 use crate::{
     pcg64si::Pcg64Si,
+    result_data::ResultData,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -1091,7 +1092,7 @@ pub async fn _work(
 /// Run n tasks by m workers
 pub async fn work2(
     client: Arc<Client>,
-    report_tx: flume::Sender<Result<RequestResult, ClientError>>,
+    report_tx: flume::Sender<ResultData>,
     n_tasks: usize,
     n_connections: usize,
     _n_http2_parallel: usize,
@@ -1136,14 +1137,16 @@ pub async fn work2(
                         let client = client.clone();
                         local.spawn_local(Box::pin(async move {
                             let mut client_state = ClientStateHttp1::default();
+                            let mut result_data = ResultData::default();
                             while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                                 let res = client.work_http1(&mut client_state).await;
                                 let is_cancel = is_cancel_error(&res);
-                                report_tx.send_async(res).await.unwrap();
+                                result_data.push(res);
                                 if is_cancel {
                                     break;
                                 }
                             }
+                            report_tx.send(result_data).unwrap();
                         }));
                     }
                     rt.block_on(local);

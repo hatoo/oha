@@ -66,6 +66,14 @@ impl ResultData {
         self.success.len() + self.error_distribution.values().sum::<usize>()
     }
 
+    pub fn merge(&mut self, other: ResultData) {
+        self.success.extend(other.success);
+        for (k, v) in other.error_distribution {
+            let count = self.error_distribution.entry(k).or_insert(0);
+            *count += v;
+        }
+    }
+
     // An existence of this method doesn't prevent us to using hdrhistogram.
     // Because this is only called from `monitor` and `monitor` can collect own data.
     pub fn success(&self) -> &[RequestResult] {

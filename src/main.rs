@@ -13,6 +13,7 @@ use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
 use std::{
+    convert::Infallible,
     env,
     fs::File,
     io::{BufRead, Read},
@@ -532,8 +533,8 @@ async fn run() -> anyhow::Result<()> {
             let mut all: ResultData = Default::default();
             tokio::select! {
                 _ = async {
-                        while let Ok(report) = result_rx.recv_async().await {
-                            all.push(report);
+                        while let Ok(res) = result_rx.recv_async().await {
+                            all.merge(res);
                         }
                     } => {}
                 _ = tokio::signal::ctrl_c() => {
@@ -542,10 +543,12 @@ async fn run() -> anyhow::Result<()> {
                     std::process::exit(libc::EXIT_SUCCESS);
                 }
             }
-            Ok(all)
+            Ok::<_, Infallible>(all)
         })
     } else {
+        todo!()
         // Spawn monitor future which draws realtime tui
+        /*
         tokio::spawn(
             monitor::Monitor {
                 print_mode,
@@ -561,6 +564,7 @@ async fn run() -> anyhow::Result<()> {
             }
             .monitor(),
         )
+        */
     };
     // When panics, reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(move |info| {
@@ -575,11 +579,16 @@ async fn run() -> anyhow::Result<()> {
     }));
 
     if opts.debug {
+        todo!()
+        /*
         if let Err(e) = client::work_debug(client, result_tx).await {
             eprintln!("{e}");
         }
         std::process::exit(libc::EXIT_SUCCESS);
+        */
     } else if let Some(duration) = opts.duration.take() {
+        todo!()
+        /*
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => {
@@ -655,6 +664,7 @@ async fn run() -> anyhow::Result<()> {
                 }
             }
         }
+        */
     } else {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
@@ -669,6 +679,7 @@ async fn run() -> anyhow::Result<()> {
                     .await
                 }
                 Some(burst_duration) => {
+                    /*
                     if opts.latency_correction {
                         client::work_with_qps_latency_correction(
                             client.clone(),
@@ -696,9 +707,12 @@ async fn run() -> anyhow::Result<()> {
                         )
                         .await
                     }
+                    */
+                    todo!()
                 }
             },
             Some(qps) => {
+                /*
                 if opts.latency_correction {
                     client::work_with_qps_latency_correction(
                         client.clone(),
@@ -720,6 +734,8 @@ async fn run() -> anyhow::Result<()> {
                     )
                     .await
                 }
+                */
+                todo!()
             }
         }
     }
