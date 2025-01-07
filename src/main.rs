@@ -17,6 +17,7 @@ use std::{
     fs::File,
     io::{BufRead, Read},
     path::Path,
+    pin::Pin,
     str::FromStr,
     sync::Arc,
 };
@@ -563,13 +564,13 @@ async fn run() -> anyhow::Result<()> {
         )
         .await;
 
-        let mut res = ResultData::default();
-
-        while let Ok(r) = result_rx.recv() {
-            res.merge(r);
-        }
-
-        res
+        Box::pin(async move {
+            let mut res = ResultData::default();
+            while let Ok(r) = result_rx.recv() {
+                res.merge(r);
+            }
+            res
+        }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
     } else if no_tui
         && opts.duration.is_none()
         && opts.query_per_second.is_none()
@@ -589,13 +590,13 @@ async fn run() -> anyhow::Result<()> {
         )
         .await;
 
-        let mut res = ResultData::default();
-
-        while let Ok(r) = result_rx.recv() {
-            res.merge(r);
-        }
-
-        res
+        Box::pin(async move {
+            let mut res = ResultData::default();
+            while let Ok(r) = result_rx.recv() {
+                res.merge(r);
+            }
+            res
+        }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
     } else {
         let (result_tx, result_rx) = flume::unbounded();
         let data_collector = if no_tui {
@@ -780,10 +781,12 @@ async fn run() -> anyhow::Result<()> {
             }
         }
 
-        data_collector.await??
+        Box::pin(async move { data_collector.await.unwrap().unwrap() })
+            as Pin<Box<dyn std::future::Future<Output = ResultData>>>
     };
 
     let duration = start.elapsed();
+    let res = res.await;
 
     printer::print_result(
         &mut std::io::stdout(),
