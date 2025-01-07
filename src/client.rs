@@ -1698,15 +1698,11 @@ pub async fn work_until2(
 
         is_end.store(true, Relaxed);
 
-        if wait_ongoing_requests_after_deadline {
-            for handle in handles {
-                let _ = handle.join();
-            }
-        } else {
+        if !wait_ongoing_requests_after_deadline {
             token.cancel();
-            for handle in handles {
-                let _ = handle.join();
-            }
+        }
+        for handle in handles {
+            let _ = handle.join();
         }
     };
 }
