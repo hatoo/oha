@@ -601,25 +601,33 @@ async fn run() -> anyhow::Result<()> {
         let (result_tx, result_rx) = flume::unbounded();
         let data_collector = if no_tui {
             // When `--no-tui` is enabled, just collect all data.
-            let join_handle = tokio::spawn(async move {
+
+            let result_rx_ctrl_c = result_rx.clone();
+            tokio::spawn(async move {
+                let _ = tokio::signal::ctrl_c().await;
                 let mut all: ResultData = Default::default();
-                tokio::select! {
-                    _ = async {
-                            while let Ok(report) = result_rx.recv_async().await {
-                                all.push(report);
-                            }
-                        } => {}
-                    _ = tokio::signal::ctrl_c() => {
-                        // User pressed ctrl-c.
-                        let _ = printer::print_result(&mut std::io::stdout(), print_mode, start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
-                        std::process::exit(libc::EXIT_SUCCESS);
-                    }
+                for report in result_rx_ctrl_c.drain() {
+                    all.push(report);
                 }
-                all
+                let _ = printer::print_result(
+                    &mut std::io::stdout(),
+                    print_mode,
+                    start,
+                    &all,
+                    start.elapsed(),
+                    opts.disable_color,
+                    opts.stats_success_breakdown,
+                );
+                std::process::exit(libc::EXIT_SUCCESS);
             });
 
-            Box::pin(async { join_handle.await.unwrap() })
-                as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+            Box::pin(async move {
+                let mut all = ResultData::default();
+                while let Ok(res) = result_rx.recv() {
+                    all.push(res);
+                }
+                all
+            }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
         } else {
             // Spawn monitor future which draws realtime tui
             let join_handle = tokio::spawn(
