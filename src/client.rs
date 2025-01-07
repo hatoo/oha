@@ -949,10 +949,7 @@ fn set_start_latency_correction<E>(
 }
 
 /// Run n tasks by m workers
-pub async fn work_debug(
-    client: Arc<Client>,
-    _report_tx: flume::Sender<Result<RequestResult, ClientError>>,
-) -> Result<(), ClientError> {
+pub async fn work_debug(client: Arc<Client>) -> Result<(), ClientError> {
     let mut rng = StdRng::from_entropy();
     let url = client.url_generator.generate(&mut rng)?;
     println!("URL: {}", url);

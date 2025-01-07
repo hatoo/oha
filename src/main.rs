@@ -537,8 +537,12 @@ async fn run() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
-    let res = if no_tui
-        && !opts.debug
+    let res = if opts.debug {
+        if let Err(e) = client::work_debug(client).await {
+            eprintln!("{e}");
+        }
+        std::process::exit(libc::EXIT_SUCCESS)
+    } else if no_tui
         && opts.duration.is_some()
         && opts.query_per_second.is_none()
         && opts.burst_duration.is_none()
@@ -567,7 +571,6 @@ async fn run() -> anyhow::Result<()> {
 
         res
     } else if no_tui
-        && !opts.debug
         && opts.duration.is_none()
         && opts.query_per_second.is_none()
         && opts.burst_duration.is_none()
@@ -632,12 +635,7 @@ async fn run() -> anyhow::Result<()> {
             )
         };
 
-        if opts.debug {
-            if let Err(e) = client::work_debug(client, result_tx).await {
-                eprintln!("{e}");
-            }
-            std::process::exit(libc::EXIT_SUCCESS)
-        } else if let Some(duration) = opts.duration.take() {
+        if let Some(duration) = opts.duration.take() {
             match opts.query_per_second {
                 Some(0) | None => match opts.burst_duration {
                     None => {
