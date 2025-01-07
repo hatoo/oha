@@ -1610,6 +1610,107 @@ pub async fn work_until(
     };
 }
 
+/// Run until dead_line by n workers
+pub async fn work_until2(
+    client: Arc<Client>,
+    report_tx: flume::Sender<ResultData>,
+    dead_line: std::time::Instant,
+    n_connections: usize,
+    n_http2_parallel: usize,
+    wait_ongoing_requests_after_deadline: bool,
+) {
+    if client.is_work_http2() {
+        todo!()
+    } else {
+        let num_threads = num_cpus::get_physical();
+
+        let is_end = Arc::new(AtomicBool::new(false));
+        let token = tokio_util::sync::CancellationToken::new();
+
+        let handles = (0..num_threads)
+            .filter_map(|i| {
+                let num_connection = n_connections / num_threads
+                    + (if (n_connections % num_threads) > i {
+                        1
+                    } else {
+                        0
+                    });
+                if num_connection > 0 {
+                    Some(num_connection)
+                } else {
+                    None
+                }
+            })
+            .map(|num_connection| {
+                let report_tx = report_tx.clone();
+                let is_end = is_end.clone();
+                let client = client.clone();
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+                let token = token.clone();
+                std::thread::spawn(move || {
+                    let local = tokio::task::LocalSet::new();
+
+                    for _ in 0..num_connection {
+                        let report_tx = report_tx.clone();
+                        let is_end = is_end.clone();
+                        let client = client.clone();
+                        let token = token.clone();
+                        local.spawn_local(Box::pin(async move {
+                            let mut result_data = ResultData::default();
+
+                            let work = async {
+                                let mut client_state = ClientStateHttp1::default();
+                                loop {
+                                    let res = client.work_http1(&mut client_state).await;
+                                    let is_cancel = is_cancel_error(&res);
+                                    result_data.push(res);
+                                    if is_cancel || is_end.load(Relaxed) {
+                                        break;
+                                    }
+                                }
+                            };
+
+                            tokio::select! {
+                                _ = work => {
+                                }
+                                _ = token.cancelled() => {
+                                    result_data.push(Err(ClientError::Deadline));
+                                }
+                            }
+                            report_tx.send(result_data).unwrap();
+                        }));
+                    }
+                    rt.block_on(local);
+                })
+            })
+            .collect::<Vec<_>>();
+
+        tokio::select! {
+            _ = tokio::time::sleep_until(dead_line.into()) => {
+            }
+            _ = tokio::signal::ctrl_c() => {
+            }
+        }
+
+        is_end.store(true, Relaxed);
+
+        if wait_ongoing_requests_after_deadline {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        } else {
+            token.cancel();
+            for handle in handles {
+                let _ = handle.join();
+            }
+        }
+    };
+}
+
 /// Run until dead_line by n workers limit to qps works in a second
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(

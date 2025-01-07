@@ -578,12 +578,10 @@ async fn run() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_SUCCESS);
         */
     } else if let Some(duration) = opts.duration.take() {
-        todo!()
-        /*
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
                 None => {
-                    client::work_until(
+                    client::work_until2(
                         client.clone(),
                         result_tx,
                         start + duration.into(),
@@ -593,6 +591,8 @@ async fn run() -> anyhow::Result<()> {
                     )
                     .await
                 }
+                _ => todo!(),
+                /*
                 Some(burst_duration) => {
                     if opts.latency_correction {
                         client::work_until_with_qps_latency_correction(
@@ -626,7 +626,10 @@ async fn run() -> anyhow::Result<()> {
                         .await
                     }
                 }
+                */
             },
+            _ => todo!(),
+            /*
             Some(qps) => {
                 if opts.latency_correction {
                     client::work_until_with_qps_latency_correction(
@@ -654,8 +657,8 @@ async fn run() -> anyhow::Result<()> {
                     .await
                 }
             }
+            */
         }
-        */
     } else {
         match opts.query_per_second {
             Some(0) | None => match opts.burst_duration {
