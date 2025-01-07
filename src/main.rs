@@ -546,7 +546,7 @@ async fn run() -> anyhow::Result<()> {
         && opts.duration.is_some()
         && opts.query_per_second.is_none()
         && opts.burst_duration.is_none()
-        && client.http_version == http::Version::HTTP_11
+        && !client.is_work_http2()
     {
         // Use optimized work_until2 for duration only mode.
 
@@ -574,7 +574,7 @@ async fn run() -> anyhow::Result<()> {
         && opts.duration.is_none()
         && opts.query_per_second.is_none()
         && opts.burst_duration.is_none()
-        && client.http_version == http::Version::HTTP_11
+        && !client.is_work_http2()
     {
         // Use optimized work_until2 for duration only mode.
 

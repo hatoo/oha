@@ -324,7 +324,7 @@ impl Client {
         self.proxy_http_version == http::Version::HTTP_2
     }
 
-    fn is_work_http2(&self) -> bool {
+    pub fn is_work_http2(&self) -> bool {
         if self.proxy_url.is_some() {
             let url = self.url_generator.generate(&mut thread_rng()).unwrap();
             if url.scheme() == "https" {
