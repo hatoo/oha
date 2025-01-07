@@ -981,7 +981,7 @@ pub async fn work_debug(
 }
 
 /// Run n tasks by m workers
-pub async fn _work(
+pub async fn work(
     client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
@@ -1616,7 +1616,7 @@ pub async fn work_until2(
     report_tx: flume::Sender<ResultData>,
     dead_line: std::time::Instant,
     n_connections: usize,
-    n_http2_parallel: usize,
+    _n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
     if client.is_work_http2() {
