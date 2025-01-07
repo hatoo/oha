@@ -601,7 +601,7 @@ async fn run() -> anyhow::Result<()> {
         let (result_tx, result_rx) = flume::unbounded();
         let data_collector = if no_tui {
             // When `--no-tui` is enabled, just collect all data.
-            tokio::spawn(async move {
+            let join_handle = tokio::spawn(async move {
                 let mut all: ResultData = Default::default();
                 tokio::select! {
                     _ = async {
@@ -615,11 +615,14 @@ async fn run() -> anyhow::Result<()> {
                         std::process::exit(libc::EXIT_SUCCESS);
                     }
                 }
-                Ok(all)
-            })
+                all
+            });
+
+            Box::pin(async { join_handle.await.unwrap() })
+                as Pin<Box<dyn std::future::Future<Output = ResultData>>>
         } else {
             // Spawn monitor future which draws realtime tui
-            tokio::spawn(
+            let join_handle = tokio::spawn(
                 monitor::Monitor {
                     print_mode,
                     end_line: opts
@@ -633,7 +636,10 @@ async fn run() -> anyhow::Result<()> {
                     stats_success_breakdown: opts.stats_success_breakdown,
                 }
                 .monitor(),
-            )
+            );
+
+            Box::pin(async { join_handle.await.unwrap().unwrap() })
+                as Pin<Box<dyn std::future::Future<Output = ResultData>>>
         };
 
         if let Some(duration) = opts.duration.take() {
@@ -781,8 +787,7 @@ async fn run() -> anyhow::Result<()> {
             }
         }
 
-        Box::pin(async move { data_collector.await.unwrap().unwrap() })
-            as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+        data_collector
     };
 
     let duration = start.elapsed();
