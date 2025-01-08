@@ -544,6 +544,31 @@ async fn run() -> anyhow::Result<()> {
         }
         std::process::exit(libc::EXIT_SUCCESS)
     } else if no_tui
+        && opts.duration.is_none()
+        && opts.query_per_second.is_none()
+        && opts.burst_duration.is_none()
+    {
+        // Use optimized work_until2 for duration only mode.
+
+        let (result_tx, result_rx) = flume::unbounded();
+
+        client::work2(
+            client.clone(),
+            result_tx,
+            opts.n_requests,
+            opts.n_connections,
+            opts.n_http2_parallel,
+        )
+        .await;
+
+        Box::pin(async move {
+            let mut res = ResultData::default();
+            while let Ok(r) = result_rx.recv() {
+                res.merge(r);
+            }
+            res
+        }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+    } else if no_tui
         && opts.duration.is_some()
         && opts.query_per_second.is_none()
         && opts.burst_duration.is_none()
@@ -561,31 +586,6 @@ async fn run() -> anyhow::Result<()> {
             opts.n_connections,
             opts.n_http2_parallel,
             opts.wait_ongoing_requests_after_deadline,
-        )
-        .await;
-
-        Box::pin(async move {
-            let mut res = ResultData::default();
-            while let Ok(r) = result_rx.recv() {
-                res.merge(r);
-            }
-            res
-        }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
-    } else if no_tui
-        && opts.duration.is_none()
-        && opts.query_per_second.is_none()
-        && opts.burst_duration.is_none()
-    {
-        // Use optimized work_until2 for duration only mode.
-
-        let (result_tx, result_rx) = flume::unbounded();
-
-        client::work2(
-            client.clone(),
-            result_tx,
-            opts.n_requests,
-            opts.n_connections,
-            opts.n_http2_parallel,
         )
         .await;
 
