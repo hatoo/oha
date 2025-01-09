@@ -1,5 +1,8 @@
 # Unreleased
 
+- Feature: Reading Urls from file #639
+- Add some optimized workers to `--no-tui` mode #646
+
 # 1.5.0 (2024-12-07)
 
 - Add `--debug` option to check actual request/response
