@@ -17,6 +17,7 @@ use std::{
     fs::File,
     io::{BufRead, Read},
     path::Path,
+    pin::Pin,
     str::FromStr,
     sync::Arc,
 };
@@ -301,7 +302,8 @@ impl FromStr for VsockAddr {
 }
 
 async fn run() -> anyhow::Result<()> {
-    let mut opts: Opts = Opts::parse();
+    let opts: Opts = Opts::parse();
+    let work_mode = opts.work_mode();
 
     let parse_http_version = |is_http2: bool, version: Option<&str>| match (is_http2, version) {
         (true, Some(_)) => anyhow::bail!("--http2 and --http-version are exclusive"),
@@ -474,8 +476,6 @@ async fn run() -> anyhow::Result<()> {
         PrintMode::Text
     };
 
-    let (result_tx, result_rx) = flume::unbounded();
-
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
         (false, false) => Default::default(),
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
@@ -523,45 +523,8 @@ async fn run() -> anyhow::Result<()> {
         client.pre_lookup().await?;
     }
 
-    let start = std::time::Instant::now();
-
     let no_tui = opts.no_tui || !std::io::stdout().is_tty() || opts.debug;
-    let data_collector = if no_tui {
-        // When `--no-tui` is enabled, just collect all data.
-        tokio::spawn(async move {
-            let mut all: ResultData = Default::default();
-            tokio::select! {
-                _ = async {
-                        while let Ok(report) = result_rx.recv_async().await {
-                            all.push(report);
-                        }
-                    } => {}
-                _ = tokio::signal::ctrl_c() => {
-                    // User pressed ctrl-c.
-                    let _ = printer::print_result(&mut std::io::stdout(), print_mode, start, &all, start.elapsed(), opts.disable_color, opts.stats_success_breakdown);
-                    std::process::exit(libc::EXIT_SUCCESS);
-                }
-            }
-            Ok(all)
-        })
-    } else {
-        // Spawn monitor future which draws realtime tui
-        tokio::spawn(
-            monitor::Monitor {
-                print_mode,
-                end_line: opts
-                    .duration
-                    .map(|d| monitor::EndLine::Duration(d.into()))
-                    .unwrap_or(monitor::EndLine::NumQuery(opts.n_requests)),
-                report_receiver: result_rx,
-                start,
-                fps: opts.fps,
-                disable_color: opts.disable_color,
-                stats_success_breakdown: opts.stats_success_breakdown,
-            }
-            .monitor(),
-        )
-    };
+
     // When panics, reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(move |info| {
         if !no_tui {
@@ -574,159 +537,219 @@ async fn run() -> anyhow::Result<()> {
         std::process::exit(libc::EXIT_FAILURE);
     }));
 
-    if opts.debug {
-        if let Err(e) = client::work_debug(client, result_tx).await {
-            eprintln!("{e}");
-        }
-        std::process::exit(libc::EXIT_SUCCESS);
-    } else if let Some(duration) = opts.duration.take() {
-        match opts.query_per_second {
-            Some(0) | None => match opts.burst_duration {
-                None => {
-                    client::work_until(
-                        client.clone(),
-                        result_tx,
-                        start + duration.into(),
-                        opts.n_connections,
-                        opts.n_http2_parallel,
-                        opts.wait_ongoing_requests_after_deadline,
-                    )
-                    .await
+    let start = std::time::Instant::now();
+
+    let res = match work_mode {
+        WorkMode::FixedNumber {
+            n_requests,
+            n_connections,
+            n_http2_parallel,
+            query_limit: None,
+            latency_correction: _,
+        } if no_tui => {
+            // Use optimized worker of no_tui mode.
+            let (result_tx, result_rx) = flume::unbounded();
+
+            client::fast::work(
+                client.clone(),
+                result_tx,
+                n_requests,
+                n_connections,
+                n_http2_parallel,
+            )
+            .await;
+
+            Box::pin(async move {
+                let mut res = ResultData::default();
+                while let Ok(r) = result_rx.recv() {
+                    res.merge(r);
                 }
-                Some(burst_duration) => {
-                    if opts.latency_correction {
-                        client::work_until_with_qps_latency_correction(
-                            client.clone(),
-                            result_tx,
-                            client::QueryLimit::Burst(
-                                burst_duration.into(),
-                                opts.burst_requests.unwrap_or(1),
-                            ),
-                            start,
-                            start + duration.into(),
-                            opts.n_connections,
-                            opts.n_http2_parallel,
-                            opts.wait_ongoing_requests_after_deadline,
-                        )
-                        .await
+                res
+            }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+        }
+        WorkMode::Until {
+            duration,
+            n_connections,
+            n_http2_parallel,
+            query_limit: None,
+            latency_correction: _,
+            wait_ongoing_requests_after_deadline,
+        } if no_tui => {
+            // Use optimized worker of no_tui mode.
+            let (result_tx, result_rx) = flume::unbounded();
+
+            client::fast::work_until(
+                client.clone(),
+                result_tx,
+                start + duration,
+                n_connections,
+                n_http2_parallel,
+                wait_ongoing_requests_after_deadline,
+            )
+            .await;
+
+            Box::pin(async move {
+                let mut res = ResultData::default();
+                while let Ok(r) = result_rx.recv() {
+                    res.merge(r);
+                }
+                res
+            }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+        }
+        mode => {
+            let (result_tx, result_rx) = flume::unbounded();
+            let data_collector = if no_tui {
+                // When `--no-tui` is enabled, just collect all data.
+
+                let result_rx_ctrl_c = result_rx.clone();
+                tokio::spawn(async move {
+                    let _ = tokio::signal::ctrl_c().await;
+                    let mut all: ResultData = Default::default();
+                    for report in result_rx_ctrl_c.drain() {
+                        all.push(report);
+                    }
+                    let _ = printer::print_result(
+                        &mut std::io::stdout(),
+                        print_mode,
+                        start,
+                        &all,
+                        start.elapsed(),
+                        opts.disable_color,
+                        opts.stats_success_breakdown,
+                    );
+                    std::process::exit(libc::EXIT_SUCCESS);
+                });
+
+                Box::pin(async move {
+                    let mut all = ResultData::default();
+                    while let Ok(res) = result_rx.recv() {
+                        all.push(res);
+                    }
+                    all
+                }) as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+            } else {
+                // Spawn monitor future which draws realtime tui
+                let join_handle = tokio::spawn(
+                    monitor::Monitor {
+                        print_mode,
+                        end_line: opts
+                            .duration
+                            .map(|d| monitor::EndLine::Duration(d.into()))
+                            .unwrap_or(monitor::EndLine::NumQuery(opts.n_requests)),
+                        report_receiver: result_rx,
+                        start,
+                        fps: opts.fps,
+                        disable_color: opts.disable_color,
+                        stats_success_breakdown: opts.stats_success_breakdown,
+                    }
+                    .monitor(),
+                );
+
+                Box::pin(async { join_handle.await.unwrap().unwrap() })
+                    as Pin<Box<dyn std::future::Future<Output = ResultData>>>
+            };
+
+            match mode {
+                WorkMode::Debug => {
+                    if let Err(e) = client::work_debug(client).await {
+                        eprintln!("{e}");
+                    }
+                    std::process::exit(libc::EXIT_SUCCESS)
+                }
+                WorkMode::FixedNumber {
+                    n_requests,
+                    n_connections,
+                    n_http2_parallel,
+                    query_limit,
+                    latency_correction,
+                } => {
+                    if let Some(query_limit) = query_limit {
+                        if latency_correction {
+                            client::work_with_qps(
+                                client.clone(),
+                                result_tx,
+                                query_limit,
+                                n_requests,
+                                n_connections,
+                                n_http2_parallel,
+                            )
+                            .await;
+                        } else {
+                            client::work_with_qps_latency_correction(
+                                client.clone(),
+                                result_tx,
+                                query_limit,
+                                n_requests,
+                                n_connections,
+                                n_http2_parallel,
+                            )
+                            .await;
+                        }
                     } else {
-                        client::work_until_with_qps(
+                        client::work(
                             client.clone(),
                             result_tx,
-                            client::QueryLimit::Burst(
-                                burst_duration.into(),
-                                opts.burst_requests.unwrap_or(1),
-                            ),
-                            start,
-                            start + duration.into(),
-                            opts.n_connections,
-                            opts.n_http2_parallel,
-                            opts.wait_ongoing_requests_after_deadline,
+                            n_requests,
+                            n_connections,
+                            n_http2_parallel,
                         )
-                        .await
+                        .await;
                     }
                 }
-            },
-            Some(qps) => {
-                if opts.latency_correction {
-                    client::work_until_with_qps_latency_correction(
-                        client.clone(),
-                        result_tx,
-                        client::QueryLimit::Qps(qps),
-                        start,
-                        start + duration.into(),
-                        opts.n_connections,
-                        opts.n_http2_parallel,
-                        opts.wait_ongoing_requests_after_deadline,
-                    )
-                    .await
-                } else {
-                    client::work_until_with_qps(
-                        client.clone(),
-                        result_tx,
-                        client::QueryLimit::Qps(qps),
-                        start,
-                        start + duration.into(),
-                        opts.n_connections,
-                        opts.n_http2_parallel,
-                        opts.wait_ongoing_requests_after_deadline,
-                    )
-                    .await
-                }
-            }
-        }
-    } else {
-        match opts.query_per_second {
-            Some(0) | None => match opts.burst_duration {
-                None => {
-                    client::work(
-                        client.clone(),
-                        result_tx,
-                        opts.n_requests,
-                        opts.n_connections,
-                        opts.n_http2_parallel,
-                    )
-                    .await
-                }
-                Some(burst_duration) => {
-                    if opts.latency_correction {
-                        client::work_with_qps_latency_correction(
-                            client.clone(),
-                            result_tx,
-                            client::QueryLimit::Burst(
-                                burst_duration.into(),
-                                opts.burst_requests.unwrap_or(1),
-                            ),
-                            opts.n_requests,
-                            opts.n_connections,
-                            opts.n_http2_parallel,
-                        )
-                        .await
+                WorkMode::Until {
+                    duration,
+                    n_connections,
+                    n_http2_parallel,
+                    query_limit,
+                    latency_correction,
+                    wait_ongoing_requests_after_deadline,
+                } => {
+                    if let Some(query_limit) = query_limit {
+                        if latency_correction {
+                            client::work_until_with_qps_latency_correction(
+                                client.clone(),
+                                result_tx,
+                                query_limit,
+                                start,
+                                start + duration,
+                                n_connections,
+                                n_http2_parallel,
+                                wait_ongoing_requests_after_deadline,
+                            )
+                            .await;
+                        } else {
+                            client::work_until_with_qps(
+                                client.clone(),
+                                result_tx,
+                                query_limit,
+                                start,
+                                start + duration,
+                                n_connections,
+                                n_http2_parallel,
+                                wait_ongoing_requests_after_deadline,
+                            )
+                            .await;
+                        }
                     } else {
-                        client::work_with_qps(
+                        client::work_until(
                             client.clone(),
                             result_tx,
-                            client::QueryLimit::Burst(
-                                burst_duration.into(),
-                                opts.burst_requests.unwrap_or(1),
-                            ),
-                            opts.n_requests,
-                            opts.n_connections,
-                            opts.n_http2_parallel,
+                            start + duration,
+                            n_connections,
+                            n_http2_parallel,
+                            wait_ongoing_requests_after_deadline,
                         )
-                        .await
+                        .await;
                     }
                 }
-            },
-            Some(qps) => {
-                if opts.latency_correction {
-                    client::work_with_qps_latency_correction(
-                        client.clone(),
-                        result_tx,
-                        client::QueryLimit::Qps(qps),
-                        opts.n_requests,
-                        opts.n_connections,
-                        opts.n_http2_parallel,
-                    )
-                    .await
-                } else {
-                    client::work_with_qps(
-                        client.clone(),
-                        result_tx,
-                        client::QueryLimit::Qps(qps),
-                        opts.n_requests,
-                        opts.n_connections,
-                        opts.n_http2_parallel,
-                    )
-                    .await
-                }
             }
+
+            data_collector
         }
-    }
+    };
 
     let duration = start.elapsed();
-
-    let res: ResultData = data_collector.await??;
+    let res = res.await;
 
     printer::print_result(
         &mut std::io::stdout(),
@@ -774,4 +797,66 @@ fn main() {
         .build()
         .unwrap();
     rt.block_on(run()).unwrap();
+}
+
+enum WorkMode {
+    Debug,
+    FixedNumber {
+        n_requests: usize,
+        n_connections: usize,
+        n_http2_parallel: usize,
+        query_limit: Option<client::QueryLimit>,
+        // ignored when query_limit is None
+        latency_correction: bool,
+    },
+    Until {
+        duration: std::time::Duration,
+        n_connections: usize,
+        n_http2_parallel: usize,
+        query_limit: Option<client::QueryLimit>,
+        // ignored when query_limit is None
+        latency_correction: bool,
+        wait_ongoing_requests_after_deadline: bool,
+    },
+}
+
+impl Opts {
+    fn work_mode(&self) -> WorkMode {
+        if self.debug {
+            WorkMode::Debug
+        } else if let Some(duration) = self.duration {
+            WorkMode::Until {
+                duration: duration.into(),
+                n_connections: self.n_connections,
+                n_http2_parallel: self.n_http2_parallel,
+                query_limit: match self.query_per_second {
+                    Some(0) | None => self.burst_duration.map(|burst_duration| {
+                        client::QueryLimit::Burst(
+                            burst_duration.into(),
+                            self.burst_requests.unwrap_or(1),
+                        )
+                    }),
+                    Some(qps) => Some(client::QueryLimit::Qps(qps)),
+                },
+                latency_correction: self.latency_correction,
+                wait_ongoing_requests_after_deadline: self.wait_ongoing_requests_after_deadline,
+            }
+        } else {
+            WorkMode::FixedNumber {
+                n_requests: self.n_requests,
+                n_connections: self.n_connections,
+                n_http2_parallel: self.n_http2_parallel,
+                query_limit: match self.query_per_second {
+                    Some(0) | None => self.burst_duration.map(|burst_duration| {
+                        client::QueryLimit::Burst(
+                            burst_duration.into(),
+                            self.burst_requests.unwrap_or(1),
+                        )
+                    }),
+                    Some(qps) => Some(client::QueryLimit::Qps(qps)),
+                },
+                latency_correction: self.latency_correction,
+            }
+        }
+    }
 }
