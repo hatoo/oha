@@ -19,7 +19,6 @@ use url::{ParseError, Url};
 
 use crate::{
     pcg64si::Pcg64Si,
-    result_data::ResultData,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -1086,211 +1085,6 @@ pub async fn work(
     };
 }
 
-/// Run n tasks by m workers
-pub async fn work2(
-    client: Arc<Client>,
-    report_tx: flume::Sender<ResultData>,
-    n_tasks: usize,
-    n_connections: usize,
-    n_http2_parallel: usize,
-) {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let counter = Arc::new(AtomicUsize::new(0));
-    let num_threads = num_cpus::get_physical();
-    let connections = (0..num_threads).filter_map(|i| {
-        let num_connection = n_connections / num_threads
-            + (if (n_connections % num_threads) > i {
-                1
-            } else {
-                0
-            });
-        if num_connection > 0 {
-            Some(num_connection)
-        } else {
-            None
-        }
-    });
-    let token = tokio_util::sync::CancellationToken::new();
-
-    if client.is_work_http2() {
-        let handles = connections
-            .map(|num_connections| {
-                let report_tx = report_tx.clone();
-                let counter = counter.clone();
-                let client = client.clone();
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                let token = token.clone();
-
-                std::thread::spawn(move || {
-                    let client = client.clone();
-                    let local = tokio::task::LocalSet::new();
-                    for _ in 0..num_connections {
-                        let report_tx = report_tx.clone();
-                        let counter = counter.clone();
-                        let client = client.clone();
-                        let token = token.clone();
-                        local.spawn_local(Box::pin(async move {
-                            loop {
-                                let client = client.clone();
-                                match setup_http2(&client).await {
-                                    Ok((connection_time, client_state)) => {
-                                        let futures = (0..n_http2_parallel)
-                                            .map(|_| {
-                                                let mut client_state = client_state.clone();
-                                                let counter = counter.clone();
-                                                let client = client.clone();
-                                                let report_tx = report_tx.clone();
-                                                let token = token.clone();
-                                                tokio::task::spawn_local(async move {
-                                                    let mut result_data = ResultData::default();
-
-                                                    let work = async {
-                                                        while counter
-                                                            .fetch_add(1, Ordering::Relaxed)
-                                                            < n_tasks
-                                                        {
-                                                            let mut res = client
-                                                                .work_http2(&mut client_state)
-                                                                .await;
-                                                            let is_cancel = is_cancel_error(&res);
-                                                            let is_reconnect = is_hyper_error(&res);
-                                                            set_connection_time(
-                                                                &mut res,
-                                                                connection_time,
-                                                            );
-
-                                                            result_data.push(res);
-
-                                                            if is_cancel || is_reconnect {
-                                                                return is_cancel;
-                                                            }
-                                                        }
-                                                        true
-                                                    };
-
-                                                    let is_cancel = tokio::select! {
-                                                        is_cancel = work => {
-                                                            is_cancel
-                                                        }
-                                                        _ = token.cancelled() => {
-                                                            true
-                                                        }
-                                                    };
-
-                                                    report_tx.send(result_data).unwrap();
-                                                    is_cancel
-                                                })
-                                            })
-                                            .collect::<Vec<_>>();
-
-                                        let mut connection_gone = false;
-                                        for f in futures {
-                                            match f.await {
-                                                Ok(true) => {
-                                                    // All works done
-                                                    connection_gone = true;
-                                                }
-                                                Err(_) => {
-                                                    // Unexpected
-                                                    connection_gone = true;
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-
-                                        if connection_gone {
-                                            return;
-                                        }
-                                    }
-                                    Err(err) => {
-                                        if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                            let mut result_data = ResultData::default();
-                                            result_data.push(Err(err));
-                                            report_tx.send(result_data).unwrap();
-                                        } else {
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }));
-                    }
-
-                    rt.block_on(local);
-                })
-            })
-            .collect::<Vec<_>>();
-        tokio::spawn(async move {
-            tokio::signal::ctrl_c().await.unwrap();
-            token.cancel();
-        });
-
-        tokio::task::block_in_place(|| {
-            for handle in handles {
-                let _ = handle.join();
-            }
-        });
-    } else {
-        let handles = connections
-            .map(|num_connection| {
-                let report_tx = report_tx.clone();
-                let counter = counter.clone();
-                let client = client.clone();
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-
-                let token = token.clone();
-                std::thread::spawn(move || {
-                    let local = tokio::task::LocalSet::new();
-
-                    for _ in 0..num_connection {
-                        let report_tx = report_tx.clone();
-                        let counter = counter.clone();
-                        let client = client.clone();
-                        let token = token.clone();
-                        local.spawn_local(Box::pin(async move {
-                            let mut result_data = ResultData::default();
-
-                            tokio::select! {
-                                _ = token.cancelled() => {}
-                                _ = async {
-                                    let mut client_state = ClientStateHttp1::default();
-                                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                        let res = client.work_http1(&mut client_state).await;
-                                        let is_cancel = is_cancel_error(&res);
-                                        result_data.push(res);
-                                        if is_cancel {
-                                            break;
-                                        }
-                                    }
-                                } => {}
-                            }
-                            report_tx.send(result_data).unwrap();
-                        }));
-                    }
-                    rt.block_on(local);
-                })
-            })
-            .collect::<Vec<_>>();
-
-        tokio::spawn(async move {
-            tokio::signal::ctrl_c().await.unwrap();
-            token.cancel();
-        });
-
-        tokio::task::block_in_place(|| {
-            for handle in handles {
-                let _ = handle.join();
-            }
-        });
-    };
-}
-
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
     client: Arc<Client>,
@@ -1725,236 +1519,6 @@ pub async fn work_until(
     };
 }
 
-/// Run until dead_line by n workers
-pub async fn work_until2(
-    client: Arc<Client>,
-    report_tx: flume::Sender<ResultData>,
-    dead_line: std::time::Instant,
-    n_connections: usize,
-    n_http2_parallel: usize,
-    wait_ongoing_requests_after_deadline: bool,
-) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    let num_threads = num_cpus::get_physical();
-
-    let is_end = Arc::new(AtomicBool::new(false));
-    let connections = (0..num_threads).filter_map(|i| {
-        let num_connection = n_connections / num_threads
-            + (if (n_connections % num_threads) > i {
-                1
-            } else {
-                0
-            });
-        if num_connection > 0 {
-            Some(num_connection)
-        } else {
-            None
-        }
-    });
-    let token = tokio_util::sync::CancellationToken::new();
-    if client.is_work_http2() {
-        let handles = connections
-            .map(|num_connections| {
-                let report_tx = report_tx.clone();
-                let client = client.clone();
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                let token = token.clone();
-                let is_end = is_end.clone();
-
-                std::thread::spawn(move || {
-                    let client = client.clone();
-                    let local = tokio::task::LocalSet::new();
-                    for _ in 0..num_connections {
-                        let report_tx = report_tx.clone();
-                        let client = client.clone();
-                        let token = token.clone();
-                        let is_end = is_end.clone();
-                        local.spawn_local(Box::pin(async move {
-                            loop {
-                                let client = client.clone();
-                                match setup_http2(&client).await {
-                                    Ok((connection_time, client_state)) => {
-                                        let futures = (0..n_http2_parallel)
-                                            .map(|_| {
-                                                let mut client_state = client_state.clone();
-                                                let client = client.clone();
-                                                let report_tx = report_tx.clone();
-                                                let token = token.clone();
-                                                let is_end = is_end.clone();
-                                                tokio::task::spawn_local(async move {
-                                                    let mut result_data = ResultData::default();
-
-                                                    let work = async {
-                                                        loop {
-                                                            let mut res = client
-                                                                .work_http2(&mut client_state)
-                                                                .await;
-                                                            let is_cancel = is_cancel_error(&res) || is_end.load(Ordering::Relaxed);
-                                                            let is_reconnect = is_hyper_error(&res);
-                                                            set_connection_time(
-                                                                &mut res,
-                                                                connection_time,
-                                                            );
-
-                                                            result_data.push(res);
-
-                                                            if is_cancel || is_reconnect {
-                                                                return is_cancel;
-                                                            }
-                                                        }
-                                                    };
-
-                                                    let is_cancel = tokio::select! {
-                                                        is_cancel = work => {
-                                                            is_cancel
-                                                        }
-                                                        _ = token.cancelled() => {
-                                                            result_data.push(Err(ClientError::Deadline));
-                                                            true
-                                                        }
-                                                    };
-
-                                                    report_tx.send(result_data).unwrap();
-                                                    is_cancel
-                                                })
-                                            })
-                                            .collect::<Vec<_>>();
-
-                                        let mut connection_gone = false;
-                                        for f in futures {
-                                            match f.await {
-                                                Ok(true) => {
-                                                    // All works done
-                                                    connection_gone = true;
-                                                }
-                                                Err(_) => {
-                                                    // Unexpected
-                                                    connection_gone = true;
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-
-                                        if connection_gone {
-                                            return;
-                                        }
-                                    }
-                                    Err(err) => {
-                                            let mut result_data = ResultData::default();
-                                            result_data.push(Err(err));
-                                            report_tx.send(result_data).unwrap();
-                                        if is_end.load(Ordering::Relaxed) {
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }));
-                    }
-
-                    rt.block_on(local);
-                })
-            })
-            .collect::<Vec<_>>();
-        tokio::select! {
-            _ = tokio::time::sleep_until(dead_line.into()) => {
-            }
-            _ = tokio::signal::ctrl_c() => {
-            }
-        }
-
-        is_end.store(true, Relaxed);
-
-        if !wait_ongoing_requests_after_deadline {
-            token.cancel();
-        }
-        for handle in handles {
-            let _ = handle.join();
-        }
-    } else {
-        let handles = (0..num_threads)
-            .filter_map(|i| {
-                let num_connection = n_connections / num_threads
-                    + (if (n_connections % num_threads) > i {
-                        1
-                    } else {
-                        0
-                    });
-                if num_connection > 0 {
-                    Some(num_connection)
-                } else {
-                    None
-                }
-            })
-            .map(|num_connection| {
-                let report_tx = report_tx.clone();
-                let is_end = is_end.clone();
-                let client = client.clone();
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-
-                let token = token.clone();
-                std::thread::spawn(move || {
-                    let local = tokio::task::LocalSet::new();
-
-                    for _ in 0..num_connection {
-                        let report_tx = report_tx.clone();
-                        let is_end = is_end.clone();
-                        let client = client.clone();
-                        let token = token.clone();
-                        local.spawn_local(Box::pin(async move {
-                            let mut result_data = ResultData::default();
-
-                            let work = async {
-                                let mut client_state = ClientStateHttp1::default();
-                                loop {
-                                    let res = client.work_http1(&mut client_state).await;
-                                    let is_cancel = is_cancel_error(&res);
-                                    result_data.push(res);
-                                    if is_cancel || is_end.load(Relaxed) {
-                                        break;
-                                    }
-                                }
-                            };
-
-                            tokio::select! {
-                                _ = work => {
-                                }
-                                _ = token.cancelled() => {
-                                    result_data.push(Err(ClientError::Deadline));
-                                }
-                            }
-                            report_tx.send(result_data).unwrap();
-                        }));
-                    }
-                    rt.block_on(local);
-                })
-            })
-            .collect::<Vec<_>>();
-
-        tokio::select! {
-            _ = tokio::time::sleep_until(dead_line.into()) => {
-            }
-            _ = tokio::signal::ctrl_c() => {
-            }
-        }
-
-        is_end.store(true, Relaxed);
-
-        if !wait_ongoing_requests_after_deadline {
-            token.cancel();
-        }
-        for handle in handles {
-            let _ = handle.join();
-        }
-    };
-}
-
 /// Run until dead_line by n workers limit to qps works in a second
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
@@ -2317,5 +1881,457 @@ pub async fn work_until_with_qps_latency_correction(
                 }
             }
         }
+    }
+}
+
+/// Optimized workers for `--no-tui` mode
+pub mod fast {
+    use std::sync::Arc;
+
+    use crate::{
+        client::{
+            is_cancel_error, is_hyper_error, set_connection_time, setup_http2, ClientError,
+            ClientStateHttp1,
+        },
+        result_data::ResultData,
+    };
+
+    use super::Client;
+
+    /// Run n tasks by m workers
+    pub async fn work(
+        client: Arc<Client>,
+        report_tx: flume::Sender<ResultData>,
+        n_tasks: usize,
+        n_connections: usize,
+        n_http2_parallel: usize,
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let counter = Arc::new(AtomicUsize::new(0));
+        let num_threads = num_cpus::get_physical();
+        let connections = (0..num_threads).filter_map(|i| {
+            let num_connection = n_connections / num_threads
+                + (if (n_connections % num_threads) > i {
+                    1
+                } else {
+                    0
+                });
+            if num_connection > 0 {
+                Some(num_connection)
+            } else {
+                None
+            }
+        });
+        let token = tokio_util::sync::CancellationToken::new();
+
+        if client.is_work_http2() {
+            let handles = connections
+                .map(|num_connections| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let token = token.clone();
+
+                    std::thread::spawn(move || {
+                        let client = client.clone();
+                        let local = tokio::task::LocalSet::new();
+                        for _ in 0..num_connections {
+                            let report_tx = report_tx.clone();
+                            let counter = counter.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                loop {
+                                    let client = client.clone();
+                                    match setup_http2(&client).await {
+                                        Ok((connection_time, client_state)) => {
+                                            let futures = (0..n_http2_parallel)
+                                                .map(|_| {
+                                                    let mut client_state = client_state.clone();
+                                                    let counter = counter.clone();
+                                                    let client = client.clone();
+                                                    let report_tx = report_tx.clone();
+                                                    let token = token.clone();
+                                                    tokio::task::spawn_local(async move {
+                                                        let mut result_data = ResultData::default();
+
+                                                        let work = async {
+                                                            while counter
+                                                                .fetch_add(1, Ordering::Relaxed)
+                                                                < n_tasks
+                                                            {
+                                                                let mut res = client
+                                                                    .work_http2(&mut client_state)
+                                                                    .await;
+                                                                let is_cancel =
+                                                                    is_cancel_error(&res);
+                                                                let is_reconnect =
+                                                                    is_hyper_error(&res);
+                                                                set_connection_time(
+                                                                    &mut res,
+                                                                    connection_time,
+                                                                );
+
+                                                                result_data.push(res);
+
+                                                                if is_cancel || is_reconnect {
+                                                                    return is_cancel;
+                                                                }
+                                                            }
+                                                            true
+                                                        };
+
+                                                        let is_cancel = tokio::select! {
+                                                            is_cancel = work => {
+                                                                is_cancel
+                                                            }
+                                                            _ = token.cancelled() => {
+                                                                true
+                                                            }
+                                                        };
+
+                                                        report_tx.send(result_data).unwrap();
+                                                        is_cancel
+                                                    })
+                                                })
+                                                .collect::<Vec<_>>();
+
+                                            let mut connection_gone = false;
+                                            for f in futures {
+                                                match f.await {
+                                                    Ok(true) => {
+                                                        // All works done
+                                                        connection_gone = true;
+                                                    }
+                                                    Err(_) => {
+                                                        // Unexpected
+                                                        connection_gone = true;
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+
+                                            if connection_gone {
+                                                return;
+                                            }
+                                        }
+                                        Err(err) => {
+                                            if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                                let mut result_data = ResultData::default();
+                                                result_data.push(Err(err));
+                                                report_tx.send(result_data).unwrap();
+                                            } else {
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                            }));
+                        }
+
+                        rt.block_on(local);
+                    })
+                })
+                .collect::<Vec<_>>();
+            tokio::spawn(async move {
+                tokio::signal::ctrl_c().await.unwrap();
+                token.cancel();
+            });
+
+            tokio::task::block_in_place(|| {
+                for handle in handles {
+                    let _ = handle.join();
+                }
+            });
+        } else {
+            let handles = connections
+                .map(|num_connection| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    let token = token.clone();
+                    std::thread::spawn(move || {
+                        let local = tokio::task::LocalSet::new();
+
+                        for _ in 0..num_connection {
+                            let report_tx = report_tx.clone();
+                            let counter = counter.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut result_data = ResultData::default();
+
+                                tokio::select! {
+                                    _ = token.cancelled() => {}
+                                    _ = async {
+                                        let mut client_state = ClientStateHttp1::default();
+                                        while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                            let res = client.work_http1(&mut client_state).await;
+                                            let is_cancel = is_cancel_error(&res);
+                                            result_data.push(res);
+                                            if is_cancel {
+                                                break;
+                                            }
+                                        }
+                                    } => {}
+                                }
+                                report_tx.send(result_data).unwrap();
+                            }));
+                        }
+                        rt.block_on(local);
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            tokio::spawn(async move {
+                tokio::signal::ctrl_c().await.unwrap();
+                token.cancel();
+            });
+
+            tokio::task::block_in_place(|| {
+                for handle in handles {
+                    let _ = handle.join();
+                }
+            });
+        };
+    }
+
+    /// Run until dead_line by n workers
+    pub async fn work_until(
+        client: Arc<Client>,
+        report_tx: flume::Sender<ResultData>,
+        dead_line: std::time::Instant,
+        n_connections: usize,
+        n_http2_parallel: usize,
+        wait_ongoing_requests_after_deadline: bool,
+    ) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let num_threads = num_cpus::get_physical();
+
+        let is_end = Arc::new(AtomicBool::new(false));
+        let connections = (0..num_threads).filter_map(|i| {
+            let num_connection = n_connections / num_threads
+                + (if (n_connections % num_threads) > i {
+                    1
+                } else {
+                    0
+                });
+            if num_connection > 0 {
+                Some(num_connection)
+            } else {
+                None
+            }
+        });
+        let token = tokio_util::sync::CancellationToken::new();
+        if client.is_work_http2() {
+            let handles = connections
+            .map(|num_connections| {
+                let report_tx = report_tx.clone();
+                let client = client.clone();
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let token = token.clone();
+                let is_end = is_end.clone();
+
+                std::thread::spawn(move || {
+                    let client = client.clone();
+                    let local = tokio::task::LocalSet::new();
+                    for _ in 0..num_connections {
+                        let report_tx = report_tx.clone();
+                        let client = client.clone();
+                        let token = token.clone();
+                        let is_end = is_end.clone();
+                        local.spawn_local(Box::pin(async move {
+                            loop {
+                                let client = client.clone();
+                                match setup_http2(&client).await {
+                                    Ok((connection_time, client_state)) => {
+                                        let futures = (0..n_http2_parallel)
+                                            .map(|_| {
+                                                let mut client_state = client_state.clone();
+                                                let client = client.clone();
+                                                let report_tx = report_tx.clone();
+                                                let token = token.clone();
+                                                let is_end = is_end.clone();
+                                                tokio::task::spawn_local(async move {
+                                                    let mut result_data = ResultData::default();
+
+                                                    let work = async {
+                                                        loop {
+                                                            let mut res = client
+                                                                .work_http2(&mut client_state)
+                                                                .await;
+                                                            let is_cancel = is_cancel_error(&res) || is_end.load(Ordering::Relaxed);
+                                                            let is_reconnect = is_hyper_error(&res);
+                                                            set_connection_time(
+                                                                &mut res,
+                                                                connection_time,
+                                                            );
+
+                                                            result_data.push(res);
+
+                                                            if is_cancel || is_reconnect {
+                                                                return is_cancel;
+                                                            }
+                                                        }
+                                                    };
+
+                                                    let is_cancel = tokio::select! {
+                                                        is_cancel = work => {
+                                                            is_cancel
+                                                        }
+                                                        _ = token.cancelled() => {
+                                                            result_data.push(Err(ClientError::Deadline));
+                                                            true
+                                                        }
+                                                    };
+
+                                                    report_tx.send(result_data).unwrap();
+                                                    is_cancel
+                                                })
+                                            })
+                                            .collect::<Vec<_>>();
+
+                                        let mut connection_gone = false;
+                                        for f in futures {
+                                            match f.await {
+                                                Ok(true) => {
+                                                    // All works done
+                                                    connection_gone = true;
+                                                }
+                                                Err(_) => {
+                                                    // Unexpected
+                                                    connection_gone = true;
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+
+                                        if connection_gone {
+                                            return;
+                                        }
+                                    }
+                                    Err(err) => {
+                                            let mut result_data = ResultData::default();
+                                            result_data.push(Err(err));
+                                            report_tx.send(result_data).unwrap();
+                                        if is_end.load(Ordering::Relaxed) {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }));
+                    }
+
+                    rt.block_on(local);
+                })
+            })
+            .collect::<Vec<_>>();
+            tokio::select! {
+                _ = tokio::time::sleep_until(dead_line.into()) => {
+                }
+                _ = tokio::signal::ctrl_c() => {
+                }
+            }
+
+            is_end.store(true, Ordering::Relaxed);
+
+            if !wait_ongoing_requests_after_deadline {
+                token.cancel();
+            }
+            for handle in handles {
+                let _ = handle.join();
+            }
+        } else {
+            let handles = (0..num_threads)
+                .filter_map(|i| {
+                    let num_connection = n_connections / num_threads
+                        + (if (n_connections % num_threads) > i {
+                            1
+                        } else {
+                            0
+                        });
+                    if num_connection > 0 {
+                        Some(num_connection)
+                    } else {
+                        None
+                    }
+                })
+                .map(|num_connection| {
+                    let report_tx = report_tx.clone();
+                    let is_end = is_end.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    let token = token.clone();
+                    std::thread::spawn(move || {
+                        let local = tokio::task::LocalSet::new();
+
+                        for _ in 0..num_connection {
+                            let report_tx = report_tx.clone();
+                            let is_end = is_end.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut result_data = ResultData::default();
+
+                                let work = async {
+                                    let mut client_state = ClientStateHttp1::default();
+                                    loop {
+                                        let res = client.work_http1(&mut client_state).await;
+                                        let is_cancel = is_cancel_error(&res);
+                                        result_data.push(res);
+                                        if is_cancel || is_end.load(Ordering::Relaxed) {
+                                            break;
+                                        }
+                                    }
+                                };
+
+                                tokio::select! {
+                                    _ = work => {
+                                    }
+                                    _ = token.cancelled() => {
+                                        result_data.push(Err(ClientError::Deadline));
+                                    }
+                                }
+                                report_tx.send(result_data).unwrap();
+                            }));
+                        }
+                        rt.block_on(local);
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            tokio::select! {
+                _ = tokio::time::sleep_until(dead_line.into()) => {
+                }
+                _ = tokio::signal::ctrl_c() => {
+                }
+            }
+
+            is_end.store(true, Ordering::Relaxed);
+
+            if !wait_ongoing_requests_after_deadline {
+                token.cancel();
+            }
+            for handle in handles {
+                let _ = handle.join();
+            }
+        };
     }
 }

@@ -552,7 +552,7 @@ async fn run() -> anyhow::Result<()> {
 
         let (result_tx, result_rx) = flume::unbounded();
 
-        client::work2(
+        client::fast::work(
             client.clone(),
             result_tx,
             opts.n_requests,
@@ -578,7 +578,7 @@ async fn run() -> anyhow::Result<()> {
         let duration = opts.duration.unwrap();
         let (result_tx, result_rx) = flume::unbounded();
 
-        client::work_until2(
+        client::fast::work_until(
             client.clone(),
             result_tx,
             start + duration.into(),
