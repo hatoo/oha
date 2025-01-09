@@ -522,8 +522,6 @@ async fn run() -> anyhow::Result<()> {
         client.pre_lookup().await?;
     }
 
-    let start = std::time::Instant::now();
-
     let no_tui = opts.no_tui || !std::io::stdout().is_tty() || opts.debug;
 
     // When panics, reset terminal mode and exit immediately.
@@ -537,6 +535,8 @@ async fn run() -> anyhow::Result<()> {
         eprintln!("{info}");
         std::process::exit(libc::EXIT_FAILURE);
     }));
+
+    let start = std::time::Instant::now();
 
     let res = if opts.debug {
         if let Err(e) = client::work_debug(client).await {
