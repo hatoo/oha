@@ -64,7 +64,6 @@ hickory-resolver = "0.24.1"
 rand_regex = "0.17.0"
 regex-syntax = "0.8.5"
 url = "2.5.2"
-pin-project-lite = "0.2.14"
 http-body-util = "0.1.2"
 hyper-util = { version = "0.1.6", features = ["tokio"] }
 tokio-vsock = { version = "0.5.0", optional = true }

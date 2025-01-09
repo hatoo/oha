@@ -2326,7 +2326,6 @@ dependencies = [
  "libc",
  "native-tls",
  "num_cpus",
- "pin-project-lite",
  "predicates",
  "rand",
  "rand_core",
