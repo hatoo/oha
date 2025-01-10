@@ -107,3 +107,6 @@ lto = true
 debug = false
 incremental = false
 overflow-checks = false
+
+[profile.release-ci]
+inherits = "pgo"
