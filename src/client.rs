@@ -1945,6 +1945,8 @@ pub mod fast {
                             let client = client.clone();
                             let token = token.clone();
                             local.spawn_local(Box::pin(async move {
+                                let mut has_err = false;
+                                let mut result_data_err = ResultData::default();
                                 loop {
                                     let client = client.clone();
                                     match setup_http2(&client).await {
@@ -2016,19 +2018,21 @@ pub mod fast {
                                             }
 
                                             if connection_gone {
-                                                return;
+                                                break;
                                             }
                                         }
                                         Err(err) => {
                                             if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                                let mut result_data = ResultData::default();
-                                                result_data.push(Err(err));
-                                                report_tx.send(result_data).unwrap();
+                                                has_err = true;
+                                                result_data_err.push(Err(err));
                                             } else {
-                                                return;
+                                                break;
                                             }
                                         }
                                     }
+                                }
+                                if has_err {
+                                    report_tx.send(result_data_err).unwrap();
                                 }
                             }));
                         }
@@ -2143,6 +2147,8 @@ pub mod fast {
                         let token = token.clone();
                         let is_end = is_end.clone();
                         local.spawn_local(Box::pin(async move {
+                            let mut has_err = false;
+                            let mut result_data_err = ResultData::default();
                             loop {
                                 let client = client.clone();
                                 match setup_http2(&client).await {
@@ -2209,18 +2215,20 @@ pub mod fast {
                                         }
 
                                         if connection_gone {
-                                            return;
+                                            break;
                                         }
                                     }
                                     Err(err) => {
-                                            let mut result_data = ResultData::default();
-                                            result_data.push(Err(err));
-                                            report_tx.send(result_data).unwrap();
+                                        has_err = true;
+                                        result_data_err.push(Err(err));
                                         if is_end.load(Ordering::Relaxed) {
-                                            return;
+                                            break;
                                         }
                                     }
                                 }
+                            }
+                            if has_err {
+                                report_tx.send(result_data_err).unwrap();
                             }
                         }));
                     }
