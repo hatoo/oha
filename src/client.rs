@@ -1,8 +1,9 @@
 use http_body_util::{BodyExt, Full};
-use hyper::http;
+use hyper::{http, Method};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
+    borrow::Cow,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc,
@@ -10,10 +11,14 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
-use tokio::net::TcpStream;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+};
 use url::{ParseError, Url};
 
 use crate::{
+    pcg64si::Pcg64Si,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
@@ -30,6 +35,7 @@ pub struct ConnectionTime {
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
+    pub rng: Pcg64Si,
     // When the query should started
     pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
@@ -159,6 +165,7 @@ pub enum ClientError {
 
 pub struct Client {
     pub http_version: http::Version,
+    pub proxy_http_version: http::Version,
     pub url_generator: UrlGenerator,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
@@ -168,6 +175,7 @@ pub struct Client {
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
     pub insecure: bool,
+    pub proxy_url: Option<Url>,
     #[cfg(unix)]
     pub unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
@@ -177,28 +185,28 @@ pub struct Client {
 }
 
 struct ClientStateHttp1 {
-    rng: StdRng,
+    rng: Pcg64Si,
     send_request: Option<SendRequestHttp1>,
 }
 
 impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
-            rng: StdRng::from_entropy(),
+            rng: SeedableRng::from_entropy(),
             send_request: None,
         }
     }
 }
 
 struct ClientStateHttp2 {
-    rng: StdRng,
+    rng: Pcg64Si,
     send_request: SendRequestHttp2,
 }
 
 impl Clone for ClientStateHttp2 {
     fn clone(&self) -> Self {
         Self {
-            rng: StdRng::from_entropy(),
+            rng: SeedableRng::from_entropy(),
             send_request: self.send_request.clone(),
         }
     }
@@ -224,32 +232,48 @@ enum Stream {
 }
 
 impl Stream {
-    async fn handshake_http1(self) -> Result<SendRequestHttp1, ClientError> {
+    async fn handshake_http1(self, with_upgrade: bool) -> Result<SendRequestHttp1, ClientError> {
         match self {
             Stream::Tcp(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
             Stream::Tls(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
             #[cfg(unix)]
             Stream::Unix(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
             #[cfg(feature = "vsock")]
             Stream::Vsock(stream) => {
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
+                if with_upgrade {
+                    tokio::spawn(conn.with_upgrades());
+                } else {
+                    tokio::spawn(conn);
+                }
                 Ok(send_request)
             }
         }
@@ -289,8 +313,27 @@ impl Stream {
 }
 
 impl Client {
+    #[inline]
     fn is_http2(&self) -> bool {
         self.http_version == http::Version::HTTP_2
+    }
+
+    #[inline]
+    fn is_proxy_http2(&self) -> bool {
+        self.proxy_http_version == http::Version::HTTP_2
+    }
+
+    pub fn is_work_http2(&self) -> bool {
+        if self.proxy_url.is_some() {
+            let url = self.url_generator.generate(&mut thread_rng()).unwrap();
+            if url.scheme() == "https" {
+                self.is_http2()
+            } else {
+                self.is_proxy_http2()
+            }
+        } else {
+            self.is_http2()
+        }
     }
 
     /// Perform a DNS lookup to cache it
@@ -315,10 +358,16 @@ impl Client {
         Ok(())
     }
 
+    pub fn generate_url(&self, rng: &mut Pcg64Si) -> Result<(Cow<Url>, Pcg64Si), ClientError> {
+        let snapshot = *rng;
+        Ok((self.url_generator.generate(rng)?, snapshot))
+    }
+
     async fn client<R: Rng>(
         &self,
         url: &Url,
         rng: &mut R,
+        is_http2: bool,
     ) -> Result<(Instant, Stream), ClientError> {
         // TODO: Allow the connect timeout to be configured
         let timeout_duration = tokio::time::Duration::from_secs(5);
@@ -328,7 +377,8 @@ impl Client {
             let dns_lookup = Instant::now();
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
-            let stream = tokio::time::timeout(timeout_duration, self.tls_client(addr, url)).await;
+            let stream =
+                tokio::time::timeout(timeout_duration, self.tls_client(addr, url, is_http2)).await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, stream)),
                 Ok(Err(err)) => Err(err),
@@ -361,6 +411,7 @@ impl Client {
                 Err(_) => Err(ClientError::Timeout),
             };
         }
+        // HTTP
         let addr = self.dns.lookup(url, rng).await?;
         let dns_lookup = Instant::now();
         let stream =
@@ -375,15 +426,30 @@ impl Client {
         }
     }
 
-    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
     async fn tls_client(
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
+        is_http2: bool,
     ) -> Result<Stream, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
+        let stream = self.connect_tls(stream, url, is_http2).await?;
+
+        Ok(Stream::Tls(stream))
+    }
+
+    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+    async fn connect_tls<S>(
+        &self,
+        stream: S,
+        url: &Url,
+        is_http2: bool,
+    ) -> Result<tokio_native_tls::TlsStream<S>, ClientError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         let mut connector_builder = native_tls::TlsConnector::builder();
         if self.insecure {
             connector_builder
@@ -391,7 +457,7 @@ impl Client {
                 .danger_accept_invalid_hostnames(true);
         }
 
-        if self.is_http2() {
+        if is_http2 {
             connector_builder.request_alpns(&["h2"]);
         }
 
@@ -400,18 +466,19 @@ impl Client {
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
 
-        Ok(Stream::Tls(stream))
+        Ok(stream)
     }
 
     #[cfg(feature = "rustls")]
-    async fn tls_client(
+    async fn connect_tls<S>(
         &self,
-        addr: (std::net::IpAddr, u16),
+        stream: S,
         url: &Url,
-    ) -> Result<Stream, ClientError> {
-        let stream = tokio::net::TcpStream::connect(addr).await?;
-        stream.set_nodelay(true)?;
-
+        is_http2: bool,
+    ) -> Result<tokio_rustls::client::TlsStream<S>, ClientError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         let mut config = rustls::ClientConfig::builder()
             .with_root_certificates(self.root_cert_store.clone())
             .with_no_client_auth();
@@ -420,7 +487,7 @@ impl Client {
                 .dangerous()
                 .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
         }
-        if self.is_http2() {
+        if is_http2 {
             config.alpn_protocols = vec![b"h2".to_vec()];
         }
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
@@ -429,7 +496,7 @@ impl Client {
         )?;
         let stream = connector.connect(domain.to_owned(), stream).await?;
 
-        Ok(Stream::Tls(stream))
+        Ok(stream)
     }
 
     async fn client_http1<R: Rng>(
@@ -437,19 +504,57 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(Instant, SendRequestHttp1), ClientError> {
-        let (dns_lookup, stream) = self.client(url, rng).await?;
-        Ok((dns_lookup, stream.handshake_http1().await?))
+        if let Some(proxy_url) = &self.proxy_url {
+            let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
+            if url.scheme() == "https" {
+                // Do CONNECT request to proxy
+                let req = http::Request::builder()
+                    .method(Method::CONNECT)
+                    .uri(format!(
+                        "{}:{}",
+                        url.host_str().unwrap(),
+                        url.port_or_known_default().unwrap()
+                    ))
+                    .body(http_body_util::Full::default())?;
+                let res = if self.proxy_http_version == http::Version::HTTP_2 {
+                    let mut send_request = stream.handshake_http2().await?;
+                    send_request.send_request(req).await?
+                } else {
+                    let mut send_request = stream.handshake_http1(true).await?;
+                    send_request.send_request(req).await?
+                };
+                let stream = hyper::upgrade::on(res).await?;
+                let stream = self.connect_tls(TokioIo::new(stream), url, false).await?;
+                let (send_request, conn) =
+                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+                tokio::spawn(conn);
+                Ok((dns_lookup, send_request))
+            } else {
+                // Send full URL in request() for HTTP proxy
+                Ok((dns_lookup, stream.handshake_http1(false).await?))
+            }
+        } else {
+            let (dns_lookup, stream) = self.client(url, rng, false).await?;
+            Ok((dns_lookup, stream.handshake_http1(false).await?))
+        }
     }
 
+    #[inline]
     fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
+        let use_proxy = self.proxy_url.is_some() && url.scheme() == "http";
+
         let mut builder = http::Request::builder()
-            .uri(if self.is_http2() {
+            .uri(if self.is_http2() || use_proxy {
                 &url[..]
             } else {
                 &url[url::Position::BeforePath..]
             })
             .method(self.method.clone())
-            .version(self.http_version);
+            .version(if use_proxy {
+                self.proxy_http_version
+            } else {
+                self.http_version
+            });
 
         *builder
             .headers_mut()
@@ -467,7 +572,7 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
@@ -523,6 +628,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        rng,
                         start_latency_correction: None,
                         start,
                         end,
@@ -562,10 +668,48 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-        let (dns_lookup, stream) = self.client(url, rng).await?;
-        let send_request = stream.handshake_http2().await?;
-        let dialup = std::time::Instant::now();
-        Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+        if let Some(proxy_url) = &self.proxy_url {
+            let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
+            if url.scheme() == "https" {
+                let req = http::Request::builder()
+                    .method(Method::CONNECT)
+                    .uri(format!(
+                        "{}:{}",
+                        url.host_str().unwrap(),
+                        url.port_or_known_default().unwrap()
+                    ))
+                    .body(http_body_util::Full::default())?;
+                let res = if self.proxy_http_version == http::Version::HTTP_2 {
+                    let mut send_request = stream.handshake_http2().await?;
+                    send_request.send_request(req).await?
+                } else {
+                    let mut send_request = stream.handshake_http1(true).await?;
+                    send_request.send_request(req).await?
+                };
+                let stream = hyper::upgrade::on(res).await?;
+                let stream = self.connect_tls(TokioIo::new(stream), url, true).await?;
+                let (send_request, conn) =
+                    hyper::client::conn::http2::Builder::new(TokioExecutor::new())
+                        // from nghttp2's default
+                        .initial_stream_window_size((1 << 30) - 1)
+                        .initial_connection_window_size((1 << 30) - 1)
+                        .handshake(TokioIo::new(stream))
+                        .await?;
+                tokio::spawn(conn);
+                let dialup = std::time::Instant::now();
+
+                Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+            } else {
+                let send_request = stream.handshake_http2().await?;
+                let dialup = std::time::Instant::now();
+                Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+            }
+        } else {
+            let (dns_lookup, stream) = self.client(url, rng, true).await?;
+            let send_request = stream.handshake_http2().await?;
+            let dialup = std::time::Instant::now();
+            Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+        }
     }
 
     async fn work_http2(
@@ -573,7 +717,7 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let url = self.url_generator.generate(&mut client_state.rng)?;
+            let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let connection_time: Option<ConnectionTime> = None;
 
@@ -591,6 +735,7 @@ impl Client {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
+                        rng,
                         start_latency_correction: None,
                         start,
                         end,
@@ -760,7 +905,7 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
 }
 
 async fn setup_http2(client: &Client) -> Result<(ConnectionTime, ClientStateHttp2), ClientError> {
-    let mut rng = StdRng::from_entropy();
+    let mut rng = SeedableRng::from_entropy();
     let url = client.url_generator.generate(&mut rng)?;
     let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
 
@@ -803,8 +948,37 @@ fn set_start_latency_correction<E>(
 }
 
 /// Run n tasks by m workers
+pub async fn work_debug(client: Arc<Client>) -> Result<(), ClientError> {
+    let mut rng = StdRng::from_entropy();
+    let url = client.url_generator.generate(&mut rng)?;
+    println!("URL: {}", url);
+
+    let request = client.request(&url)?;
+
+    println!("{:#?}", request);
+
+    let response = if client.is_work_http2() {
+        let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
+        client_state.send_request(request).await?
+    } else {
+        let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
+
+        send_request.send_request(request).await?
+    };
+
+    let (parts, body) = response.into_parts();
+    let body = body.collect().await.unwrap().to_bytes();
+
+    let response = http::Response::from_parts(parts, body);
+
+    println!("{:#?}", response);
+
+    Ok(())
+}
+
+/// Run n tasks by m workers
 pub async fn work(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     n_tasks: usize,
     n_connections: usize,
@@ -813,9 +987,7 @@ pub async fn work(
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
-    let client = Arc::new(client);
-
-    if client.is_http2() {
+    if client.is_work_http2() {
         let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
@@ -915,7 +1087,7 @@ pub async fn work(
 
 /// n tasks by m workers limit to qps works in a second
 pub async fn work_with_qps(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
@@ -960,9 +1132,7 @@ pub async fn work_with_qps(
         Ok::<(), flume::SendError<_>>(())
     };
 
-    let client = Arc::new(client);
-
-    if client.is_http2() {
+    if client.is_work_http2() {
         let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
@@ -1062,7 +1232,7 @@ pub async fn work_with_qps(
 
 /// n tasks by m workers limit to qps works in a second with latency correction
 pub async fn work_with_qps_latency_correction(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     n_tasks: usize,
@@ -1110,9 +1280,7 @@ pub async fn work_with_qps_latency_correction(
         Ok::<(), flume::SendError<_>>(())
     };
 
-    let client = Arc::new(client);
-
-    if client.is_http2() {
+    if client.is_work_http2() {
         let futures = (0..n_connections)
             .map(|_| {
                 let report_tx = report_tx.clone();
@@ -1213,15 +1381,14 @@ pub async fn work_with_qps_latency_correction(
 
 /// Run until dead_line by n workers
 pub async fn work_until(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     dead_line: std::time::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
-    let client = Arc::new(client);
-    if client.is_http2() {
+    if client.is_work_http2() {
         // Using semaphore to control the deadline
         // Maybe there is a better concurrent primitive to do this
         let s = Arc::new(tokio::sync::Semaphore::new(0));
@@ -1355,7 +1522,7 @@ pub async fn work_until(
 /// Run until dead_line by n workers limit to qps works in a second
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
@@ -1366,7 +1533,7 @@ pub async fn work_until_with_qps(
 ) {
     let rx = match query_limit {
         QueryLimit::Qps(qps) => {
-            let (tx, rx) = flume::bounded(qps);
+            let (tx, rx) = flume::unbounded();
             tokio::spawn(async move {
                 for i in 0.. {
                     if std::time::Instant::now() > dead_line {
@@ -1402,9 +1569,7 @@ pub async fn work_until_with_qps(
         }
     };
 
-    let client = Arc::new(client);
-
-    if client.is_http2() {
+    if client.is_work_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
@@ -1540,7 +1705,7 @@ pub async fn work_until_with_qps(
 /// Run until dead_line by n workers limit to qps works in a second with latency correction
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps_latency_correction(
-    client: Client,
+    client: Arc<Client>,
     report_tx: flume::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
     start: std::time::Instant,
@@ -1586,9 +1751,7 @@ pub async fn work_until_with_qps_latency_correction(
         }
     };
 
-    let client = Arc::new(client);
-
-    if client.is_http2() {
+    if client.is_work_http2() {
         let s = Arc::new(tokio::sync::Semaphore::new(0));
 
         let futures = (0..n_connections)
@@ -1718,5 +1881,441 @@ pub async fn work_until_with_qps_latency_correction(
                 }
             }
         }
+    }
+}
+
+/// Optimized workers for `--no-tui` mode
+pub mod fast {
+    use std::sync::Arc;
+
+    use crate::{
+        client::{
+            is_cancel_error, is_hyper_error, set_connection_time, setup_http2, ClientError,
+            ClientStateHttp1,
+        },
+        result_data::ResultData,
+    };
+
+    use super::Client;
+
+    /// Run n tasks by m workers
+    pub async fn work(
+        client: Arc<Client>,
+        report_tx: flume::Sender<ResultData>,
+        n_tasks: usize,
+        n_connections: usize,
+        n_http2_parallel: usize,
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let counter = Arc::new(AtomicUsize::new(0));
+        let num_threads = num_cpus::get_physical();
+        let connections = (0..num_threads).filter_map(|i| {
+            let num_connection = n_connections / num_threads
+                + (if (n_connections % num_threads) > i {
+                    1
+                } else {
+                    0
+                });
+            if num_connection > 0 {
+                Some(num_connection)
+            } else {
+                None
+            }
+        });
+        let token = tokio_util::sync::CancellationToken::new();
+
+        let handles = if client.is_work_http2() {
+            connections
+                .map(|num_connections| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let token = token.clone();
+
+                    std::thread::spawn(move || {
+                        let client = client.clone();
+                        let local = tokio::task::LocalSet::new();
+                        for _ in 0..num_connections {
+                            let report_tx = report_tx.clone();
+                            let counter = counter.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut has_err = false;
+                                let mut result_data_err = ResultData::default();
+                                loop {
+                                    let client = client.clone();
+                                    match setup_http2(&client).await {
+                                        Ok((connection_time, client_state)) => {
+                                            let futures = (0..n_http2_parallel)
+                                                .map(|_| {
+                                                    let mut client_state = client_state.clone();
+                                                    let counter = counter.clone();
+                                                    let client = client.clone();
+                                                    let report_tx = report_tx.clone();
+                                                    let token = token.clone();
+                                                    tokio::task::spawn_local(async move {
+                                                        let mut result_data = ResultData::default();
+
+                                                        let work = async {
+                                                            while counter
+                                                                .fetch_add(1, Ordering::Relaxed)
+                                                                < n_tasks
+                                                            {
+                                                                let mut res = client
+                                                                    .work_http2(&mut client_state)
+                                                                    .await;
+                                                                let is_cancel =
+                                                                    is_cancel_error(&res);
+                                                                let is_reconnect =
+                                                                    is_hyper_error(&res);
+                                                                set_connection_time(
+                                                                    &mut res,
+                                                                    connection_time,
+                                                                );
+
+                                                                result_data.push(res);
+
+                                                                if is_cancel || is_reconnect {
+                                                                    return is_cancel;
+                                                                }
+                                                            }
+                                                            true
+                                                        };
+
+                                                        let is_cancel = tokio::select! {
+                                                            is_cancel = work => {
+                                                                is_cancel
+                                                            }
+                                                            _ = token.cancelled() => {
+                                                                true
+                                                            }
+                                                        };
+
+                                                        report_tx.send(result_data).unwrap();
+                                                        is_cancel
+                                                    })
+                                                })
+                                                .collect::<Vec<_>>();
+
+                                            let mut connection_gone = false;
+                                            for f in futures {
+                                                match f.await {
+                                                    Ok(true) => {
+                                                        // All works done
+                                                        connection_gone = true;
+                                                    }
+                                                    Err(_) => {
+                                                        // Unexpected
+                                                        connection_gone = true;
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+
+                                            if connection_gone {
+                                                break;
+                                            }
+                                        }
+                                        Err(err) => {
+                                            if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                                has_err = true;
+                                                result_data_err.push(Err(err));
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                if has_err {
+                                    report_tx.send(result_data_err).unwrap();
+                                }
+                            }));
+                        }
+
+                        rt.block_on(local);
+                    })
+                })
+                .collect::<Vec<_>>()
+        } else {
+            connections
+                .map(|num_connection| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    let token = token.clone();
+                    std::thread::spawn(move || {
+                        let local = tokio::task::LocalSet::new();
+
+                        for _ in 0..num_connection {
+                            let report_tx = report_tx.clone();
+                            let counter = counter.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut result_data = ResultData::default();
+
+                                tokio::select! {
+                                    _ = token.cancelled() => {}
+                                    _ = async {
+                                        let mut client_state = ClientStateHttp1::default();
+                                        while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                            let res = client.work_http1(&mut client_state).await;
+                                            let is_cancel = is_cancel_error(&res);
+                                            result_data.push(res);
+                                            if is_cancel {
+                                                break;
+                                            }
+                                        }
+                                    } => {}
+                                }
+                                report_tx.send(result_data).unwrap();
+                            }));
+                        }
+                        rt.block_on(local);
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            token.cancel();
+        });
+
+        tokio::task::block_in_place(|| {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
+    }
+
+    /// Run until dead_line by n workers
+    pub async fn work_until(
+        client: Arc<Client>,
+        report_tx: flume::Sender<ResultData>,
+        dead_line: std::time::Instant,
+        n_connections: usize,
+        n_http2_parallel: usize,
+        wait_ongoing_requests_after_deadline: bool,
+    ) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let num_threads = num_cpus::get_physical();
+
+        let is_end = Arc::new(AtomicBool::new(false));
+        let connections = (0..num_threads).filter_map(|i| {
+            let num_connection = n_connections / num_threads
+                + (if (n_connections % num_threads) > i {
+                    1
+                } else {
+                    0
+                });
+            if num_connection > 0 {
+                Some(num_connection)
+            } else {
+                None
+            }
+        });
+        let token = tokio_util::sync::CancellationToken::new();
+        let handles = if client.is_work_http2() {
+            connections
+            .map(|num_connections| {
+                let report_tx = report_tx.clone();
+                let client = client.clone();
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let token = token.clone();
+                let is_end = is_end.clone();
+
+                std::thread::spawn(move || {
+                    let client = client.clone();
+                    let local = tokio::task::LocalSet::new();
+                    for _ in 0..num_connections {
+                        let report_tx = report_tx.clone();
+                        let client = client.clone();
+                        let token = token.clone();
+                        let is_end = is_end.clone();
+                        local.spawn_local(Box::pin(async move {
+                            let mut has_err = false;
+                            let mut result_data_err = ResultData::default();
+                            loop {
+                                let client = client.clone();
+                                match setup_http2(&client).await {
+                                    Ok((connection_time, client_state)) => {
+                                        let futures = (0..n_http2_parallel)
+                                            .map(|_| {
+                                                let mut client_state = client_state.clone();
+                                                let client = client.clone();
+                                                let report_tx = report_tx.clone();
+                                                let token = token.clone();
+                                                let is_end = is_end.clone();
+                                                tokio::task::spawn_local(async move {
+                                                    let mut result_data = ResultData::default();
+
+                                                    let work = async {
+                                                        loop {
+                                                            let mut res = client
+                                                                .work_http2(&mut client_state)
+                                                                .await;
+                                                            let is_cancel = is_cancel_error(&res) || is_end.load(Ordering::Relaxed);
+                                                            let is_reconnect = is_hyper_error(&res);
+                                                            set_connection_time(
+                                                                &mut res,
+                                                                connection_time,
+                                                            );
+
+                                                            result_data.push(res);
+
+                                                            if is_cancel || is_reconnect {
+                                                                return is_cancel;
+                                                            }
+                                                        }
+                                                    };
+
+                                                    let is_cancel = tokio::select! {
+                                                        is_cancel = work => {
+                                                            is_cancel
+                                                        }
+                                                        _ = token.cancelled() => {
+                                                            result_data.push(Err(ClientError::Deadline));
+                                                            true
+                                                        }
+                                                    };
+
+                                                    report_tx.send(result_data).unwrap();
+                                                    is_cancel
+                                                })
+                                            })
+                                            .collect::<Vec<_>>();
+
+                                        let mut connection_gone = false;
+                                        for f in futures {
+                                            match f.await {
+                                                Ok(true) => {
+                                                    // All works done
+                                                    connection_gone = true;
+                                                }
+                                                Err(_) => {
+                                                    // Unexpected
+                                                    connection_gone = true;
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+
+                                        if connection_gone {
+                                            break;
+                                        }
+                                    }
+                                    Err(err) => {
+                                        has_err = true;
+                                        result_data_err.push(Err(err));
+                                        if is_end.load(Ordering::Relaxed) {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if has_err {
+                                report_tx.send(result_data_err).unwrap();
+                            }
+                        }));
+                    }
+
+                    rt.block_on(local);
+                })
+            })
+            .collect::<Vec<_>>()
+        } else {
+            (0..num_threads)
+                .filter_map(|i| {
+                    let num_connection = n_connections / num_threads
+                        + (if (n_connections % num_threads) > i {
+                            1
+                        } else {
+                            0
+                        });
+                    if num_connection > 0 {
+                        Some(num_connection)
+                    } else {
+                        None
+                    }
+                })
+                .map(|num_connection| {
+                    let report_tx = report_tx.clone();
+                    let is_end = is_end.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    let token = token.clone();
+                    std::thread::spawn(move || {
+                        let local = tokio::task::LocalSet::new();
+
+                        for _ in 0..num_connection {
+                            let report_tx = report_tx.clone();
+                            let is_end = is_end.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut result_data = ResultData::default();
+
+                                let work = async {
+                                    let mut client_state = ClientStateHttp1::default();
+                                    loop {
+                                        let res = client.work_http1(&mut client_state).await;
+                                        let is_cancel = is_cancel_error(&res);
+                                        result_data.push(res);
+                                        if is_cancel || is_end.load(Ordering::Relaxed) {
+                                            break;
+                                        }
+                                    }
+                                };
+
+                                tokio::select! {
+                                    _ = work => {
+                                    }
+                                    _ = token.cancelled() => {
+                                        result_data.push(Err(ClientError::Deadline));
+                                    }
+                                }
+                                report_tx.send(result_data).unwrap();
+                            }));
+                        }
+                        rt.block_on(local);
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        tokio::select! {
+            _ = tokio::time::sleep_until(dead_line.into()) => {
+            }
+            _ = tokio::signal::ctrl_c() => {
+            }
+        }
+
+        is_end.store(true, Ordering::Relaxed);
+
+        if !wait_ongoing_requests_after_deadline {
+            token.cancel();
+        }
+        tokio::task::block_in_place(|| {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
     }
 }

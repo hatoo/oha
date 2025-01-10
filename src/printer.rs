@@ -58,10 +58,14 @@ impl StyleScheme {
     }
 
     fn latency_distribution(self, text: &str, label: f64) -> StyledContent<&str> {
+        // See #609 for justification of these thresholds
+        const LATENCY_YELLOW_THRESHOLD: f64 = 0.1;
+        const LATENCY_RED_THRESHOLD: f64 = 0.4;
+
         if self.color_enabled {
-            if label <= 0.3 {
+            if label <= LATENCY_YELLOW_THRESHOLD {
                 text.with(colors::FASTEST)
-            } else if label <= 0.8 {
+            } else if label <= LATENCY_RED_THRESHOLD {
                 text.with(colors::AVERAGE)
             } else {
                 text.with(colors::SLOWEST)

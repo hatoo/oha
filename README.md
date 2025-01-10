@@ -47,6 +47,14 @@ You can enable VSOCK support by enabling `vsock` feature.
     apt update
     apt install oha
 
+## X-CMD (Linux, macOS, Windows WSL/GitBash)
+
+You can install with [x-cmd](https://www.x-cmd.com).
+
+```sh
+x env use oha
+```
+
 ## Containerized
 
 You can also build and create a container image including oha
@@ -87,7 +95,7 @@ Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui anima
 Usage: oha [OPTIONS] <URL>
 
 Arguments:
-  <URL>  Target URL.
+  <URL>  Target URL or file with multiple URLs.
 
 Options:
   -n <N_REQUESTS>
@@ -113,7 +121,9 @@ Options:
           Rates of requests for burst. Default is 1
           Note: If qps is specified, burst will be ignored
       --rand-regex-url
-          Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive are not works well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
+          Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive do not work well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.
+      --urls-from-file
+          Read the URLs to query from a file
       --max-repeat <MAX_REPEAT>
           A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become. [default: 4]
       --dump-urls <DUMP_URLS>
@@ -142,8 +152,14 @@ Options:
           Content-Type.
   -a <BASIC_AUTH>
           Basic authentication, username:password
+  -x <PROXY>
+          HTTP proxy
+      --proxy-http-version <PROXY_HTTP_VERSION>
+          HTTP version to connect to proxy. Available values 0.9, 1.0, 1.1, 2.
+      --proxy-http2
+          Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2
       --http-version <HTTP_VERSION>
-          HTTP version. Available values 0.9, 1.0, 1.1.
+          HTTP version. Available values 0.9, 1.0, 1.1, 2.
       --http2
           Use HTTP/2. Shorthand for --http-version=2
       --host <HOST>
@@ -172,6 +188,8 @@ Options:
           Include a response status code successful or not successful breakdown for the time histogram and distribution statistics
       --db-url <DB_URL>
           Write succeeded requests to sqlite database url E.G test.db
+      --debug
+          Perform a single request and dump the request and response
   -h, --help
           Print help
   -V, --version
@@ -268,15 +286,30 @@ Optionally you can set `--max-repeat` option to limit max repeat count for each 
 
 Currently dynamic scheme, host and port with keep-alive are not works well.
 
+## URLs from file feature
+
+You can use `--urls-from-file` to read the target URLs from a file. Each line of this file needs to contain one valid URL as in the example below.
+
+```
+http://domain.tld/foo/bar
+http://domain.tld/assets/vendors-node_modules_highlight_js_lib_index_js-node_modules_tanstack_react-query_build_modern-3fdf40-591fb51c8a6e.js
+http://domain.tld/images/test.png
+http://domain.tld/foo/bar?q=test
+http://domain.tld/foo
+```
+
+Such a file can for example be created from an access log to generate a more realistic load distribution over the different pages of a server. 
+
+When this type of URL specification is used, every request goes to a random URL given in the file.
+
 # Contribution
 
 Feel free to help us!
 
-Here are some issues to improving.
+Here are some areas which need improving.
 
 - Write tests
 - Improve tui design.
   - Show more information?
-  - There are no color in realtime tui now. I want help from someone who has some color sense.
 - Improve speed
   - I'm new to tokio. I think there are some space to optimize query scheduling.
