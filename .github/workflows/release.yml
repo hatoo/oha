@@ -49,12 +49,12 @@ jobs:
         with:
           command: build
           target: ${{ matrix.target }}
-          args: --release --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
+          args: --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
           strip: true
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          file: target/${{ matrix.target }}/release-ci/${{ matrix.artifact_name }}
           asset_name: ${{ matrix.release_name }}
           tag: ${{ github.ref }}
