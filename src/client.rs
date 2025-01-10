@@ -1924,8 +1924,8 @@ pub mod fast {
         });
         let token = tokio_util::sync::CancellationToken::new();
 
-        if client.is_work_http2() {
-            let handles = connections
+        let handles = if client.is_work_http2() {
+            connections
                 .map(|num_connections| {
                     let report_tx = report_tx.clone();
                     let counter = counter.clone();
@@ -2036,19 +2036,9 @@ pub mod fast {
                         rt.block_on(local);
                     })
                 })
-                .collect::<Vec<_>>();
-            tokio::spawn(async move {
-                tokio::signal::ctrl_c().await.unwrap();
-                token.cancel();
-            });
-
-            tokio::task::block_in_place(|| {
-                for handle in handles {
-                    let _ = handle.join();
-                }
-            });
+                .collect::<Vec<_>>()
         } else {
-            let handles = connections
+            connections
                 .map(|num_connection| {
                     let report_tx = report_tx.clone();
                     let counter = counter.clone();
@@ -2090,19 +2080,19 @@ pub mod fast {
                         rt.block_on(local);
                     })
                 })
-                .collect::<Vec<_>>();
-
-            tokio::spawn(async move {
-                tokio::signal::ctrl_c().await.unwrap();
-                token.cancel();
-            });
-
-            tokio::task::block_in_place(|| {
-                for handle in handles {
-                    let _ = handle.join();
-                }
-            });
+                .collect::<Vec<_>>()
         };
+
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            token.cancel();
+        });
+
+        tokio::task::block_in_place(|| {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
     }
 
     /// Run until dead_line by n workers
@@ -2132,8 +2122,8 @@ pub mod fast {
             }
         });
         let token = tokio_util::sync::CancellationToken::new();
-        if client.is_work_http2() {
-            let handles = connections
+        let handles = if client.is_work_http2() {
+            connections
             .map(|num_connections| {
                 let report_tx = report_tx.clone();
                 let client = client.clone();
@@ -2238,24 +2228,9 @@ pub mod fast {
                     rt.block_on(local);
                 })
             })
-            .collect::<Vec<_>>();
-            tokio::select! {
-                _ = tokio::time::sleep_until(dead_line.into()) => {
-                }
-                _ = tokio::signal::ctrl_c() => {
-                }
-            }
-
-            is_end.store(true, Ordering::Relaxed);
-
-            if !wait_ongoing_requests_after_deadline {
-                token.cancel();
-            }
-            for handle in handles {
-                let _ = handle.join();
-            }
+            .collect::<Vec<_>>()
         } else {
-            let handles = (0..num_threads)
+            (0..num_threads)
                 .filter_map(|i| {
                     let num_connection = n_connections / num_threads
                         + (if (n_connections % num_threads) > i {
@@ -2315,23 +2290,24 @@ pub mod fast {
                         rt.block_on(local);
                     })
                 })
-                .collect::<Vec<_>>();
-
-            tokio::select! {
-                _ = tokio::time::sleep_until(dead_line.into()) => {
-                }
-                _ = tokio::signal::ctrl_c() => {
-                }
+                .collect::<Vec<_>>()
+        };
+        tokio::select! {
+            _ = tokio::time::sleep_until(dead_line.into()) => {
             }
-
-            is_end.store(true, Ordering::Relaxed);
-
-            if !wait_ongoing_requests_after_deadline {
-                token.cancel();
+            _ = tokio::signal::ctrl_c() => {
             }
+        }
+
+        is_end.store(true, Ordering::Relaxed);
+
+        if !wait_ongoing_requests_after_deadline {
+            token.cancel();
+        }
+        tokio::task::block_in_place(|| {
             for handle in handles {
                 let _ = handle.join();
             }
-        };
+        });
     }
 }
