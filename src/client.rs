@@ -2238,20 +2238,7 @@ pub mod fast {
             })
             .collect::<Vec<_>>()
         } else {
-            (0..num_threads)
-                .filter_map(|i| {
-                    let num_connection = n_connections / num_threads
-                        + (if (n_connections % num_threads) > i {
-                            1
-                        } else {
-                            0
-                        });
-                    if num_connection > 0 {
-                        Some(num_connection)
-                    } else {
-                        None
-                    }
-                })
+            connections
                 .map(|num_connection| {
                     let report_tx = report_tx.clone();
                     let is_end = is_end.clone();
