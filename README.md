@@ -196,51 +196,14 @@ Options:
           Print version
 ```
 
+# Performance
+
+`oha` uses faster implementation when `--no-tui` option is set and both `-q` and `--burst-delay` are not set because it can avoid overhead to gather data realtime.
+
 # JSON output
 
 `oha` prints JSON output when `-j` option is set.
 The schema of JSON output is defined in [schema.json](./schema.json).
-
-# Benchmark
-
-## Performance Comparison
-
-We used `hyperfine` for benchmarking `oha` against `rakyll/hey` on a local server. The server was coded using node. You can start the server by copy pasting this file and then running it via node. After copy-pasting the file, you can run the benchmark via `hyperfine`.
-
-1. Copy-paste the contents into a new javascript file called app.js
-
-```js
-const http = require("http");
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-
-  res.end("Hello World\n");
-});
-
-server.listen(3000, () => {
-  console.log("Server running at http://localhost:3000/");
-});
-```
-
-2. Run `node app.js`
-3. Run `hyperfine 'oha --no-tui http://localhost:3000' 'hey http://localhost:3000'` in a different terminal tab
-
-### Benchmark Results
-
-Benchmark 1: oha --no-tui http://localhost:3000
-
-- Time (mean ± σ): 10.8 ms ± 1.8 ms [User: 5.7 ms, System: 11.7 ms]
-- Range (min … max): 8.7 ms … 24.8 ms (107 runs)
-
-Benchmark 2: hey http://localhost:3000
-
-- Time (mean ± σ): 14.3 ms ± 4.6 ms [User: 12.2 ms, System: 19.4 ms]
-- Range (min … max): 11.1 ms … 48.3 ms (88 runs)
-
-### Summary
-
-In this benchmark, `oha --no-tui http://localhost:3000` was found to be faster, running approximately 1.32 ± 0.48 times faster than `hey http://localhost:3000`.
 
 # Tips
 
