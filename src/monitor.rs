@@ -1,3 +1,10 @@
+use crate::ui::colors;
+use crate::{
+    client::{ClientError, RequestResult},
+    printer::PrintMode,
+    result_data::{MinMaxMean, ResultData},
+    timescale::{TimeLabel, TimeScale},
+};
 use byte_unit::Byte;
 use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers},
@@ -5,6 +12,7 @@ use crossterm::{
 };
 use hyper::http;
 use ratatui::crossterm;
+use ratatui::prelude::Stylize;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -14,8 +22,6 @@ use ratatui::{
     Terminal,
 };
 use std::{collections::BTreeMap, io};
-use ratatui::prelude::Stylize;
-use crate::{client::{ClientError, RequestResult}, colors, printer::PrintMode, result_data::{MinMaxMean, ResultData}, timescale::{TimeLabel, TimeScale}};
 
 /// When the monitor ends
 pub enum EndLine {
@@ -220,22 +226,35 @@ impl Monitor {
                     EndLine::NumQuery(n) => format!("{} / {}", all.len(), n),
                 };
                 let gauge = Gauge::default()
-                    .block(Block::default().title("Progress").title_style(Style::default().bold().fg(Color::White)).borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)).bg(Color::from(colors::BACKGROUND)))
-                    .gauge_style(Style::default().bg(Color::from(colors::BACKGROUND)).fg(Color::from(colors::FASTEST)))
+                    .block(
+                        Block::default()
+                            .title("Progress")
+                            .title_style(Style::default().bold().fg(Color::White))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::DarkGray))
+                            .bg(Color::from(colors::BACKGROUND)),
+                    )
+                    .gauge_style(
+                        Style::default()
+                            .bg(Color::from(colors::BACKGROUND))
+                            .fg(Color::from(colors::FASTEST)),
+                    )
                     .label(Span::raw(gauge_label))
                     .ratio(progress);
                 f.render_widget(gauge, row4[0]);
 
                 let last_1_timescale = {
                     let success = all.success();
-                    let index = success.binary_search_by(|probe| {
-                        (now - probe.end)
-                            .as_secs_f64()
-                            .partial_cmp(&timescale.as_secs_f64())
-                            // Should be fine
-                            .unwrap()
-                            .reverse()
-                    }).unwrap_or_else(|i| i);
+                    let index = success
+                        .binary_search_by(|probe| {
+                            (now - probe.end)
+                                .as_secs_f64()
+                                .partial_cmp(&timescale.as_secs_f64())
+                                // Should be fine
+                                .unwrap()
+                                .reverse()
+                        })
+                        .unwrap_or_else(|i| i);
 
                     &success[index..]
                 };
@@ -249,15 +268,15 @@ impl Monitor {
                     Line::from(format!("Requests : {}", last_1_timescale.len())),
                     Line::from(vec![Span::styled(
                         format!("Slowest: {:.4} secs", last_1_minmaxmean.max(),),
-                        Style::default().fg(colors.yellow.unwrap_or(Color::Reset)),
+                        Style::default().fg(Color::from(colors::SLOWEST)),
                     )]),
                     Line::from(vec![Span::styled(
                         format!("Fastest: {:.4} secs", last_1_minmaxmean.min(),),
-                        Style::default().fg(colors.green.unwrap_or(Color::Reset)),
+                        Style::default().fg(Color::from(colors::FASTEST)),
                     )]),
                     Line::from(vec![Span::styled(
                         format!("Average: {:.4} secs", last_1_minmaxmean.mean(),),
-                        Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
+                        Style::default().fg(Color::from(colors::AVERAGE)),
                     )]),
                     Line::from(format!(
                         "Data: {:.2}",

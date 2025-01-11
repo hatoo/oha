@@ -1,4 +1,5 @@
 use crate::result_data::ResultData;
+use crate::ui::colors;
 use average::{Max, Min, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
@@ -9,7 +10,6 @@ use std::{
     io::Write,
     time::{Duration, Instant},
 };
-use crate::colors;
 
 #[derive(Clone, Copy)]
 struct StyleScheme {

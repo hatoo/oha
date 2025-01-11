@@ -32,8 +32,8 @@ mod pcg64si;
 mod printer;
 mod result_data;
 mod timescale;
+mod ui;
 mod url_generator;
-mod colors;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
