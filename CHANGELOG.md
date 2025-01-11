@@ -1,5 +1,7 @@
 # Unreleased
 
+# 1.6.0 (2025-01-11)
+
 - Feature: Reading Urls from file #639
 - Add some optimized workers to `--no-tui` mode #646
 
