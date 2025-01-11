@@ -196,6 +196,10 @@ Options:
           Print version
 ```
 
+# Performance
+
+`oha` uses faster implementation when `--no-tui` option is set and both `-q` and `--burst-delay` are not set because it can avoid overhead to gather data realtime.
+
 # JSON output
 
 `oha` prints JSON output when `-j` option is set.
