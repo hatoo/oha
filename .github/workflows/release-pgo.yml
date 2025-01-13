@@ -44,7 +44,7 @@ jobs:
           targets: ${{ matrix.target }}
           components: llvm-tools-preview
       - run: cargo install cargo-pgo --version 0.2.8
-      - uses: oven-sh/setup-bun@v1
+      - uses: oven-sh/setup-bun@v2
       - run: bun run pgo.js --target ${{ matrix.target }} ${{ matrix.additional_args }}
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
