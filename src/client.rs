@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::{http, Method};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -18,13 +19,14 @@ use tokio::{
 use url::{ParseError, Url};
 
 use crate::{
+    aws_auth::AwsSignatureConfig,
     pcg64si::Pcg64Si,
     url_generator::{UrlGenerator, UrlGeneratorError},
     ConnectToEntry,
 };
 
-type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<&'static [u8]>>;
-type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<&'static [u8]>>;
+type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
+type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<Bytes>>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
@@ -161,6 +163,8 @@ pub enum ClientError {
     UrlGeneratorError(#[from] UrlGeneratorError),
     #[error(transparent)]
     UrlParseError(#[from] ParseError),
+    #[error("AWS SigV4 signature error: {0}")]
+    SigV4Error(&'static str),
 }
 
 pub struct Client {
@@ -176,6 +180,7 @@ pub struct Client {
     pub disable_keepalive: bool,
     pub insecure: bool,
     pub proxy_url: Option<Url>,
+    pub aws_config: Option<AwsSignatureConfig>,
     #[cfg(unix)]
     pub unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
@@ -540,7 +545,7 @@ impl Client {
     }
 
     #[inline]
-    fn request(&self, url: &Url) -> Result<http::Request<Full<&'static [u8]>>, ClientError> {
+    fn request(&self, url: &Url) -> Result<http::Request<Full<Bytes>>, ClientError> {
         let use_proxy = self.proxy_url.is_some() && url.scheme() == "http";
 
         let mut builder = http::Request::builder()
@@ -556,15 +561,28 @@ impl Client {
                 self.http_version
             });
 
+        let bytes = self.body.map(Bytes::from_static);
+
+        let body = if let Some(body) = &bytes {
+            Full::new(body.clone())
+        } else {
+            Full::default()
+        };
+
+        let mut headers = self.headers.clone();
+
+        // Apply AWS SigV4 if configured
+        if let Some(aws_config) = &self.aws_config {
+            aws_config.sign_request(self.method.as_str(), &mut headers, url, bytes)?
+        }
+
         *builder
             .headers_mut()
-            .ok_or(ClientError::GetHeaderFromBuilderError)? = self.headers.clone();
+            .ok_or(ClientError::GetHeaderFromBuilderError)? = headers;
 
-        if let Some(body) = self.body {
-            Ok(builder.body(Full::new(body))?)
-        } else {
-            Ok(builder.body(Full::default())?)
-        }
+        let request = builder.body(body)?;
+
+        Ok(request)
     }
 
     async fn work_http1(
