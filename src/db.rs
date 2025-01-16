@@ -88,6 +88,7 @@ mod test_db {
             disable_keepalive: false,
             insecure: false,
             proxy_url: None,
+            aws_config: None,
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(feature = "vsock")]

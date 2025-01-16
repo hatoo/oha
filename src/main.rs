@@ -1,4 +1,5 @@
 use anyhow::Context;
+use aws_auth::AwsSignatureConfig;
 use clap::Parser;
 use crossterm::tty::IsTty;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
@@ -24,6 +25,7 @@ use std::{
 use url::Url;
 use url_generator::UrlGenerator;
 
+mod aws_auth;
 mod client;
 mod db;
 mod histogram;
@@ -151,8 +153,18 @@ Note: If qps is specified, burst will be ignored",
     body_path: Option<std::path::PathBuf>,
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
-    #[arg(help = "Basic authentication, username:password", short = 'a')]
+    #[arg(
+        help = "Basic authentication or AWS credentials, username:password",
+        short = 'a'
+    )]
     basic_auth: Option<String>,
+    #[arg(help = "AWS session token", long = "aws-session")]
+    aws_session: Option<String>,
+    #[arg(
+        help = "AWS SigV4 signing params (format: aws:amz:region:service)",
+        long = "aws-sigv4"
+    )]
+    aws_sigv4: Option<String>,
     #[arg(help = "HTTP proxy", short = 'x')]
     proxy: Option<Url>,
     #[arg(
@@ -302,8 +314,31 @@ impl FromStr for VsockAddr {
 }
 
 async fn run() -> anyhow::Result<()> {
-    let opts: Opts = Opts::parse();
+    let mut opts: Opts = Opts::parse();
     let work_mode = opts.work_mode();
+
+    // Parse AWS credentials from basic auth if AWS signing is requested
+    let aws_config = if let Some(signing_params) = opts.aws_sigv4 {
+        if let Some(auth) = &opts.basic_auth {
+            let parts: Vec<&str> = auth.split(':').collect();
+            if parts.len() != 2 {
+                anyhow::bail!("Invalid AWS credentials format. Expected access_key:secret_key");
+            }
+            let access_key = parts[0];
+            let secret_key = parts[1];
+            let session_token = opts.aws_session.take();
+            Some(AwsSignatureConfig::new(
+                access_key,
+                secret_key,
+                &signing_params,
+                session_token,
+            )?)
+        } else {
+            anyhow::bail!("AWS credentials (--auth) required when using --aws-sigv4");
+        }
+    } else {
+        None
+    };
 
     let parse_http_version = |is_http2: bool, version: Option<&str>| match (is_http2, version) {
         (true, Some(_)) => anyhow::bail!("--http2 and --http-version are exclusive"),
@@ -487,6 +522,7 @@ async fn run() -> anyhow::Result<()> {
     let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
 
     let client = Arc::new(client::Client {
+        aws_config,
         http_version,
         proxy_http_version,
         url_generator,
