@@ -17,7 +17,7 @@ use std::{collections::BTreeMap, io};
 
 use crate::{
     client::{ClientError, RequestResult},
-    printer::PrintMode,
+    printer::PrintConfig,
     result_data::{MinMaxMean, ResultData},
     timescale::{TimeLabel, TimeScale},
 };
@@ -53,7 +53,7 @@ impl ColorScheme {
 }
 
 pub struct Monitor {
-    pub print_mode: PrintMode,
+    pub print_config: PrintConfig,
     pub end_line: EndLine,
     /// All workers sends each result to this channel
     pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
@@ -62,7 +62,6 @@ pub struct Monitor {
     // Frame per second of TUI
     pub fps: usize,
     pub disable_color: bool,
-    pub stats_success_breakdown: bool,
 }
 
 struct IntoRawMode;
@@ -85,7 +84,7 @@ impl Drop for IntoRawMode {
 }
 
 impl Monitor {
-    pub async fn monitor(self) -> Result<ResultData, std::io::Error> {
+    pub async fn monitor(self) -> Result<(ResultData, PrintConfig), std::io::Error> {
         let raw_mode = IntoRawMode::new()?;
 
         let mut terminal = {
@@ -434,13 +433,10 @@ impl Monitor {
                     }) => {
                         drop(raw_mode);
                         let _ = crate::printer::print_result(
-                            &mut std::io::stdout(),
-                            self.print_mode,
+                            self.print_config,
                             self.start,
                             &all,
                             now - self.start,
-                            self.disable_color,
-                            self.stats_success_breakdown,
                         );
                         std::process::exit(libc::EXIT_SUCCESS);
                     }
@@ -454,6 +450,6 @@ impl Monitor {
                 tokio::time::sleep(per_frame - elapsed).await;
             }
         }
-        Ok(all)
+        Ok((all, self.print_config))
     }
 }
