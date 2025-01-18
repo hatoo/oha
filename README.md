@@ -151,7 +151,11 @@ Options:
   -T <CONTENT_TYPE>
           Content-Type.
   -a <BASIC_AUTH>
-          Basic authentication, username:password
+          Basic authentication (username:password), or AWS credentials (access_key:secret_key)
+      --aws-session <AWS_SESSION>
+          AWS session token
+      --aws-sigv4 <AWS_SIGV4>
+          AWS SigV4 signing params (format: aws:amz:region:service)
   -x <PROXY>
           HTTP proxy
       --proxy-http-version <PROXY_HTTP_VERSION>
