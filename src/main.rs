@@ -154,7 +154,7 @@ Note: If qps is specified, burst will be ignored",
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
     #[arg(
-        help = "Basic authentication or AWS credentials, username:password",
+        help = "Basic authentication (username:password), or AWS credentials (access_key:secret_key)",
         short = 'a'
     )]
     basic_auth: Option<String>,
