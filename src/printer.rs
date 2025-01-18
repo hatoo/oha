@@ -91,30 +91,40 @@ impl StyleScheme {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum PrintMode {
     Text,
     Json,
 }
 
-pub fn print_result<W: Write>(
-    w: &mut W,
-    mode: PrintMode,
+pub struct PrintConfig {
+    pub output: Box<dyn Write + Send + 'static>,
+    pub mode: PrintMode,
+    pub disable_color: bool,
+    pub stats_success_breakdown: bool,
+}
+
+pub fn print_result(
+    mut config: PrintConfig,
     start: Instant,
     res: &ResultData,
     total_duration: Duration,
-    disable_color: bool,
-    stats_success_breakdown: bool,
 ) -> anyhow::Result<()> {
-    match mode {
+    match config.mode {
         PrintMode::Text => print_summary(
-            w,
+            &mut config.output,
             res,
             total_duration,
-            disable_color,
-            stats_success_breakdown,
+            config.disable_color,
+            config.stats_success_breakdown,
         )?,
-        PrintMode::Json => print_json(w, start, res, total_duration, stats_success_breakdown)?,
+        PrintMode::Json => print_json(
+            &mut config.output,
+            start,
+            res,
+            total_duration,
+            config.stats_success_breakdown,
+        )?,
     }
     Ok(())
 }
