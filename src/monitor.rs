@@ -61,6 +61,7 @@ pub struct Monitor {
     pub start: std::time::Instant,
     // Frame per second of TUI
     pub fps: usize,
+    pub disable_color: bool,
 }
 
 struct IntoRawMode;
@@ -105,7 +106,7 @@ impl Monitor {
         let mut timescale_auto = None;
 
         let mut colors = ColorScheme::new();
-        if !self.print_config.disable_color {
+        if !self.disable_color {
             colors.set_colors();
         }
 

@@ -5,6 +5,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
     borrow::Cow,
+    io::Write,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc,
@@ -965,15 +966,14 @@ fn set_start_latency_correction<E>(
     }
 }
 
-/// Run n tasks by m workers
-pub async fn work_debug(client: Arc<Client>) -> Result<(), ClientError> {
+pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
     let mut rng = StdRng::from_entropy();
     let url = client.url_generator.generate(&mut rng)?;
-    println!("URL: {}", url);
+    writeln!(w, "URL: {}", url)?;
 
     let request = client.request(&url)?;
 
-    println!("{:#?}", request);
+    writeln!(w, "{:#?}", request)?;
 
     let response = if client.is_work_http2() {
         let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
@@ -989,7 +989,7 @@ pub async fn work_debug(client: Arc<Client>) -> Result<(), ClientError> {
 
     let response = http::Response::from_parts(parts, body);
 
-    println!("{:#?}", response);
+    writeln!(w, "{:#?}", response)?;
 
     Ok(())
 }

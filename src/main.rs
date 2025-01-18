@@ -511,26 +511,6 @@ async fn run() -> anyhow::Result<()> {
         _ => None,
     };
 
-    let print_config = {
-        let mode = if opts.json {
-            PrintMode::Json
-        } else {
-            PrintMode::Text
-        };
-        let output: Box<dyn std::io::Write + Send + 'static> = if let Some(output) = opts.output {
-            Box::new(File::create(output)?)
-        } else {
-            Box::new(std::io::stdout())
-        };
-
-        PrintConfig {
-            mode,
-            output,
-            disable_color: opts.disable_color,
-            stats_success_breakdown: opts.stats_success_breakdown,
-        }
-    };
-
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
         (false, false) => Default::default(),
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
@@ -581,6 +561,30 @@ async fn run() -> anyhow::Result<()> {
 
     let no_tui = opts.no_tui || !std::io::stdout().is_tty() || opts.debug;
 
+    let print_config = {
+        let mode = if opts.json {
+            PrintMode::Json
+        } else {
+            PrintMode::Text
+        };
+
+        let disable_style =
+            opts.disable_color || !std::io::stdout().is_tty() || opts.output.is_some();
+
+        let output: Box<dyn std::io::Write + Send + 'static> = if let Some(output) = opts.output {
+            Box::new(File::create(output)?)
+        } else {
+            Box::new(std::io::stdout())
+        };
+
+        PrintConfig {
+            mode,
+            output,
+            disable_style,
+            stats_success_breakdown: opts.stats_success_breakdown,
+        }
+    };
+
     // When panics, reset terminal mode and exit immediately.
     std::panic::set_hook(Box::new(move |info| {
         if !no_tui {
@@ -597,6 +601,13 @@ async fn run() -> anyhow::Result<()> {
 
     let data_collect_future: Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>> =
         match work_mode {
+            WorkMode::Debug => {
+                let mut print_config = print_config;
+                if let Err(e) = client::work_debug(&mut print_config.output, client).await {
+                    eprintln!("{e}");
+                }
+                std::process::exit(libc::EXIT_SUCCESS)
+            }
             WorkMode::FixedNumber {
                 n_requests,
                 n_connections,
@@ -700,6 +711,7 @@ async fn run() -> anyhow::Result<()> {
                             report_receiver: result_rx,
                             start,
                             fps: opts.fps,
+                            disable_color: opts.disable_color,
                         }
                         .monitor(),
                     );
@@ -709,12 +721,7 @@ async fn run() -> anyhow::Result<()> {
                 };
 
                 match mode {
-                    WorkMode::Debug => {
-                        if let Err(e) = client::work_debug(client).await {
-                            eprintln!("{e}");
-                        }
-                        std::process::exit(libc::EXIT_SUCCESS)
-                    }
+                    WorkMode::Debug => unreachable!("Must be already handled"),
                     WorkMode::FixedNumber {
                         n_requests,
                         n_connections,
