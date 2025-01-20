@@ -30,7 +30,7 @@ jobs:
             release_name: oha-macos-amd64
             target: x86_64-apple-darwin
             additional_args: ""
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-latest
             artifact_name: oha
             release_name: oha-linux-arm64
             target: aarch64-unknown-linux-musl
@@ -48,10 +48,12 @@ jobs:
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.target, 'musl')
       - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v1
         with:
-          targets: ${{ matrix.target }}
-      - run: cargo build --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
+          command: build
+          target: ${{ matrix.target }}
+          args: --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
