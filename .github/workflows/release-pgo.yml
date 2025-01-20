@@ -25,16 +25,16 @@ jobs:
             release_name: oha-windows-amd64-pgo.exe
             target: x86_64-pc-windows-msvc
             additional_args: ""
-          - os: macos-latest
-            artifact_name: oha
-            release_name: oha-macos-amd64-pgo
-            target: x86_64-apple-darwin
-            additional_args: ""
-          - os: macos-14
-            artifact_name: oha
-            release_name: oha-macos-arm64-pgo
-            target: aarch64-apple-darwin
-            additional_args: ""
+#          - os: macos-latest
+#            artifact_name: oha
+#            release_name: oha-macos-amd64-pgo
+#            target: x86_64-apple-darwin
+#            additional_args: ""
+#          - os: macos-14
+#            artifact_name: oha
+#            release_name: oha-macos-arm64-pgo
+#            target: aarch64-apple-darwin
+#            additional_args: ""
 
     steps:
       - uses: ilammy/setup-nasm@v1
