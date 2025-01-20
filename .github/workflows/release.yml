@@ -49,6 +49,8 @@ jobs:
         if: contains(matrix.target, 'musl')
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - run: cargo build --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
       - name: Upload
         uses: actions/upload-artifact@v4
