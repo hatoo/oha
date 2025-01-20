@@ -20,11 +20,11 @@ jobs:
             release_name: oha-linux-amd64-pgo
             target: x86_64-unknown-linux-musl
             additional_args: "--features vsock"
-          - os: ubuntu-24.04-arm
-            artifact_name: oha
-            release_name: oha-linux-arm64-pgo
-            target: aarch64-unknown-linux-musl
-            additional_args: "--features vsock"
+#          - os: ubuntu-24.04-arm
+#            artifact_name: oha
+#            release_name: oha-linux-arm64-pgo
+#            target: aarch64-unknown-linux-musl
+#            additional_args: "--features vsock"
           - os: windows-latest
             artifact_name: oha.exe
             release_name: oha-windows-amd64-pgo.exe
