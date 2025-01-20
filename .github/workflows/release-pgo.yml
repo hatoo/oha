@@ -2,8 +2,11 @@ name: Publish PGO
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "*.*.*"
+  pull_request:
 
 jobs:
   publish:
@@ -22,16 +25,16 @@ jobs:
             release_name: oha-windows-amd64-pgo.exe
             target: x86_64-pc-windows-msvc
             additional_args: ""
-          - os: macos-latest
-            artifact_name: oha
-            release_name: oha-macos-amd64-pgo
-            target: x86_64-apple-darwin
-            additional_args: ""
-          - os: macos-14
-            artifact_name: oha
-            release_name: oha-macos-arm64-pgo
-            target: aarch64-apple-darwin
-            additional_args: ""
+#          - os: macos-latest
+#            artifact_name: oha
+#            release_name: oha-macos-amd64-pgo
+#            target: x86_64-apple-darwin
+#            additional_args: ""
+#          - os: macos-14
+#            artifact_name: oha
+#            release_name: oha-macos-arm64-pgo
+#            target: aarch64-apple-darwin
+#            additional_args: ""
 
     steps:
       - uses: ilammy/setup-nasm@v1
@@ -39,6 +42,7 @@ jobs:
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.target, 'musl')
+      - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -46,8 +50,14 @@ jobs:
       - run: cargo install cargo-pgo --version 0.2.8
       - uses: oven-sh/setup-bun@v2
       - run: bun run pgo.js --target ${{ matrix.target }} ${{ matrix.additional_args }}
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.release_name }}
+          path: target/${{ matrix.target }}/pgo/${{ matrix.artifact_name }}
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/${{ matrix.target }}/pgo/${{ matrix.artifact_name }}
