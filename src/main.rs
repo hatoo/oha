@@ -854,7 +854,11 @@ fn main() {
         .enable_all()
         .build()
         .unwrap();
-    rt.block_on(run()).unwrap();
+
+    if let Err(e) = rt.block_on(run()) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }
 
 enum WorkMode {
