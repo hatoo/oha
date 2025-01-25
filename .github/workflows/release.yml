@@ -20,27 +20,33 @@ jobs:
             release_name: oha-linux-amd64
             target: x86_64-unknown-linux-musl
             additional_args: "--features vsock"
+            use_cross: false
           - os: windows-latest
             artifact_name: oha.exe
             release_name: oha-windows-amd64.exe
             target: x86_64-pc-windows-msvc
             additional_args: ""
+            use_cross: false
           - os: macos-latest
             artifact_name: oha
             release_name: oha-macos-amd64
             target: x86_64-apple-darwin
             additional_args: ""
+            use_cross: false
           - os: ubuntu-latest
             artifact_name: oha
             release_name: oha-linux-arm64
             target: aarch64-unknown-linux-musl
             additional_args: "--features vsock"
+            use_cross: true
           - os: macos-14
             artifact_name: oha
             release_name: oha-macos-arm64
             target: aarch64-apple-darwin
             additional_args: ""
-
+            use_cross: false
+    env:
+      BUILD_CMD: cargo
     steps:
       - uses: ilammy/setup-nasm@v1
       - uses: actions/checkout@v4
@@ -48,12 +54,26 @@ jobs:
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.target, 'musl')
       - uses: Swatinem/rust-cache@v2
-      - name: Build binary
-        uses: houseabsolute/actions-rust-cross@v1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          command: build
-          target: ${{ matrix.target }}
-          args: --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
+          targets: ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Overwrite build command env variable
+        if: matrix.use_cross
+        shell: bash
+        run: echo "BUILD_CMD=cross" >> $GITHUB_ENV
+      - name: Build
+        shell: bash
+        run: |
+          case ${{ matrix.target }} in
+            aarch64-*) export JEMALLOC_SYS_WITH_LG_PAGE=16 ;;
+          esac;
+          $BUILD_CMD build --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
