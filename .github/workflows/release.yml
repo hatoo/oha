@@ -33,12 +33,12 @@ jobs:
             target: x86_64-apple-darwin
             additional_args: ""
             use_cross: false
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             artifact_name: oha
             release_name: oha-linux-arm64
             target: aarch64-unknown-linux-musl
             additional_args: "--features vsock"
-            use_cross: true
+            use_cross: false
           - os: macos-14
             artifact_name: oha
             release_name: oha-macos-arm64
