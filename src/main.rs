@@ -857,7 +857,7 @@ fn main() {
 
     if let Err(e) = rt.block_on(run()) {
         eprintln!("Error: {}", e);
-        std::process::exit(1);
+        std::process::exit(libc::EXIT_FAILURE);
     }
 }
 
