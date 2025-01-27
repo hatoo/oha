@@ -1,0 +1,6 @@
+# For Asahi linux
+[target.aarch64-unknown-linux-gnu.env]
+passthrough = ["JEMALLOC_SYS_WITH_LG_PAGE=16"]
+
+[target.aarch64-unknown-linux-musl.env]
+passthrough = ["JEMALLOC_SYS_WITH_LG_PAGE=16"]
