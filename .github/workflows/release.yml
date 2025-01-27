@@ -69,11 +69,7 @@ jobs:
         run: echo "BUILD_CMD=cross" >> $GITHUB_ENV
       - name: Build
         shell: bash
-        run: |
-          case ${{ matrix.target }} in
-            aarch64-*) export JEMALLOC_SYS_WITH_LG_PAGE=16 ;;
-          esac;
-          $BUILD_CMD build --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
+        run: $BUILD_CMD build --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
