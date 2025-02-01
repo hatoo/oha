@@ -194,6 +194,8 @@ Options:
           Write succeeded requests to sqlite database url E.G test.db
       --debug
           Perform a single request and dump the request and response
+  -o, --output <OUTPUT>
+          Output file to write the results to. If not specified, results are written to stdout.
   -h, --help
           Print help
   -V, --version
