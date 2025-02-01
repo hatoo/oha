@@ -198,7 +198,7 @@ struct ClientStateHttp1 {
 impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
-            rng: SeedableRng::from_entropy(),
+            rng: SeedableRng::from_os_rng(),
             send_request: None,
         }
     }
@@ -212,7 +212,7 @@ struct ClientStateHttp2 {
 impl Clone for ClientStateHttp2 {
     fn clone(&self) -> Self {
         Self {
-            rng: SeedableRng::from_entropy(),
+            rng: SeedableRng::from_os_rng(),
             send_request: self.send_request.clone(),
         }
     }
@@ -331,7 +331,7 @@ impl Client {
 
     pub fn is_work_http2(&self) -> bool {
         if self.proxy_url.is_some() {
-            let url = self.url_generator.generate(&mut thread_rng()).unwrap();
+            let url = self.url_generator.generate(&mut rand::rng()).unwrap();
             if url.scheme() == "https" {
                 self.is_http2()
             } else {
@@ -356,7 +356,7 @@ impl Client {
             return Ok(());
         }
 
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         let url = self.url_generator.generate(&mut rng)?;
 
         // It automatically caches the result
@@ -924,7 +924,7 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
 }
 
 async fn setup_http2(client: &Client) -> Result<(ConnectionTime, ClientStateHttp2), ClientError> {
-    let mut rng = SeedableRng::from_entropy();
+    let mut rng = SeedableRng::from_os_rng();
     let url = client.url_generator.generate(&mut rng)?;
     let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
 
@@ -967,7 +967,7 @@ fn set_start_latency_correction<E>(
 }
 
 pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
-    let mut rng = StdRng::from_entropy();
+    let mut rng = StdRng::from_os_rng();
     let url = client.url_generator.generate(&mut rng)?;
     writeln!(w, "URL: {}", url)?;
 

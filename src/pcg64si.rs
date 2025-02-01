@@ -1,5 +1,5 @@
 // https://github.com/imneme/pcg-c
-use rand::{Error, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng};
 use rand_core::impls;
 
 #[derive(Debug, Copy, Clone)]
@@ -26,11 +26,6 @@ impl RngCore for Pcg64Si {
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         impls::fill_bytes_via_next(self, dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
-        self.fill_bytes(dest);
-        Ok(())
     }
 }
 
@@ -76,8 +71,7 @@ mod tests {
         // This uses the next_u64/u32 functions underneath, so don't need to test the pseudo randomness again
         let mut array: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
         let mut rng = Pcg64Si::from_seed([1, 2, 3, 4, 5, 6, 7, 8]);
-        let result = rng.try_fill_bytes(&mut array);
-        assert!(result.is_ok());
+        rng.fill_bytes(&mut array);
         assert_ne!(array, [0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

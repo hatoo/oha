@@ -1,7 +1,6 @@
 use std::{borrow::Cow, string::FromUtf8Error};
 
 use rand::prelude::*;
-use rand::seq::SliceRandom;
 use rand_regex::Regex;
 use thiserror::Error;
 use url::{ParseError, Url};
@@ -73,7 +72,7 @@ mod tests {
     #[test]
     fn test_url_generator_static() {
         let url_generator = UrlGenerator::new_static(Url::parse("http://127.0.0.1/test").unwrap());
-        let url = url_generator.generate(&mut thread_rng()).unwrap();
+        let url = url_generator.generate(&mut rand::rng()).unwrap();
         assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
         assert_eq!(url.path(), "/test");
     }
@@ -90,7 +89,7 @@ mod tests {
             UrlGenerator::new_multi_static(urls.iter().map(|u| Url::parse(u).unwrap()).collect());
 
         for _ in 0..10 {
-            let url = url_generator.generate(&mut thread_rng()).unwrap();
+            let url = url_generator.generate(&mut rand::rng()).unwrap();
             assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
             assert!(urls.contains(&url.as_str()));
         }
@@ -102,7 +101,7 @@ mod tests {
         let url_generator = UrlGenerator::new_dynamic(
             RandRegex::compile(&format!(r"http://127\.0\.0\.1{path_regex}"), 4).unwrap(),
         );
-        let url = url_generator.generate(&mut thread_rng()).unwrap();
+        let url = url_generator.generate(&mut rand::rng()).unwrap();
         assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
         assert!(Regex::new(path_regex)
             .unwrap()
@@ -117,7 +116,7 @@ mod tests {
         );
 
         for _ in 0..100 {
-            let rng: Pcg64Si = SeedableRng::from_entropy();
+            let rng: Pcg64Si = SeedableRng::from_os_rng();
 
             assert_eq!(
                 url_generator.generate(&mut rng.clone()).unwrap(),
@@ -139,7 +138,7 @@ mod tests {
             UrlGenerator::new_multi_static(urls.iter().map(|u| Url::parse(u).unwrap()).collect());
 
         for _ in 0..100 {
-            let rng: Pcg64Si = SeedableRng::from_entropy();
+            let rng: Pcg64Si = SeedableRng::from_os_rng();
 
             assert_eq!(
                 url_generator.generate(&mut rng.clone()).unwrap(),
