@@ -9,7 +9,6 @@ use hyper::http::{
     header::{HeaderName, HeaderValue},
 };
 use printer::{PrintConfig, PrintMode};
-use rand::prelude::*;
 use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
@@ -395,7 +394,7 @@ async fn run() -> anyhow::Result<()> {
     };
 
     if let Some(n) = opts.dump_urls {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..n {
             let url = url_generator.generate(&mut rng)?;
             println!("{}", url);
@@ -403,7 +402,7 @@ async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let url = url_generator.generate(&mut thread_rng())?;
+    let url = url_generator.generate(&mut rand::rng())?;
 
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
