@@ -1,5 +1,10 @@
 # Unreleased
 
+# 1.7.0 (2025-02-01)
+
+- Impl support for calling AWS APIs with sigv4 #666 
+- support -o #669 
+
 # 1.6.0 (2025-01-11)
 
 - Feature: Reading Urls from file #639
