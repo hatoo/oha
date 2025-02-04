@@ -86,7 +86,6 @@ mod test_db {
             timeout: None,
             redirect_limit: 0,
             disable_keepalive: false,
-            insecure: false,
             proxy_url: None,
             aws_config: None,
             #[cfg(unix)]
@@ -105,6 +104,28 @@ mod test_db {
                     .with_root_certificates(root_cert_store.clone())
                     .with_no_client_auth();
                 crate::client::RuslsConfigs::new(config)
+            },
+            #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+            native_tls_connectors: {
+                crate::client::NativeTlsConnectors {
+                    no_alpn: {
+                        let connector_builder = native_tls::TlsConnector::builder();
+
+                        connector_builder
+                            .build()
+                            .expect("Failed to build native_tls::TlsConnector")
+                            .into()
+                    },
+                    alpn_h2: {
+                        let mut connector_builder = native_tls::TlsConnector::builder();
+
+                        connector_builder.request_alpns(&["h2"]);
+                        connector_builder
+                            .build()
+                            .expect("Failed to build native_tls::TlsConnector")
+                            .into()
+                    },
+                }
             },
         };
         let result = store(&client, ":memory:", start, &test_vec);

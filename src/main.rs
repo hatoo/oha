@@ -535,7 +535,6 @@ async fn run() -> anyhow::Result<()> {
         timeout: opts.timeout.map(|d| d.into()),
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
-        insecure: opts.insecure,
         proxy_url: opts.proxy,
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
@@ -558,6 +557,38 @@ async fn run() -> anyhow::Result<()> {
                     .set_certificate_verifier(Arc::new(client::AcceptAnyServerCert));
             }
             client::RuslsConfigs::new(config)
+        },
+        #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+        native_tls_connectors: {
+            client::NativeTlsConnectors {
+                no_alpn: {
+                    let mut connector_builder = native_tls::TlsConnector::builder();
+                    if opts.insecure {
+                        connector_builder
+                            .danger_accept_invalid_certs(true)
+                            .danger_accept_invalid_hostnames(true);
+                    }
+
+                    connector_builder
+                        .build()
+                        .expect("Failed to build native_tls::TlsConnector")
+                        .into()
+                },
+                alpn_h2: {
+                    let mut connector_builder = native_tls::TlsConnector::builder();
+                    if opts.insecure {
+                        connector_builder
+                            .danger_accept_invalid_certs(true)
+                            .danger_accept_invalid_hostnames(true);
+                    }
+
+                    connector_builder.request_alpns(&["h2"]);
+                    connector_builder
+                        .build()
+                        .expect("Failed to build native_tls::TlsConnector")
+                        .into()
+                },
+            }
         },
     });
 

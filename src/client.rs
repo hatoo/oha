@@ -196,6 +196,23 @@ impl RuslsConfigs {
     }
 }
 
+#[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+pub struct NativeTlsConnectors {
+    pub no_alpn: tokio_native_tls::TlsConnector,
+    pub alpn_h2: tokio_native_tls::TlsConnector,
+}
+
+#[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+impl NativeTlsConnectors {
+    pub fn connector(&self, is_http2: bool) -> &tokio_native_tls::TlsConnector {
+        if is_http2 {
+            &self.alpn_h2
+        } else {
+            &self.no_alpn
+        }
+    }
+}
+
 pub struct Client {
     pub http_version: http::Version,
     pub proxy_http_version: http::Version,
@@ -207,7 +224,6 @@ pub struct Client {
     pub timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
-    pub insecure: bool,
     pub proxy_url: Option<Url>,
     pub aws_config: Option<AwsSignatureConfig>,
     #[cfg(unix)]
@@ -216,6 +232,8 @@ pub struct Client {
     pub vsock_addr: Option<tokio_vsock::VsockAddr>,
     #[cfg(feature = "rustls")]
     pub rustls_configs: RuslsConfigs,
+    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+    pub native_tls_connectors: NativeTlsConnectors,
 }
 
 struct ClientStateHttp1 {
@@ -484,18 +502,7 @@ impl Client {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        let mut connector_builder = native_tls::TlsConnector::builder();
-        if self.insecure {
-            connector_builder
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true);
-        }
-
-        if is_http2 {
-            connector_builder.request_alpns(&["h2"]);
-        }
-
-        let connector = tokio_native_tls::TlsConnector::from(connector_builder.build()?);
+        let connector = self.native_tls_connectors.connector(is_http2);
         let stream = connector
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
@@ -513,19 +520,6 @@ impl Client {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        /*
-        let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(self.root_cert_store.clone())
-            .with_no_client_auth();
-        if self.insecure {
-            config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
-        }
-        if is_http2 {
-            config.alpn_protocols = vec![b"h2".to_vec()];
-        }
-        */
         let connector =
             tokio_rustls::TlsConnector::from(self.rustls_configs.config(is_http2).clone());
         let domain = rustls_pki_types::ServerName::try_from(
