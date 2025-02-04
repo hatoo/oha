@@ -168,6 +168,34 @@ pub enum ClientError {
     SigV4Error(&'static str),
 }
 
+#[cfg(feature = "rustls")]
+pub struct RuslsConfigs {
+    no_alpn: Arc<rustls::ClientConfig>,
+    alpn_h2: Arc<rustls::ClientConfig>,
+}
+
+#[cfg(feature = "rustls")]
+impl RuslsConfigs {
+    pub fn new(config: rustls::ClientConfig) -> Self {
+        let mut no_alpn = config.clone();
+        no_alpn.alpn_protocols = vec![];
+        let mut alpn_h2 = config;
+        alpn_h2.alpn_protocols = vec![b"h2".to_vec()];
+        Self {
+            no_alpn: Arc::new(no_alpn),
+            alpn_h2: Arc::new(alpn_h2),
+        }
+    }
+
+    pub fn config(&self, is_http2: bool) -> &Arc<rustls::ClientConfig> {
+        if is_http2 {
+            &self.alpn_h2
+        } else {
+            &self.no_alpn
+        }
+    }
+}
+
 pub struct Client {
     pub http_version: http::Version,
     pub proxy_http_version: http::Version,
@@ -187,7 +215,7 @@ pub struct Client {
     #[cfg(feature = "vsock")]
     pub vsock_addr: Option<tokio_vsock::VsockAddr>,
     #[cfg(feature = "rustls")]
-    pub root_cert_store: Arc<rustls::RootCertStore>,
+    pub rustls_configs: RuslsConfigs,
 }
 
 struct ClientStateHttp1 {
@@ -485,6 +513,7 @@ impl Client {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
+        /*
         let mut config = rustls::ClientConfig::builder()
             .with_root_certificates(self.root_cert_store.clone())
             .with_no_client_auth();
@@ -496,7 +525,9 @@ impl Client {
         if is_http2 {
             config.alpn_protocols = vec![b"h2".to_vec()];
         }
-        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+        */
+        let connector =
+            tokio_rustls::TlsConnector::from(self.rustls_configs.config(is_http2).clone());
         let domain = rustls_pki_types::ServerName::try_from(
             url.host_str().ok_or(ClientError::HostNotFound)?,
         )?;
@@ -852,7 +883,7 @@ impl Client {
 /// A server certificate verifier that accepts any certificate.
 #[cfg(feature = "rustls")]
 #[derive(Debug)]
-struct AcceptAnyServerCert;
+pub struct AcceptAnyServerCert;
 
 #[cfg(feature = "rustls")]
 impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {

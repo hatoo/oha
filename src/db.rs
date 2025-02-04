@@ -94,15 +94,17 @@ mod test_db {
             #[cfg(feature = "vsock")]
             vsock_addr: None,
             #[cfg(feature = "rustls")]
-            // Cache rustls_native_certs::load_native_certs() because it's expensive.
-            root_cert_store: {
+            rustls_configs: {
                 let mut root_cert_store = rustls::RootCertStore::empty();
                 for cert in
                     rustls_native_certs::load_native_certs().expect("could not load platform certs")
                 {
                     root_cert_store.add(cert).unwrap();
                 }
-                std::sync::Arc::new(root_cert_store)
+                let config = rustls::ClientConfig::builder()
+                    .with_root_certificates(root_cert_store.clone())
+                    .with_no_client_auth();
+                crate::client::RuslsConfigs::new(config)
             },
         };
         let result = store(&client, ":memory:", start, &test_vec);
