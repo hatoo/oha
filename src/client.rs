@@ -179,7 +179,6 @@ pub struct Client {
     pub timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
-    pub insecure: bool,
     pub proxy_url: Option<Url>,
     pub aws_config: Option<AwsSignatureConfig>,
     #[cfg(unix)]
@@ -187,7 +186,9 @@ pub struct Client {
     #[cfg(feature = "vsock")]
     pub vsock_addr: Option<tokio_vsock::VsockAddr>,
     #[cfg(feature = "rustls")]
-    pub root_cert_store: Arc<rustls::RootCertStore>,
+    pub rustls_configs: crate::tls_config::RuslsConfigs,
+    #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+    pub native_tls_connectors: crate::tls_config::NativeTlsConnectors,
 }
 
 struct ClientStateHttp1 {
@@ -456,18 +457,7 @@ impl Client {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        let mut connector_builder = native_tls::TlsConnector::builder();
-        if self.insecure {
-            connector_builder
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true);
-        }
-
-        if is_http2 {
-            connector_builder.request_alpns(&["h2"]);
-        }
-
-        let connector = tokio_native_tls::TlsConnector::from(connector_builder.build()?);
+        let connector = self.native_tls_connectors.connector(is_http2);
         let stream = connector
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
@@ -485,18 +475,8 @@ impl Client {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(self.root_cert_store.clone())
-            .with_no_client_auth();
-        if self.insecure {
-            config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(AcceptAnyServerCert));
-        }
-        if is_http2 {
-            config.alpn_protocols = vec![b"h2".to_vec()];
-        }
-        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+        let connector =
+            tokio_rustls::TlsConnector::from(self.rustls_configs.config(is_http2).clone());
         let domain = rustls_pki_types::ServerName::try_from(
             url.host_str().ok_or(ClientError::HostNotFound)?,
         )?;
@@ -846,50 +826,6 @@ impl Client {
         } else {
             Ok((send_request, status, len_sum))
         }
-    }
-}
-
-/// A server certificate verifier that accepts any certificate.
-#[cfg(feature = "rustls")]
-#[derive(Debug)]
-struct AcceptAnyServerCert;
-
-#[cfg(feature = "rustls")]
-impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls_pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
-        _server_name: &rustls_pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls_pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &rustls_pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &rustls_pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::CryptoProvider::get_default()
-            .unwrap()
-            .signature_verification_algorithms
-            .supported_schemes()
     }
 }
 

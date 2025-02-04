@@ -86,7 +86,6 @@ mod test_db {
             timeout: None,
             redirect_limit: 0,
             disable_keepalive: false,
-            insecure: false,
             proxy_url: None,
             aws_config: None,
             #[cfg(unix)]
@@ -94,16 +93,9 @@ mod test_db {
             #[cfg(feature = "vsock")]
             vsock_addr: None,
             #[cfg(feature = "rustls")]
-            // Cache rustls_native_certs::load_native_certs() because it's expensive.
-            root_cert_store: {
-                let mut root_cert_store = rustls::RootCertStore::empty();
-                for cert in
-                    rustls_native_certs::load_native_certs().expect("could not load platform certs")
-                {
-                    root_cert_store.add(cert).unwrap();
-                }
-                std::sync::Arc::new(root_cert_store)
-            },
+            rustls_configs: crate::tls_config::RuslsConfigs::new(false),
+            #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+            native_tls_connectors: crate::tls_config::NativeTlsConnectors::new(false),
         };
         let result = store(&client, ":memory:", start, &test_vec);
         assert_eq!(result.unwrap(), 2);

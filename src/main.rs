@@ -33,6 +33,7 @@ mod pcg64si;
 mod printer;
 mod result_data;
 mod timescale;
+mod tls_config;
 mod url_generator;
 
 #[cfg(not(target_env = "msvc"))]
@@ -535,23 +536,15 @@ async fn run() -> anyhow::Result<()> {
         timeout: opts.timeout.map(|d| d.into()),
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
-        insecure: opts.insecure,
         proxy_url: opts.proxy,
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
         #[cfg(feature = "vsock")]
         vsock_addr: opts.vsock_addr.map(|v| v.0),
         #[cfg(feature = "rustls")]
-        // Cache rustls_native_certs::load_native_certs() because it's expensive.
-        root_cert_store: {
-            let mut root_cert_store = rustls::RootCertStore::empty();
-            for cert in
-                rustls_native_certs::load_native_certs().expect("could not load platform certs")
-            {
-                root_cert_store.add(cert).unwrap();
-            }
-            std::sync::Arc::new(root_cert_store)
-        },
+        rustls_configs: tls_config::RuslsConfigs::new(opts.insecure),
+        #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+        native_tls_connectors: tls_config::NativeTlsConnectors::new(opts.insecure),
     });
 
     if !opts.no_pre_lookup {
