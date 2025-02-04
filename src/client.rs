@@ -168,51 +168,6 @@ pub enum ClientError {
     SigV4Error(&'static str),
 }
 
-#[cfg(feature = "rustls")]
-pub struct RuslsConfigs {
-    no_alpn: Arc<rustls::ClientConfig>,
-    alpn_h2: Arc<rustls::ClientConfig>,
-}
-
-#[cfg(feature = "rustls")]
-impl RuslsConfigs {
-    pub fn new(config: rustls::ClientConfig) -> Self {
-        let mut no_alpn = config.clone();
-        no_alpn.alpn_protocols = vec![];
-        let mut alpn_h2 = config;
-        alpn_h2.alpn_protocols = vec![b"h2".to_vec()];
-        Self {
-            no_alpn: Arc::new(no_alpn),
-            alpn_h2: Arc::new(alpn_h2),
-        }
-    }
-
-    pub fn config(&self, is_http2: bool) -> &Arc<rustls::ClientConfig> {
-        if is_http2 {
-            &self.alpn_h2
-        } else {
-            &self.no_alpn
-        }
-    }
-}
-
-#[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-pub struct NativeTlsConnectors {
-    pub no_alpn: tokio_native_tls::TlsConnector,
-    pub alpn_h2: tokio_native_tls::TlsConnector,
-}
-
-#[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-impl NativeTlsConnectors {
-    pub fn connector(&self, is_http2: bool) -> &tokio_native_tls::TlsConnector {
-        if is_http2 {
-            &self.alpn_h2
-        } else {
-            &self.no_alpn
-        }
-    }
-}
-
 pub struct Client {
     pub http_version: http::Version,
     pub proxy_http_version: http::Version,
@@ -231,9 +186,9 @@ pub struct Client {
     #[cfg(feature = "vsock")]
     pub vsock_addr: Option<tokio_vsock::VsockAddr>,
     #[cfg(feature = "rustls")]
-    pub rustls_configs: RuslsConfigs,
+    pub rustls_configs: crate::tls_config::RuslsConfigs,
     #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-    pub native_tls_connectors: NativeTlsConnectors,
+    pub native_tls_connectors: crate::tls_config::NativeTlsConnectors,
 }
 
 struct ClientStateHttp1 {
@@ -871,50 +826,6 @@ impl Client {
         } else {
             Ok((send_request, status, len_sum))
         }
-    }
-}
-
-/// A server certificate verifier that accepts any certificate.
-#[cfg(feature = "rustls")]
-#[derive(Debug)]
-pub struct AcceptAnyServerCert;
-
-#[cfg(feature = "rustls")]
-impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls_pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
-        _server_name: &rustls_pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls_pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &rustls_pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &rustls_pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::CryptoProvider::get_default()
-            .unwrap()
-            .signature_verification_algorithms
-            .supported_schemes()
     }
 }
 

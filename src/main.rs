@@ -33,6 +33,7 @@ mod pcg64si;
 mod printer;
 mod result_data;
 mod timescale;
+mod tls_config;
 mod url_generator;
 
 #[cfg(not(target_env = "msvc"))]
@@ -541,55 +542,9 @@ async fn run() -> anyhow::Result<()> {
         #[cfg(feature = "vsock")]
         vsock_addr: opts.vsock_addr.map(|v| v.0),
         #[cfg(feature = "rustls")]
-        rustls_configs: {
-            let mut root_cert_store = rustls::RootCertStore::empty();
-            for cert in
-                rustls_native_certs::load_native_certs().expect("could not load platform certs")
-            {
-                root_cert_store.add(cert).unwrap();
-            }
-            let mut config = rustls::ClientConfig::builder()
-                .with_root_certificates(root_cert_store.clone())
-                .with_no_client_auth();
-            if opts.insecure {
-                config
-                    .dangerous()
-                    .set_certificate_verifier(Arc::new(client::AcceptAnyServerCert));
-            }
-            client::RuslsConfigs::new(config)
-        },
+        rustls_configs: tls_config::RuslsConfigs::new(opts.insecure),
         #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-        native_tls_connectors: {
-            client::NativeTlsConnectors {
-                no_alpn: {
-                    let mut connector_builder = native_tls::TlsConnector::builder();
-                    if opts.insecure {
-                        connector_builder
-                            .danger_accept_invalid_certs(true)
-                            .danger_accept_invalid_hostnames(true);
-                    }
-
-                    connector_builder
-                        .build()
-                        .expect("Failed to build native_tls::TlsConnector")
-                        .into()
-                },
-                alpn_h2: {
-                    let mut connector_builder = native_tls::TlsConnector::builder();
-                    if opts.insecure {
-                        connector_builder
-                            .danger_accept_invalid_certs(true)
-                            .danger_accept_invalid_hostnames(true);
-                    }
-
-                    connector_builder.request_alpns(&["h2"]);
-                    connector_builder
-                        .build()
-                        .expect("Failed to build native_tls::TlsConnector")
-                        .into()
-                },
-            }
-        },
+        native_tls_connectors: tls_config::NativeTlsConnectors::new(opts.insecure),
     });
 
     if !opts.no_pre_lookup {

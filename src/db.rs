@@ -93,40 +93,9 @@ mod test_db {
             #[cfg(feature = "vsock")]
             vsock_addr: None,
             #[cfg(feature = "rustls")]
-            rustls_configs: {
-                let mut root_cert_store = rustls::RootCertStore::empty();
-                for cert in
-                    rustls_native_certs::load_native_certs().expect("could not load platform certs")
-                {
-                    root_cert_store.add(cert).unwrap();
-                }
-                let config = rustls::ClientConfig::builder()
-                    .with_root_certificates(root_cert_store.clone())
-                    .with_no_client_auth();
-                crate::client::RuslsConfigs::new(config)
-            },
+            rustls_configs: crate::tls_config::RuslsConfigs::new(false),
             #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-            native_tls_connectors: {
-                crate::client::NativeTlsConnectors {
-                    no_alpn: {
-                        let connector_builder = native_tls::TlsConnector::builder();
-
-                        connector_builder
-                            .build()
-                            .expect("Failed to build native_tls::TlsConnector")
-                            .into()
-                    },
-                    alpn_h2: {
-                        let mut connector_builder = native_tls::TlsConnector::builder();
-
-                        connector_builder.request_alpns(&["h2"]);
-                        connector_builder
-                            .build()
-                            .expect("Failed to build native_tls::TlsConnector")
-                            .into()
-                    },
-                }
-            },
+            native_tls_connectors: crate::tls_config::NativeTlsConnectors::new(false),
         };
         let result = store(&client, ":memory:", start, &test_vec);
         assert_eq!(result.unwrap(), 2);
