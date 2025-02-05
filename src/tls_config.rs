@@ -1,3 +1,5 @@
+use rustls_pki_types::pem::PemObject;
+
 #[cfg(feature = "rustls")]
 pub struct RuslsConfigs {
     no_alpn: std::sync::Arc<rustls::ClientConfig>,
@@ -6,7 +8,7 @@ pub struct RuslsConfigs {
 
 #[cfg(feature = "rustls")]
 impl RuslsConfigs {
-    pub fn new(insecure: bool) -> Self {
+    pub fn new(insecure: bool, cacert_pem: Option<&[u8]>) -> Self {
         use std::sync::Arc;
 
         let mut root_cert_store = rustls::RootCertStore::empty();
@@ -14,8 +16,15 @@ impl RuslsConfigs {
         {
             root_cert_store.add(cert).unwrap();
         }
+
+        if let Some(cacert_pem) = cacert_pem {
+            for der in rustls_pki_types::CertificateDer::pem_slice_iter(cacert_pem) {
+                root_cert_store.add(der.unwrap()).unwrap();
+            }
+        }
+
         let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_cert_store.clone())
+            .with_root_certificates(root_cert_store)
             .with_no_client_auth();
         if insecure {
             config

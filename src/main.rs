@@ -210,6 +210,8 @@ Note: If qps is specified, burst will be ignored",
     ipv6: bool,
     #[arg(help = "Lookup only ipv4.", long = "ipv4")]
     ipv4: bool,
+    #[arg(help = "TODO", long)]
+    cacert: Option<PathBuf>,
     #[arg(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
     #[arg(
@@ -520,6 +522,11 @@ async fn run() -> anyhow::Result<()> {
     let (config, mut resolver_opts) = system_resolv_conf()?;
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
+    let cacert = opts
+        .cacert
+        .as_deref()
+        .map(|p| std::fs::read(p))
+        .transpose()?;
 
     let client = Arc::new(client::Client {
         aws_config,
@@ -542,7 +549,7 @@ async fn run() -> anyhow::Result<()> {
         #[cfg(feature = "vsock")]
         vsock_addr: opts.vsock_addr.map(|v| v.0),
         #[cfg(feature = "rustls")]
-        rustls_configs: tls_config::RuslsConfigs::new(opts.insecure),
+        rustls_configs: tls_config::RuslsConfigs::new(opts.insecure, cacert.as_deref()),
         #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
         native_tls_connectors: tls_config::NativeTlsConnectors::new(opts.insecure),
     });
