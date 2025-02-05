@@ -212,6 +212,10 @@ Note: If qps is specified, burst will be ignored",
     ipv4: bool,
     #[arg(help = "TODO", long)]
     cacert: Option<PathBuf>,
+    #[arg(help = "TODO", long)]
+    cert: Option<PathBuf>,
+    #[arg(help = "TODO", long)]
+    key: Option<PathBuf>,
     #[arg(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
     #[arg(
@@ -527,6 +531,12 @@ async fn run() -> anyhow::Result<()> {
         .as_deref()
         .map(|p| std::fs::read(p))
         .transpose()?;
+    let client_auth = match (opts.cert, opts.key) {
+        (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
+        (None, None) => None,
+        // TODO: Ensure it on clap
+        _ => anyhow::bail!("Both --cert and --key must be specified"),
+    };
 
     let client = Arc::new(client::Client {
         aws_config,
@@ -549,7 +559,13 @@ async fn run() -> anyhow::Result<()> {
         #[cfg(feature = "vsock")]
         vsock_addr: opts.vsock_addr.map(|v| v.0),
         #[cfg(feature = "rustls")]
-        rustls_configs: tls_config::RuslsConfigs::new(opts.insecure, cacert.as_deref()),
+        rustls_configs: tls_config::RuslsConfigs::new(
+            opts.insecure,
+            cacert.as_deref(),
+            client_auth
+                .as_ref()
+                .map(|(cert, key)| (cert.as_slice(), key.as_slice())),
+        ),
         #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
         native_tls_connectors: tls_config::NativeTlsConnectors::new(opts.insecure),
     });

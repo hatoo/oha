@@ -8,7 +8,11 @@ pub struct RuslsConfigs {
 
 #[cfg(feature = "rustls")]
 impl RuslsConfigs {
-    pub fn new(insecure: bool, cacert_pem: Option<&[u8]>) -> Self {
+    pub fn new(
+        insecure: bool,
+        cacert_pem: Option<&[u8]>,
+        client_auth: Option<(&[u8], &[u8])>,
+    ) -> Self {
         use std::sync::Arc;
 
         let mut root_cert_store = rustls::RootCertStore::empty();
@@ -23,9 +27,18 @@ impl RuslsConfigs {
             }
         }
 
-        let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_cert_store)
-            .with_no_client_auth();
+        let builder = rustls::ClientConfig::builder().with_root_certificates(root_cert_store);
+
+        let mut config = if let Some((cert, key)) = client_auth {
+            let certs = rustls_pki_types::CertificateDer::pem_slice_iter(cert)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            let key = rustls_pki_types::PrivateKeyDer::from_pem_slice(key).unwrap();
+
+            builder.with_client_auth_cert(certs, key).unwrap()
+        } else {
+            builder.with_no_client_auth()
+        };
         if insecure {
             config
                 .dangerous()
