@@ -618,10 +618,8 @@ async fn run() -> anyhow::Result<()> {
         match work_mode {
             WorkMode::Debug => {
                 let mut print_config = print_config;
-                if let Err(e) = client::work_debug(&mut print_config.output, client).await {
-                    eprintln!("{e}");
-                }
-                std::process::exit(libc::EXIT_SUCCESS)
+                client::work_debug(&mut print_config.output, client).await?;
+                return Ok(());
             }
             WorkMode::FixedNumber {
                 n_requests,
