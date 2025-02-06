@@ -1,5 +1,3 @@
-use rustls_pki_types::pem::PemObject;
-
 #[cfg(feature = "rustls")]
 pub struct RuslsConfigs {
     no_alpn: std::sync::Arc<rustls::ClientConfig>,
@@ -13,6 +11,7 @@ impl RuslsConfigs {
         cacert_pem: Option<&[u8]>,
         client_auth: Option<(&[u8], &[u8])>,
     ) -> Self {
+        use rustls_pki_types::pem::PemObject;
         use std::sync::Arc;
 
         let mut root_cert_store = rustls::RootCertStore::empty();
@@ -72,13 +71,30 @@ pub struct NativeTlsConnectors {
 
 #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
 impl NativeTlsConnectors {
-    pub fn new(insecure: bool) -> Self {
+    pub fn new(
+        insecure: bool,
+        cacert_pem: Option<&[u8]>,
+        client_auth: Option<(&[u8], &[u8])>,
+    ) -> Self {
         let new = |is_http2: bool| {
             let mut connector_builder = native_tls::TlsConnector::builder();
+
+            if let Some(cacert_pem) = cacert_pem {
+                let cert = native_tls::Certificate::from_pem(cacert_pem)
+                    .expect("Failed to parse cacert_pem");
+                connector_builder.add_root_certificate(cert);
+            }
+
             if insecure {
                 connector_builder
                     .danger_accept_invalid_certs(true)
                     .danger_accept_invalid_hostnames(true);
+            }
+
+            if let Some((cert, key)) = client_auth {
+                let cert = native_tls::Identity::from_pkcs8(cert, key)
+                    .expect("Failed to parse client_auth cert/key");
+                connector_builder.identity(cert);
             }
 
             if is_http2 {

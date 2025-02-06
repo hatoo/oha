@@ -567,7 +567,13 @@ async fn run() -> anyhow::Result<()> {
                 .map(|(cert, key)| (cert.as_slice(), key.as_slice())),
         ),
         #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-        native_tls_connectors: tls_config::NativeTlsConnectors::new(opts.insecure),
+        native_tls_connectors: tls_config::NativeTlsConnectors::new(
+            opts.insecure,
+            cacert.as_deref(),
+            client_auth
+                .as_ref()
+                .map(|(cert, key)| (cert.as_slice(), key.as_slice())),
+        ),
     });
 
     if !opts.no_pre_lookup {

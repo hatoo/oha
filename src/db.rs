@@ -95,7 +95,7 @@ mod test_db {
             #[cfg(feature = "rustls")]
             rustls_configs: crate::tls_config::RuslsConfigs::new(false, None, None),
             #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-            native_tls_connectors: crate::tls_config::NativeTlsConnectors::new(false),
+            native_tls_connectors: crate::tls_config::NativeTlsConnectors::new(false, None, None),
         };
         let result = store(&client, ":memory:", start, &test_vec);
         assert_eq!(result.unwrap(), 2);
