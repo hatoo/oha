@@ -180,6 +180,12 @@ Options:
           Lookup only ipv6.
       --ipv4
           Lookup only ipv4.
+      --cacert <CACERT>
+          (TLS) Use the specified certificate file to verify the peer. Native certificate store is used even if this argument is specified.
+      --cert <CERT>
+          (TLS) Use the specified client certificate file. --key must be also specified
+      --key <KEY>
+          (TLS) Use the specified client key file. --cert must be also specified
       --insecure
           Accept invalid certs.
       --connect-to <CONNECT_TO>

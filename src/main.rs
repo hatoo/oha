@@ -210,11 +210,20 @@ Note: If qps is specified, burst will be ignored",
     ipv6: bool,
     #[arg(help = "Lookup only ipv4.", long = "ipv4")]
     ipv4: bool,
-    #[arg(help = "TODO", long)]
+    #[arg(
+        help = "(TLS) Use the specified certificate file to verify the peer. Native certificate store is used even if this argument is specified.",
+        long
+    )]
     cacert: Option<PathBuf>,
-    #[arg(help = "TODO", long)]
+    #[arg(
+        help = "(TLS) Use the specified client certificate file. --key must be also specified",
+        long
+    )]
     cert: Option<PathBuf>,
-    #[arg(help = "TODO", long)]
+    #[arg(
+        help = "(TLS) Use the specified client key file. --cert must be also specified",
+        long
+    )]
     key: Option<PathBuf>,
     #[arg(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
