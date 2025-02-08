@@ -93,6 +93,7 @@ predicates = "3.1.0"
 rcgen = "0.13.1"
 regex = "1.10.5"
 tempfile = "3.10.1"
+rustls = "0.23.18"
 
 [target.'cfg(unix)'.dev-dependencies]
 actix-web = "4"
