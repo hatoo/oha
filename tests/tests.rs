@@ -917,8 +917,19 @@ fn setup_mtls_server(
         // `GET /` goes to `root`
         .route("/", get(|| async { "Hello, World" }));
 
-    let server_cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
-    let client_cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let make_cert = || {
+        // Workaround for mac & native-tls
+        // https://github.com/sfackler/rust-native-tls/issues/225
+        let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).unwrap();
+        let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .unwrap()
+            .self_signed(&key_pair)
+            .unwrap();
+        rcgen::CertifiedKey { cert, key_pair }
+    };
+
+    let server_cert = make_cert();
+    let client_cert = make_cert();
 
     let mut roots = rustls::RootCertStore::empty();
     roots.add(client_cert.cert.der().clone()).unwrap();
