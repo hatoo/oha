@@ -1,7 +1,9 @@
 use std::{
     convert::Infallible,
     error::Error as StdError,
+    fs::File,
     future::Future,
+    io::Write,
     net::{Ipv6Addr, SocketAddr},
     sync::{atomic::AtomicU16, Arc},
 };
@@ -902,4 +904,83 @@ async fn test_json_schema() {
         }
         panic!("JSON schema validation failed\n{output_json_stats_success_breakdown}");
     }
+}
+
+fn setup_mtls_server(
+    dir: &std::path::Path,
+) -> (u16, impl Future<Output = Result<(), std::io::Error>>) {
+    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+
+    // build our application with a route
+    let app = Router::new()
+        // `GET /` goes to `root`
+        .route("/", get(|| async { "Hello, World" }));
+
+    let server_cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let client_cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(client_cert.cert.der().clone()).unwrap();
+    let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
+        .build()
+        .unwrap();
+
+    let config = rustls::ServerConfig::builder()
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(
+            vec![server_cert.cert.der().clone()],
+            rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+                server_cert.key_pair.serialize_der(),
+            )),
+        )
+        .unwrap();
+
+    let config = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(config));
+
+    File::create(dir.join("server.crt"))
+        .unwrap()
+        .write_all(server_cert.cert.pem().as_bytes())
+        .unwrap();
+
+    File::create(dir.join("client.crt"))
+        .unwrap()
+        .write_all(client_cert.cert.pem().as_bytes())
+        .unwrap();
+
+    File::create(dir.join("client.key"))
+        .unwrap()
+        .write_all(client_cert.key_pair.serialize_pem().as_bytes())
+        .unwrap();
+
+    (
+        port,
+        axum_server::bind_rustls(addr, config).serve(app.into_make_service()),
+    )
+}
+
+#[tokio::test]
+async fn test_mtls() {
+    let dir = tempfile::tempdir().unwrap();
+    let (port, server) = setup_mtls_server(dir.path());
+
+    tokio::spawn(server);
+
+    let mut command = Command::cargo_bin("oha").unwrap();
+    command
+        .args([
+            "--debug",
+            "--cacert",
+            dir.path().join("server.crt").to_str().unwrap(),
+            "--cert",
+            dir.path().join("client.crt").to_str().unwrap(),
+            "--key",
+            dir.path().join("client.key").to_str().unwrap(),
+        ])
+        .arg(format!("https://localhost:{port}/"));
+    tokio::task::spawn_blocking(move || {
+        command.assert().success();
+    })
+    .await
+    .unwrap();
 }
