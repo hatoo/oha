@@ -174,6 +174,7 @@ pub struct Client {
     pub url_generator: UrlGenerator,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
+    pub proxy_headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
     pub dns: Dns,
     pub timeout: Option<std::time::Duration>,
@@ -494,14 +495,21 @@ impl Client {
             let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
             if url.scheme() == "https" {
                 // Do CONNECT request to proxy
-                let req = http::Request::builder()
-                    .method(Method::CONNECT)
-                    .uri(format!(
-                        "{}:{}",
-                        url.host_str().unwrap(),
-                        url.port_or_known_default().unwrap()
-                    ))
-                    .body(http_body_util::Full::default())?;
+                let req = {
+                    let mut builder =
+                        http::Request::builder()
+                            .method(Method::CONNECT)
+                            .uri(format!(
+                                "{}:{}",
+                                url.host_str().unwrap(),
+                                url.port_or_known_default().unwrap()
+                            ));
+                    *builder
+                        .headers_mut()
+                        .ok_or(ClientError::GetHeaderFromBuilderError)? =
+                        self.proxy_headers.clone();
+                    builder.body(http_body_util::Full::default())?
+                };
                 let res = if self.proxy_http_version == http::Version::HTTP_2 {
                     let mut send_request = stream.handshake_http2().await?;
                     send_request.send_request(req).await?
@@ -555,6 +563,12 @@ impl Client {
         // Apply AWS SigV4 if configured
         if let Some(aws_config) = &self.aws_config {
             aws_config.sign_request(self.method.as_str(), &mut headers, url, bytes)?
+        }
+
+        if use_proxy {
+            for (key, value) in self.proxy_headers.iter() {
+                headers.insert(key, value.clone());
+            }
         }
 
         *builder
@@ -670,14 +684,21 @@ impl Client {
         if let Some(proxy_url) = &self.proxy_url {
             let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
             if url.scheme() == "https" {
-                let req = http::Request::builder()
-                    .method(Method::CONNECT)
-                    .uri(format!(
-                        "{}:{}",
-                        url.host_str().unwrap(),
-                        url.port_or_known_default().unwrap()
-                    ))
-                    .body(http_body_util::Full::default())?;
+                let req = {
+                    let mut builder =
+                        http::Request::builder()
+                            .method(Method::CONNECT)
+                            .uri(format!(
+                                "{}:{}",
+                                url.host_str().unwrap(),
+                                url.port_or_known_default().unwrap()
+                            ));
+                    *builder
+                        .headers_mut()
+                        .ok_or(ClientError::GetHeaderFromBuilderError)? =
+                        self.proxy_headers.clone();
+                    builder.body(http_body_util::Full::default())?
+                };
                 let res = if self.proxy_http_version == http::Version::HTTP_2 {
                     let mut send_request = stream.handshake_http2().await?;
                     send_request.send_request(req).await?

@@ -78,6 +78,7 @@ mod test_db {
             url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
             method: Method::GET,
             headers: HeaderMap::new(),
+            proxy_headers: HeaderMap::new(),
             body: None,
             dns: Dns {
                 resolver: hickory_resolver::AsyncResolver::tokio_from_system_conf().unwrap(),

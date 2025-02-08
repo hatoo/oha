@@ -4,9 +4,12 @@ use clap::Parser;
 use crossterm::tty::IsTty;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
-use hyper::http::{
-    self,
-    header::{HeaderName, HeaderValue},
+use hyper::{
+    http::{
+        self,
+        header::{HeaderName, HeaderValue},
+    },
+    HeaderMap,
 };
 use printer::{PrintConfig, PrintMode};
 use rand_regex::Regex;
@@ -143,6 +146,11 @@ Note: If qps is specified, burst will be ignored",
     method: http::Method,
     #[arg(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H')]
     headers: Vec<String>,
+    #[arg(
+        help = "Custom Proxy HTTP header. Examples: --proxy-header \"foo: bar\"",
+        long = "proxy-header"
+    )]
+    proxy_headers: Vec<String>,
     #[arg(help = "Timeout for each request. Default to infinite.", short = 't')]
     timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
@@ -501,19 +509,20 @@ async fn run() -> anyhow::Result<()> {
         for (k, v) in opts
             .headers
             .into_iter()
-            .map(|s| {
-                let header = s.splitn(2, ':').collect::<Vec<_>>();
-                anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-                let name = HeaderName::from_str(header[0])?;
-                let value = HeaderValue::from_str(header[1].trim_start_matches(' '))?;
-                Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
-            })
+            .map(|s| parse_header(s.as_str()))
             .collect::<anyhow::Result<Vec<_>>>()?
         {
             headers.insert(k, v);
         }
 
         headers
+    };
+
+    let proxy_headers = {
+        opts.proxy_headers
+            .into_iter()
+            .map(|s| parse_header(s.as_str()))
+            .collect::<anyhow::Result<HeaderMap<_>>>()?
     };
 
     let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path) {
@@ -550,6 +559,7 @@ async fn run() -> anyhow::Result<()> {
         url_generator,
         method: opts.method,
         headers,
+        proxy_headers,
         body,
         dns: client::Dns {
             resolver,
@@ -945,4 +955,12 @@ impl Opts {
             }
         }
     }
+}
+
+fn parse_header(s: &str) -> Result<(HeaderName, HeaderValue), anyhow::Error> {
+    let header = s.splitn(2, ':').collect::<Vec<_>>();
+    anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
+    let name = HeaderName::from_str(header[0])?;
+    let value = HeaderValue::from_str(header[1].trim_start_matches(' '))?;
+    Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
 }
