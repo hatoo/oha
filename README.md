@@ -140,6 +140,8 @@ Options:
           HTTP method [default: GET]
   -H <HEADERS>
           Custom HTTP header. Examples: -H "foo: bar"
+      --proxy-header <PROXY_HEADERS>
+          Custom Proxy HTTP header. Examples: --proxy-header "foo: bar"
   -t <TIMEOUT>
           Timeout for each request. Default to infinite.
   -A <ACCEPT_HEADER>
