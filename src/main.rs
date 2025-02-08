@@ -210,6 +210,21 @@ Note: If qps is specified, burst will be ignored",
     ipv6: bool,
     #[arg(help = "Lookup only ipv4.", long = "ipv4")]
     ipv4: bool,
+    #[arg(
+        help = "(TLS) Use the specified certificate file to verify the peer. Native certificate store is used even if this argument is specified.",
+        long
+    )]
+    cacert: Option<PathBuf>,
+    #[arg(
+        help = "(TLS) Use the specified client certificate file. --key must be also specified",
+        long
+    )]
+    cert: Option<PathBuf>,
+    #[arg(
+        help = "(TLS) Use the specified client key file. --cert must be also specified",
+        long
+    )]
+    key: Option<PathBuf>,
     #[arg(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
     #[arg(
@@ -520,6 +535,13 @@ async fn run() -> anyhow::Result<()> {
     let (config, mut resolver_opts) = system_resolv_conf()?;
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
+    let cacert = opts.cacert.as_deref().map(std::fs::read).transpose()?;
+    let client_auth = match (opts.cert, opts.key) {
+        (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
+        (None, None) => None,
+        // TODO: Ensure it on clap
+        _ => anyhow::bail!("Both --cert and --key must be specified"),
+    };
 
     let client = Arc::new(client::Client {
         aws_config,
@@ -542,9 +564,21 @@ async fn run() -> anyhow::Result<()> {
         #[cfg(feature = "vsock")]
         vsock_addr: opts.vsock_addr.map(|v| v.0),
         #[cfg(feature = "rustls")]
-        rustls_configs: tls_config::RuslsConfigs::new(opts.insecure),
+        rustls_configs: tls_config::RuslsConfigs::new(
+            opts.insecure,
+            cacert.as_deref(),
+            client_auth
+                .as_ref()
+                .map(|(cert, key)| (cert.as_slice(), key.as_slice())),
+        ),
         #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-        native_tls_connectors: tls_config::NativeTlsConnectors::new(opts.insecure),
+        native_tls_connectors: tls_config::NativeTlsConnectors::new(
+            opts.insecure,
+            cacert.as_deref(),
+            client_auth
+                .as_ref()
+                .map(|(cert, key)| (cert.as_slice(), key.as_slice())),
+        ),
     });
 
     if !opts.no_pre_lookup {
@@ -595,10 +629,8 @@ async fn run() -> anyhow::Result<()> {
         match work_mode {
             WorkMode::Debug => {
                 let mut print_config = print_config;
-                if let Err(e) = client::work_debug(&mut print_config.output, client).await {
-                    eprintln!("{e}");
-                }
-                std::process::exit(libc::EXIT_SUCCESS)
+                client::work_debug(&mut print_config.output, client).await?;
+                return Ok(());
             }
             WorkMode::FixedNumber {
                 n_requests,

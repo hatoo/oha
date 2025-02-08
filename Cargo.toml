@@ -83,17 +83,21 @@ rlimit = "0.10.1"
 [dev-dependencies]
 assert_cmd = "2.0.14"
 axum = { version = "0.8.1", features = ["http2"] }
+axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
 http-mitm-proxy = "0.12.0"
 jsonschema = "0.28.1"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
-rcgen = "0.13.1"
+# features = ["aws_lc_rs"] is a workaround for mac & native-tls
+# https://github.com/sfackler/rust-native-tls/issues/225
+rcgen = { version = "0.13.1", features = ["aws_lc_rs"] }
 regex = "1.10.5"
+tempfile = "3.10.1"
+rustls = "0.23.18"
 
 [target.'cfg(unix)'.dev-dependencies]
-tempfile = "3.10.1"
 actix-web = "4"
 
 [profile.pgo]
