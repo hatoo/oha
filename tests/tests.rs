@@ -750,41 +750,39 @@ where
     let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(cert), None));
 
     let serve = async move {
-        loop {
-            let (stream, _) = tcp_listener.accept().await.unwrap();
+        let (stream, _) = tcp_listener.accept().await.unwrap();
 
-            let proxy = proxy.clone();
-            let service = service.clone();
+        let proxy = proxy.clone();
+        let service = service.clone();
 
-            let outer = service_fn(move |req| {
-                // Test --proxy-header option
-                assert_eq!(
-                    req.headers()
-                        .get("proxy-authorization")
-                        .unwrap()
-                        .to_str()
-                        .unwrap(),
-                    "test"
-                );
+        let outer = service_fn(move |req| {
+            // Test --proxy-header option
+            assert_eq!(
+                req.headers()
+                    .get("proxy-authorization")
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "test"
+            );
 
-                MitmProxy::wrap_service(proxy.clone(), service.clone()).call(req)
-            });
+            MitmProxy::wrap_service(proxy.clone(), service.clone()).call(req)
+        });
 
-            tokio::spawn(async move {
-                if http2 {
-                    let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
-                        .serve_connection(TokioIo::new(stream), outer)
-                        .await;
-                } else {
-                    let _ = hyper::server::conn::http1::Builder::new()
-                        .preserve_header_case(true)
-                        .title_case_headers(true)
-                        .serve_connection(TokioIo::new(stream), outer)
-                        .with_upgrades()
-                        .await;
-                }
-            });
-        }
+        tokio::spawn(async move {
+            if http2 {
+                let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(stream), outer)
+                    .await;
+            } else {
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .preserve_header_case(true)
+                    .title_case_headers(true)
+                    .serve_connection(TokioIo::new(stream), outer)
+                    .with_upgrades()
+                    .await;
+            }
+        });
     };
 
     (port, serve)
@@ -803,7 +801,7 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
     tokio::spawn(proxy_serve);
 
     let cargo_bin = Command::cargo_bin("oha").unwrap();
-    let mut proc = tokio::process::Command::new(cargo_bin.get_program());
+    let mut proc = std::process::Command::new(cargo_bin.get_program());
     std::mem::drop(cargo_bin);
 
     let scheme = if https { "https" } else { "http" };
@@ -819,16 +817,16 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
     }
 
     // When std::process::Stdio::piped() is used, the wait_with_output() method will hang in Windows.
-    proc.stdin(std::process::Stdio::null())
+    proc.stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit());
-    // So, we test status code only for now.
-    assert!(proc.status().await.unwrap().success());
-    /*
-    let outputs = proc.spawn().unwrap().wait_with_output().await.unwrap();
-    let stdout = String::from_utf8(outputs.stdout).unwrap();
-    assert!(stdout.contains("Hello World"),);
-    */
+    let mut child = proc.spawn().unwrap();
+    assert!(
+        tokio::task::spawn_blocking(move || { child.wait().unwrap() })
+            .await
+            .unwrap()
+            .success()
+    );
 }
 
 #[tokio::test]
