@@ -302,6 +302,62 @@ async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
     count
 }
 
+// Randomly spread 100 requests on two matching --connect-to targets, and return a count for each
+async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i32) {
+    let (tx1, rx1) = flume::unbounded();
+    let (tx2, rx2) = flume::unbounded();
+
+    let app1 = Router::new().route(
+        "/",
+        get(move || async move {
+            tx1.send(()).unwrap();
+            "Success1"
+        }),
+    );
+
+    let app2 = Router::new().route(
+        "/",
+        get(move || async move {
+            tx2.send(()).unwrap();
+            "Success1"
+        }),
+    );
+
+    let (listener1, port1) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener1, app1).await });
+
+    let (listener2, port2) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener2, app2).await });
+
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(["-n", "100", "--no-tui"])
+            .arg(format!("http://{host}/"))
+            .arg("--connect-to")
+            .arg(format!("{host}:80:localhost:{port1}"))
+            .arg("--connect-to")
+            .arg(format!("{host}:80:localhost:{port2}"))
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    let mut count1 = 0;
+    let mut count2 = 0;
+    loop {
+        if let Ok(_) = rx1.try_recv() {
+            count1 += 1;
+        } else if let Ok(_) = rx2.try_recv() {
+            count2 += 1;
+        } else {
+            break;
+        }
+    }
+    (count1, count2)
+}
+
 #[tokio::test]
 async fn test_enable_compression_default() {
     let req = get_req("/", &[]).await;
@@ -594,6 +650,13 @@ async fn test_connect_to() {
         get_host_with_connect_to("invalid.example.org").await,
         "invalid.example.org"
     )
+}
+
+#[tokio::test]
+async fn test_connect_to_randomness() {
+    let (count1, count2) = distribution_on_two_matching_connect_to("invalid.example.org").await;
+    assert!(count1 >= 10 && count2 >= 10); // should not be too flaky with 100 coin tosses
+    assert!(count1 + count2 == 100);
 }
 
 #[tokio::test]
