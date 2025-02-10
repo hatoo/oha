@@ -192,6 +192,7 @@ Options:
           Accept invalid certs.
       --connect-to <CONNECT_TO>
           Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'
+          Note: if used several times for the same host:port:target_host:target_port, a random choice is made
       --disable-color
           Disable the color scheme.
       --unix-socket <UNIX_SOCKET>

@@ -236,7 +236,8 @@ Note: If qps is specified, burst will be ignored",
     #[arg(help = "Accept invalid certs.", long = "insecure")]
     insecure: bool,
     #[arg(
-        help = "Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'",
+        help = "Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'
+Note: if used several times for the same host:port:target_host:target_port, a random choice is made",
         long = "connect-to"
     )]
     connect_to: Vec<ConnectToEntry>,

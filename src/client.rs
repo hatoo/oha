@@ -79,11 +79,14 @@ impl Dns {
             .port_or_known_default()
             .ok_or(ClientError::PortNotFound)?;
 
-        // Try to find an override (passed via `--connect-to`) that applies to this (host, port)
+        // Try to find an override (passed via `--connect-to`) that applies to this (host, port),
+        // choosing one randomly if several match.
         let (host, port) = if let Some(entry) = self
             .connect_to
             .iter()
-            .find(|entry| entry.requested_port == port && entry.requested_host == host)
+            .filter(|entry| entry.requested_port == port && entry.requested_host == host)
+            .collect::<Vec<_>>()
+            .choose(rng)
         {
             (entry.target_host.as_str(), entry.target_port)
         } else {
