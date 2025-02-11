@@ -319,7 +319,7 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
         "/",
         get(move || async move {
             tx2.send(()).unwrap();
-            "Success1"
+            "Success2"
         }),
     );
 
@@ -347,9 +347,9 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
     let mut count1 = 0;
     let mut count2 = 0;
     loop {
-        if let Ok(_) = rx1.try_recv() {
+        if rx1.try_recv().is_ok() {
             count1 += 1;
-        } else if let Ok(_) = rx2.try_recv() {
+        } else if rx2.try_recv().is_ok() {
             count2 += 1;
         } else {
             break;
