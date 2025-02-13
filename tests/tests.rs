@@ -863,33 +863,31 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
 
     tokio::spawn(proxy_serve);
 
-    let cargo_bin = Command::cargo_bin("oha").unwrap();
-    let mut proc = std::process::Command::new(cargo_bin.get_program());
-    std::mem::drop(cargo_bin);
+    let mut args = Vec::new();
 
     let scheme = if https { "https" } else { "http" };
-    proc.args(["--no-tui", "--debug", "--insecure", "-x"])
-        .arg(format!("http://127.0.0.1:{proxy_port}/"))
-        .args(["--proxy-header", "proxy-authorization: test"])
-        .arg(format!("{scheme}://example.com/"));
+    args.extend(
+        ["--no-tui", "--debug", "--insecure", "-x"]
+            .into_iter()
+            .map(|s| s.to_string()),
+    );
+    args.push(format!("http://127.0.0.1:{proxy_port}/"));
+    args.extend(
+        ["--proxy-header", "proxy-authorization: test"]
+            .into_iter()
+            .map(|s| s.to_string()),
+    );
+    args.push(format!("{scheme}://example.com/"));
     if http2 {
-        proc.arg("--http2");
+        args.push("--http2".to_string());
     }
     if proxy_http2 {
-        proc.arg("--proxy-http2");
+        args.push("--proxy-http2".to_string());
     }
 
-    // When std::process::Stdio::piped() is used, the wait_with_output() method will hang in Windows.
-    proc.stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit());
-    let mut child = proc.spawn().unwrap();
-    assert!(
-        tokio::task::spawn_blocking(move || { child.wait().unwrap() })
-            .await
-            .unwrap()
-            .success()
-    );
+    use clap::Parser;
+    let opts = oha::Opts::try_parse_from(args).unwrap();
+    oha::run(opts).await.unwrap();
 }
 
 #[tokio::test]
