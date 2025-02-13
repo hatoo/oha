@@ -4,7 +4,6 @@
 [![Crates.io](https://img.shields.io/crates/v/oha.svg)](https://crates.io/crates/oha)
 [![Arch Linux](https://img.shields.io/archlinux/v/extra/x86_64/oha)](https://archlinux.org/packages/extra/x86_64/oha/)
 [![Homebrew](https://img.shields.io/homebrew/v/oha)](https://formulae.brew.sh/formula/oha)
-[![Gitter](https://img.shields.io/gitter/room/hatoo/oha)](https://gitter.im/hatoo-oha/community#)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/hatoo)
 
@@ -27,6 +26,10 @@ You can optionally build oha against [native-tls](https://github.com/sfackler/ru
 You can enable VSOCK support by enabling `vsock` feature.
 
     cargo install --features vsock oha
+
+## Download pre-built binary
+
+You can download pre-built binary from [Release page](https://github.com/hatoo/oha/releases) for each version and from [Publish workflow](https://github.com/hatoo/oha/actions/workflows/release.yml) and [Publish PGO workflow](https://github.com/hatoo/oha/actions/workflows/release-pgo.yml) for each commit.
 
 ## On Arch Linux
 
