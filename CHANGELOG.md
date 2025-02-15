@@ -1,5 +1,11 @@
 # Unreleased
 
+# 1.8.0 (2025-02-15)
+
+- Support mtls #687 
+- Support Proxy headers #688 
+- Randomize --connect-to if multiple matching options #695 
+
 # 1.7.0 (2025-02-01)
 
 - Impl support for calling AWS APIs with sigv4 #666 
