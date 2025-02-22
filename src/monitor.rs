@@ -1,17 +1,17 @@
 use byte_unit::Byte;
 use crossterm::{
-    event::{Event, KeyCode, KeyEvent, KeyModifiers},
     ExecutableCommand,
+    event::{Event, KeyCode, KeyEvent, KeyModifiers},
 };
 use hyper::http;
 use ratatui::crossterm;
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{BarChart, Block, Borders, Gauge, Paragraph},
-    Terminal,
 };
 use std::{collections::BTreeMap, io};
 

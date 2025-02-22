@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use average::{concatenate, Estimate, Max, Mean, Min};
+use average::{Estimate, Max, Mean, Min, concatenate};
 use hyper::StatusCode;
 
 use crate::{

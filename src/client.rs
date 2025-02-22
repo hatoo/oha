@@ -1,14 +1,14 @@
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::{http, Method};
+use hyper::{Method, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
     borrow::Cow,
     io::Write,
     sync::{
-        atomic::{AtomicBool, Ordering::Relaxed},
         Arc,
+        atomic::{AtomicBool, Ordering::Relaxed},
     },
     time::Instant,
 };
@@ -20,10 +20,10 @@ use tokio::{
 use url::{ParseError, Url};
 
 use crate::{
+    ConnectToEntry,
     aws_auth::AwsSignatureConfig,
     pcg64si::Pcg64Si,
     url_generator::{UrlGenerator, UrlGeneratorError},
-    ConnectToEntry,
 };
 
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
@@ -1868,8 +1868,8 @@ pub mod fast {
 
     use crate::{
         client::{
-            is_cancel_error, is_hyper_error, set_connection_time, setup_http2, ClientError,
-            ClientStateHttp1,
+            ClientError, ClientStateHttp1, is_cancel_error, is_hyper_error, set_connection_time,
+            setup_http2,
         },
         result_data::ResultData,
     };

@@ -103,10 +103,12 @@ mod tests {
         );
         let url = url_generator.generate(&mut rand::rng()).unwrap();
         assert_eq!(url.host(), Some(Host::Ipv4(Ipv4Addr::new(127, 0, 0, 1))));
-        assert!(Regex::new(path_regex)
-            .unwrap()
-            .captures(url.path())
-            .is_some());
+        assert!(
+            Regex::new(path_regex)
+                .unwrap()
+                .captures(url.path())
+                .is_some()
+        );
     }
 
     #[test]

@@ -5,11 +5,11 @@ use crossterm::tty::IsTty;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
 use hyper::{
+    HeaderMap,
     http::{
         self,
         header::{HeaderName, HeaderValue},
     },
-    HeaderMap,
 };
 use printer::{PrintConfig, PrintMode};
 use rand_regex::Regex;
