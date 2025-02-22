@@ -7,14 +7,14 @@ categories = [
     "development-tools::profiling",
 ]
 description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation."
-edition = "2021"
+edition = "2024"
 keywords = ["cli", "load-testing", "performance", "http"]
 license = "MIT"
 name = "oha"
 readme = "README.md"
 repository = "https://github.com/hatoo/oha"
 version = "1.8.0"
-rust-version = "1.77"
+rust-version = "1.85"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

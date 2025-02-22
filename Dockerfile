@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.79
+ARG RUST_VERSION=1.85
 FROM docker.io/library/rust:${RUST_VERSION} AS build
 WORKDIR /app
 COPY . /app

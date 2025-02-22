@@ -1,5 +1,5 @@
 use clap::Parser;
-use oha::{run, Opts};
+use oha::{Opts, run};
 
 fn main() {
     let num_workers_threads = std::env::var("TOKIO_WORKER_THREADS")

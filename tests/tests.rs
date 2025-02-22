@@ -5,18 +5,18 @@ use std::{
     future::Future,
     io::Write,
     net::{Ipv6Addr, SocketAddr},
-    sync::{atomic::AtomicU16, Arc},
+    sync::{Arc, atomic::AtomicU16},
 };
 
 use assert_cmd::Command;
-use axum::{extract::Path, response::Redirect, routing::get, Router};
+use axum::{Router, extract::Path, response::Redirect, routing::get};
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
 use http_mitm_proxy::MitmProxy;
 use hyper::{
     body::{Body, Incoming},
     http,
-    service::{service_fn, HttpService},
+    service::{HttpService, service_fn},
 };
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
@@ -975,7 +975,7 @@ async fn test_json_schema() {
 }
 
 fn setup_mtls_server(
-    dir: &std::path::Path,
+    dir: std::path::PathBuf,
 ) -> (u16, impl Future<Output = Result<(), std::io::Error>>) {
     let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -1041,7 +1041,7 @@ fn setup_mtls_server(
 #[tokio::test]
 async fn test_mtls() {
     let dir = tempfile::tempdir().unwrap();
-    let (port, server) = setup_mtls_server(dir.path());
+    let (port, server) = setup_mtls_server(dir.path().to_path_buf());
 
     tokio::spawn(server);
 

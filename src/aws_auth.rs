@@ -3,8 +3,8 @@ use anyhow::Result;
 
 use bytes::Bytes;
 use hyper::{
-    header::{self, HeaderName},
     HeaderMap,
+    header::{self, HeaderName},
 };
 use url::Url;
 
