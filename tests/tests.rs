@@ -974,7 +974,7 @@ async fn test_json_schema() {
     }
 }
 
-fn setup_mtls_server<'a>(
+fn setup_mtls_server(
     dir: std::path::PathBuf,
 ) -> (u16, impl Future<Output = Result<(), std::io::Error>>) {
     let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
