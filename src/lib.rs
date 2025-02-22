@@ -621,18 +621,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         }
     };
 
-    // When panics, reset terminal mode and exit immediately.
-    std::panic::set_hook(Box::new(move |info| {
-        if !no_tui {
-            use crossterm::ExecutableCommand;
-            let _ = std::io::stdout().execute(crossterm::terminal::LeaveAlternateScreen);
-            let _ = crossterm::terminal::disable_raw_mode();
-            let _ = std::io::stdout().execute(crossterm::cursor::Show);
-        }
-        eprintln!("{info}");
-        std::process::exit(libc::EXIT_FAILURE);
-    }));
-
     let start = std::time::Instant::now();
 
     let data_collect_future: Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>> =
