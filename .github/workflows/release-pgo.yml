@@ -42,11 +42,11 @@ jobs:
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.target, 'musl')
-      - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
           components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-pgo --version 0.2.8
       - uses: oven-sh/setup-bun@v2
       - run: bun run pgo.js --target ${{ matrix.target }} ${{ matrix.additional_args }}

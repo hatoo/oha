@@ -53,7 +53,6 @@ jobs:
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.target, 'musl')
-      - uses: Swatinem/rust-cache@v2
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -63,6 +62,7 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cross
+      - uses: Swatinem/rust-cache@v2
       - name: Overwrite build command env variable
         if: matrix.use_cross
         shell: bash
