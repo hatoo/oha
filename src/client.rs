@@ -327,7 +327,10 @@ impl Client {
 
     pub fn is_work_http2(&self) -> bool {
         if self.proxy_url.is_some() {
-            let url = self.url_generator.generate(&mut rand::rng()).unwrap();
+            let url = self
+                .url_generator
+                .generate(&mut Pcg64Si::from_seed([0, 0, 0, 0, 0, 0, 0, 0]))
+                .unwrap();
             if url.scheme() == "https" {
                 self.is_http2()
             } else {
