@@ -214,15 +214,6 @@ struct ClientStateHttp2 {
     send_request: SendRequestHttp2,
 }
 
-impl Clone for ClientStateHttp2 {
-    fn clone(&self) -> Self {
-        Self {
-            rng: SeedableRng::from_os_rng(),
-            send_request: self.send_request.clone(),
-        }
-    }
-}
-
 pub enum QueryLimit {
     Qps(usize),
     Burst(std::time::Duration, usize),
@@ -883,14 +874,13 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
         .unwrap_or(false)
 }
 
-async fn setup_http2(client: &Client) -> Result<(ConnectionTime, ClientStateHttp2), ClientError> {
-    let mut rng = SeedableRng::from_os_rng();
+async fn setup_http2(client: &Client) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
+    // Whatever rng state, all urls should have the same authority
+    let mut rng: Pcg64Si = SeedableRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0]);
     let url = client.url_generator.generate(&mut rng)?;
     let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
 
-    let client_state = ClientStateHttp2 { rng, send_request };
-
-    Ok((connection_time, client_state))
+    Ok((connection_time, send_request))
 }
 
 async fn work_http2_once(
@@ -974,14 +964,17 @@ pub async fn work(
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
-                            Ok((connection_time, client_state)) => {
+                            Ok((connection_time, send_request)) => {
                                 let futures = (0..n_http2_parallel)
                                     .map(|_| {
                                         let report_tx = report_tx.clone();
                                         let counter = counter.clone();
                                         let client = client.clone();
 
-                                        let mut client_state = client_state.clone();
+                                        let mut client_state = ClientStateHttp2 {
+                                            rng: SeedableRng::from_os_rng(),
+                                            send_request: send_request.clone(),
+                                        };
                                         tokio::spawn(async move {
                                             while counter.fetch_add(1, Ordering::Relaxed) < n_tasks
                                             {
@@ -1119,13 +1112,16 @@ pub async fn work_with_qps(
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
-                            Ok((connection_time, client_state)) => {
+                            Ok((connection_time, send_request)) => {
                                 let futures = (0..n_http2_parallel)
                                     .map(|_| {
                                         let report_tx = report_tx.clone();
                                         let rx = rx.clone();
                                         let client = client.clone();
-                                        let mut client_state = client_state.clone();
+                                        let mut client_state = ClientStateHttp2 {
+                                            rng: SeedableRng::from_os_rng(),
+                                            send_request: send_request.clone(),
+                                        };
                                         tokio::spawn(async move {
                                             while let Ok(()) = rx.recv_async().await {
                                                 let (is_cancel, is_reconnect) = work_http2_once(
@@ -1267,13 +1263,16 @@ pub async fn work_with_qps_latency_correction(
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
-                            Ok((connection_time, client_state)) => {
+                            Ok((connection_time, send_request)) => {
                                 let futures = (0..n_http2_parallel)
                                     .map(|_| {
                                         let report_tx = report_tx.clone();
                                         let rx = rx.clone();
                                         let client = client.clone();
-                                        let mut client_state = client_state.clone();
+                                        let mut client_state = ClientStateHttp2 {
+                                            rng: SeedableRng::from_os_rng(),
+                                            send_request: send_request.clone(),
+                                        };
                                         tokio::spawn(async move {
                                             while let Ok(start) = rx.recv_async().await {
                                                 let (is_cancel, is_reconnect) = work_http2_once(
@@ -1381,13 +1380,16 @@ pub async fn work_until(
                     // Keep trying to establish or re-establish connections up to the deadline
                     loop {
                         match setup_http2(&client).await {
-                            Ok((connection_time, client_state)) => {
+                            Ok((connection_time, send_request)) => {
                                 // Setup the parallel workers for each HTTP2 connection
                                 let futures = (0..n_http2_parallel)
                                     .map(|_| {
                                         let client = client.clone();
                                         let report_tx = report_tx.clone();
-                                        let mut client_state = client_state.clone();
+                                        let mut client_state = ClientStateHttp2 {
+                                            rng: SeedableRng::from_os_rng(),
+                                            send_request: send_request.clone(),
+                                        };
                                         let s = s.clone();
                                         tokio::spawn(async move {
                                             // This is where HTTP2 loops to make all the requests for a given client and worker
@@ -1559,13 +1561,16 @@ pub async fn work_until_with_qps(
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
-                            Ok((connection_time, client_state)) => {
+                            Ok((connection_time, send_request)) => {
                                 let futures = (0..n_http2_parallel)
                                     .map(|_| {
                                         let client = client.clone();
                                         let report_tx = report_tx.clone();
                                         let rx = rx.clone();
-                                        let mut client_state = client_state.clone();
+                                        let mut client_state = ClientStateHttp2 {
+                                            rng: SeedableRng::from_os_rng(),
+                                            send_request: send_request.clone(),
+                                        };
                                         let s = s.clone();
                                         tokio::spawn(async move {
                                             while let Ok(()) = rx.recv_async().await {
@@ -1741,13 +1746,16 @@ pub async fn work_until_with_qps_latency_correction(
                 tokio::spawn(async move {
                     loop {
                         match setup_http2(&client).await {
-                            Ok((connection_time, client_state)) => {
+                            Ok((connection_time, send_request)) => {
                                 let futures = (0..n_http2_parallel)
                                     .map(|_| {
                                         let client = client.clone();
                                         let report_tx = report_tx.clone();
                                         let rx = rx.clone();
-                                        let mut client_state = client_state.clone();
+                                        let mut client_state = ClientStateHttp2 {
+                                            rng: SeedableRng::from_os_rng(),
+                                            send_request: send_request.clone(),
+                                        };
                                         let s = s.clone();
                                         tokio::spawn(async move {
                                             while let Ok(start) = rx.recv_async().await {
@@ -1866,10 +1874,12 @@ pub async fn work_until_with_qps_latency_correction(
 pub mod fast {
     use std::sync::Arc;
 
+    use rand::SeedableRng;
+
     use crate::{
         client::{
-            ClientError, ClientStateHttp1, is_cancel_error, is_hyper_error, set_connection_time,
-            setup_http2,
+            ClientError, ClientStateHttp1, ClientStateHttp2, is_cancel_error, is_hyper_error,
+            set_connection_time, setup_http2,
         },
         result_data::ResultData,
     };
@@ -1928,10 +1938,13 @@ pub mod fast {
                                 loop {
                                     let client = client.clone();
                                     match setup_http2(&client).await {
-                                        Ok((connection_time, client_state)) => {
+                                        Ok((connection_time, send_request)) => {
                                             let futures = (0..n_http2_parallel)
                                                 .map(|_| {
-                                                    let mut client_state = client_state.clone();
+                                                    let mut client_state = ClientStateHttp2 {
+                                                        rng: SeedableRng::from_os_rng(),
+                                                        send_request: send_request.clone(),
+                                                    };
                                                     let counter = counter.clone();
                                                     let client = client.clone();
                                                     let report_tx = report_tx.clone();
@@ -2130,10 +2143,13 @@ pub mod fast {
                             loop {
                                 let client = client.clone();
                                 match setup_http2(&client).await {
-                                    Ok((connection_time, client_state)) => {
+                                    Ok((connection_time, send_request)) => {
                                         let futures = (0..n_http2_parallel)
                                             .map(|_| {
-                                                let mut client_state = client_state.clone();
+                                                let mut client_state = ClientStateHttp2 {
+                                                    rng: SeedableRng::from_os_rng(),
+                                                    send_request: send_request.clone(),
+                                                };
                                                 let client = client.clone();
                                                 let report_tx = report_tx.clone();
                                                 let token = token.clone();
