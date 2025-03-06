@@ -52,10 +52,7 @@ pub fn store(
 
 #[cfg(test)]
 mod test_db {
-    use hyper::{HeaderMap, Method, Version};
     use rand::SeedableRng;
-
-    use crate::{client::Dns, url_generator::UrlGenerator};
 
     use super::*;
 
@@ -72,32 +69,7 @@ mod test_db {
             end: std::time::Instant::now(),
         };
         let test_vec = vec![test_val.clone(), test_val.clone()];
-        let client = Client {
-            http_version: Version::HTTP_11,
-            proxy_http_version: Version::HTTP_11,
-            url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
-            method: Method::GET,
-            headers: HeaderMap::new(),
-            proxy_headers: HeaderMap::new(),
-            body: None,
-            dns: Dns {
-                resolver: hickory_resolver::AsyncResolver::tokio_from_system_conf().unwrap(),
-                connect_to: Vec::new(),
-            },
-            timeout: None,
-            redirect_limit: 0,
-            disable_keepalive: false,
-            proxy_url: None,
-            aws_config: None,
-            #[cfg(unix)]
-            unix_socket: None,
-            #[cfg(feature = "vsock")]
-            vsock_addr: None,
-            #[cfg(feature = "rustls")]
-            rustls_configs: crate::tls_config::RuslsConfigs::new(false, None, None),
-            #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
-            native_tls_connectors: crate::tls_config::NativeTlsConnectors::new(false, None, None),
-        };
+        let client = Client::default();
         let result = store(&client, ":memory:", start, &test_vec);
         assert_eq!(result.unwrap(), 2);
     }
