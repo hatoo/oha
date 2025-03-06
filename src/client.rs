@@ -612,9 +612,9 @@ impl Client {
                     let (parts, mut stream) = res.into_parts();
                     let mut status = parts.status;
 
-                    let mut len_sum = 0;
+                    let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
-                        len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
+                        len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
                     if self.redirect_limit != 0 {
@@ -631,7 +631,7 @@ impl Client {
 
                             send_request = send_request_redirect;
                             status = new_status;
-                            len_sum = len;
+                            len_bytes = len;
                         }
                     }
 
@@ -643,7 +643,7 @@ impl Client {
                         start,
                         end,
                         status,
-                        len_bytes: len_sum,
+                        len_bytes,
                         connection_time,
                     };
 
@@ -744,9 +744,9 @@ impl Client {
                     let (parts, mut stream) = res.into_parts();
                     let status = parts.status;
 
-                    let mut len_sum = 0;
+                    let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
-                        len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
+                        len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
                     let end = std::time::Instant::now();
@@ -757,7 +757,7 @@ impl Client {
                         start,
                         end,
                         status,
-                        len_bytes: len_sum,
+                        len_bytes,
                         connection_time,
                     };
 
@@ -826,9 +826,9 @@ impl Client {
         let (parts, mut stream) = res.into_parts();
         let mut status = parts.status;
 
-        let mut len_sum = 0;
+        let mut len_bytes = 0;
         while let Some(chunk) = stream.frame().await {
-            len_sum += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
+            len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
         }
 
         if let Some(location) = parts.headers.get("Location") {
@@ -836,13 +836,13 @@ impl Client {
                 Box::pin(self.redirect(send_request, &url, location, limit - 1, rng)).await?;
             send_request = send_request_redirect;
             status = new_status;
-            len_sum = len;
+            len_bytes = len;
         }
 
         if let Some(send_request_base) = send_request_base {
-            Ok((send_request_base, status, len_sum))
+            Ok((send_request_base, status, len_bytes))
         } else {
-            Ok((send_request, status, len_sum))
+            Ok((send_request, status, len_bytes))
         }
     }
 }
