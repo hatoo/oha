@@ -3,6 +3,7 @@ use rand::{RngCore, SeedableRng};
 use rand_core::impls;
 
 #[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
 pub struct Pcg64Si {
     state: u64,
 }
