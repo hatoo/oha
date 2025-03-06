@@ -195,6 +195,37 @@ pub struct Client {
     pub native_tls_connectors: crate::tls_config::NativeTlsConnectors,
 }
 
+impl Default for Client {
+    fn default() -> Self {
+        Self {
+            http_version: http::Version::HTTP_11,
+            proxy_http_version: http::Version::HTTP_11,
+            url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
+            method: http::Method::GET,
+            headers: http::header::HeaderMap::new(),
+            proxy_headers: http::header::HeaderMap::new(),
+            body: None,
+            dns: Dns {
+                resolver: hickory_resolver::AsyncResolver::tokio_from_system_conf().unwrap(),
+                connect_to: Vec::new(),
+            },
+            timeout: None,
+            redirect_limit: 0,
+            disable_keepalive: false,
+            proxy_url: None,
+            aws_config: None,
+            #[cfg(unix)]
+            unix_socket: None,
+            #[cfg(feature = "vsock")]
+            vsock_addr: None,
+            #[cfg(feature = "rustls")]
+            rustls_configs: crate::tls_config::RuslsConfigs::new(false, None, None),
+            #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
+            native_tls_connectors: crate::tls_config::NativeTlsConnectors::new(false, None, None),
+        }
+    }
+}
+
 struct ClientStateHttp1 {
     rng: Pcg64Si,
     send_request: Option<SendRequestHttp1>,
