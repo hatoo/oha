@@ -30,7 +30,7 @@ rustls = [
 vsock = ["dep:tokio-vsock"]
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.97"
 average = "0.15.1"
 byte-unit = "5.1.4"
 clap = { version = "4.5.9", features = ["derive"] }
