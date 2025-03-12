@@ -257,7 +257,8 @@ enum Stream {
     #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
     Tls(tokio_native_tls::TlsStream<TcpStream>),
     #[cfg(feature = "rustls")]
-    Tls(tokio_rustls::client::TlsStream<TcpStream>),
+    // Box for large variant
+    Tls(Box<tokio_rustls::client::TlsStream<TcpStream>>),
     #[cfg(unix)]
     Unix(tokio::net::UnixStream),
     #[cfg(feature = "vsock")]
@@ -500,7 +501,7 @@ impl Client {
         stream: S,
         url: &Url,
         is_http2: bool,
-    ) -> Result<tokio_rustls::client::TlsStream<S>, ClientError>
+    ) -> Result<Box<tokio_rustls::client::TlsStream<S>>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
@@ -511,7 +512,7 @@ impl Client {
         )?;
         let stream = connector.connect(domain.to_owned(), stream).await?;
 
-        Ok(stream)
+        Ok(Box::new(stream))
     }
 
     async fn client_http1<R: Rng>(
