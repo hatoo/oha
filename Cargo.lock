@@ -1617,9 +1617,9 @@ dependencies = [
 
 [[package]]
 name = "http-mitm-proxy"
-version = "0.12.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "795c28b539ba545835484fcac4ff8489aaffc2c5ed5ae4d759c4affd90af1084"
+checksum = "fe7913b4b5a2d962c0594c17742052fefe0047c8179de687a64dff3995090207"
 dependencies = [
  "bytes",
  "futures",
@@ -1627,12 +1627,9 @@ dependencies = [
  "hyper",
  "hyper-util",
  "moka",
- "native-tls",
  "rcgen",
- "rustls",
  "thiserror 2.0.12",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls",
  "tracing",
 ]
