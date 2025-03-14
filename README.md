@@ -47,8 +47,8 @@ You can download pre-built binary from [Release page](https://github.com/hatoo/o
 
     echo "deb [signed-by=/usr/share/keyrings/azlux-archive-keyring.gpg] http://packages.azlux.fr/debian/ stable main" | sudo tee /etc/apt/sources.list.d/azlux.list
     sudo wget -O /usr/share/keyrings/azlux-archive-keyring.gpg https://azlux.fr/repo.gpg
-    apt update
-    apt install oha
+    sudo apt update
+    sudo apt install oha
 
 ## X-CMD (Linux, macOS, Windows WSL/GitBash)
 
