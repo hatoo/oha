@@ -38,7 +38,7 @@ async fn bind_port_ipv6() -> (tokio::net::TcpListener, u16) {
 }
 
 async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let (listener, port) = bind_port().await;
 
@@ -95,11 +95,11 @@ async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap()
+    rx.try_recv().unwrap().unwrap()
 }
 
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let (listener, port) = bind_port().await;
 
@@ -131,11 +131,11 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     .await
     .unwrap();
 
-    rx.try_recv().is_ok()
+    rx.try_recv().unwrap().is_some()
 }
 
 async fn get_host_with_connect_to(host: &'static str) -> String {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let app = Router::new().route(
         "/",
@@ -162,11 +162,11 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap()
+    rx.try_recv().unwrap().unwrap()
 }
 
 async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
     let app = Router::new().route(
         "/",
         get(|header: HeaderMap| async move {
@@ -192,11 +192,11 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap()
+    rx.try_recv().unwrap().unwrap()
 }
 
 async fn get_host_with_connect_to_ipv6_requested() -> String {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
     let app = Router::new().route(
         "/",
         get(|header: HeaderMap| async move {
@@ -222,11 +222,11 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap()
+    rx.try_recv().unwrap().unwrap()
 }
 
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let app = Router::new()
         .route(
@@ -257,11 +257,11 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap()
+    rx.try_recv().unwrap().unwrap()
 }
 
 async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let app = Router::new().route(
         "/",
@@ -296,7 +296,7 @@ async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
     .unwrap();
 
     let mut count = 0;
-    while let Ok(()) = rx.try_recv() {
+    while let Ok(Some(())) = rx.try_recv() {
         count += 1;
     }
     count
@@ -304,8 +304,8 @@ async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
 
 // Randomly spread 100 requests on two matching --connect-to targets, and return a count for each
 async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i32) {
-    let (tx1, rx1) = flume::unbounded();
-    let (tx2, rx2) = flume::unbounded();
+    let (tx1, rx1) = kanal::unbounded();
+    let (tx2, rx2) = kanal::unbounded();
 
     let app1 = Router::new().route(
         "/",
@@ -347,9 +347,9 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
     let mut count1 = 0;
     let mut count2 = 0;
     loop {
-        if rx1.try_recv().is_ok() {
+        if rx1.try_recv().unwrap().is_some() {
             count1 += 1;
-        } else if rx2.try_recv().is_ok() {
+        } else if rx2.try_recv().unwrap().is_some() {
             count2 += 1;
         } else {
             break;
@@ -682,7 +682,7 @@ async fn test_connect_to_redirect() {
 
 #[tokio::test]
 async fn test_ipv6() {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let app = Router::new().route(
         "/",
@@ -706,7 +706,7 @@ async fn test_ipv6() {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap();
+    rx.try_recv().unwrap().unwrap();
 }
 
 #[tokio::test]
@@ -731,7 +731,7 @@ async fn test_http2() {
 #[cfg(unix)]
 #[tokio::test]
 async fn test_unix_socket() {
-    let (tx, rx) = flume::unbounded();
+    let (tx, rx) = kanal::unbounded();
 
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("socket");
@@ -772,7 +772,7 @@ async fn test_unix_socket() {
     .await
     .unwrap();
 
-    rx.try_recv().unwrap();
+    rx.try_recv().unwrap().unwrap();
 }
 
 fn make_root_cert() -> rcgen::CertifiedKey {
