@@ -51,7 +51,7 @@ pub struct Monitor {
     pub print_config: PrintConfig,
     pub end_line: EndLine,
     /// All workers sends each result to this channel
-    pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
+    pub report_receiver: kanal::Receiver<Result<RequestResult, ClientError>>,
     // When started
     pub start: std::time::Instant,
     // Frame per second of TUI
@@ -100,7 +100,16 @@ impl Monitor {
             let frame_start = std::time::Instant::now();
             let is_disconnected = self.report_receiver.is_disconnected();
 
+            // TODO
+            /*
             for report in self.report_receiver.drain() {
+                if let Ok(report) = report.as_ref() {
+                    *status_dist.entry(report.status).or_default() += 1;
+                }
+                all.push(report);
+            }
+            */
+            while let Ok(Some(report)) = self.report_receiver.try_recv() {
                 if let Ok(report) = report.as_ref() {
                     *status_dist.entry(report.status).or_default() += 1;
                 }

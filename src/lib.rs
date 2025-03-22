@@ -638,7 +638,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                 latency_correction: _,
             } if no_tui => {
                 // Use optimized worker of no_tui mode.
-                let (result_tx, result_rx) = flume::unbounded();
+                let (result_tx, result_rx) = kanal::unbounded();
 
                 client::fast::work(
                     client.clone(),
@@ -651,7 +651,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
                 Box::pin(async move {
                     let mut res = ResultData::default();
-                    while let Ok(r) = result_rx.recv() {
+                    for r in result_rx {
                         res.merge(r);
                     }
                     (res, print_config)
@@ -666,7 +666,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                 wait_ongoing_requests_after_deadline,
             } if no_tui => {
                 // Use optimized worker of no_tui mode.
-                let (result_tx, result_rx) = flume::unbounded();
+                let (result_tx, result_rx) = kanal::unbounded();
 
                 client::fast::work_until(
                     client.clone(),
@@ -680,14 +680,14 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
                 Box::pin(async move {
                     let mut res = ResultData::default();
-                    while let Ok(r) = result_rx.recv() {
+                    for r in result_rx {
                         res.merge(r);
                     }
                     (res, print_config)
                 })
             }
             mode => {
-                let (result_tx, result_rx) = flume::unbounded();
+                let (result_tx, result_rx) = kanal::unbounded();
                 let data_collector = if no_tui {
                     // When `--no-tui` is enabled, just collect all data.
 
@@ -698,8 +698,14 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                         tokio::select! {
                             _ = tokio::signal::ctrl_c() => {
                                 let mut all: ResultData = Default::default();
+                                // TODO
+                                /*
                                 for report in result_rx_ctrl_c.drain() {
                                     all.push(report);
+                                }
+                                */
+                                while let Ok(Some(res)) = result_rx_ctrl_c.try_recv() {
+                                    all.push(res);
                                 }
                                 let _ = printer::print_result(print_config, start, &all, start.elapsed());
                                 std::process::exit(libc::EXIT_SUCCESS);
