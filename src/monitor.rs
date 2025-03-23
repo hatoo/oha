@@ -96,20 +96,13 @@ impl Monitor {
             colors.set_colors();
         }
 
+        let mut buf = Vec::new();
         loop {
             let frame_start = std::time::Instant::now();
             let is_disconnected = self.report_receiver.is_disconnected();
 
-            // TODO
-            /*
-            for report in self.report_receiver.drain() {
-                if let Ok(report) = report.as_ref() {
-                    *status_dist.entry(report.status).or_default() += 1;
-                }
-                all.push(report);
-            }
-            */
-            while let Ok(Some(report)) = self.report_receiver.try_recv() {
+            let _ = self.report_receiver.drain_into(&mut buf);
+            for report in buf.drain(..) {
                 if let Ok(report) = report.as_ref() {
                     *status_dist.entry(report.status).or_default() += 1;
                 }

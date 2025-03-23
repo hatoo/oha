@@ -698,13 +698,9 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                         tokio::select! {
                             _ = tokio::signal::ctrl_c() => {
                                 let mut all: ResultData = Default::default();
-                                // TODO
-                                /*
-                                for report in result_rx_ctrl_c.drain() {
-                                    all.push(report);
-                                }
-                                */
-                                while let Ok(Some(res)) = result_rx_ctrl_c.try_recv() {
+                                let mut buf = Vec::new();
+                                let _ = result_rx_ctrl_c.drain_into(&mut buf);
+                                for res in buf {
                                     all.push(res);
                                 }
                                 let _ = printer::print_result(print_config, start, &all, start.elapsed());
