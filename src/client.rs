@@ -246,7 +246,7 @@ struct ClientStateHttp2 {
 }
 
 pub enum QueryLimit {
-    Qps(usize),
+    Qps(f64),
     Burst(std::time::Duration, usize),
 }
 
@@ -1108,7 +1108,7 @@ pub async fn work_with_qps(
                 let start = std::time::Instant::now();
                 for i in 0..n_tasks {
                     tokio::time::sleep_until(
-                        (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
                     tx.send(())?;
@@ -1256,7 +1256,7 @@ pub async fn work_with_qps_latency_correction(
                 let start = std::time::Instant::now();
                 for i in 0..n_tasks {
                     tokio::time::sleep_until(
-                        (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
                     tx.send(std::time::Instant::now())?;
@@ -1555,7 +1555,7 @@ pub async fn work_until_with_qps(
                         break;
                     }
                     tokio::time::sleep_until(
-                        (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
                     let _ = tx.send(());
@@ -1738,7 +1738,7 @@ pub async fn work_until_with_qps_latency_correction(
             tokio::spawn(async move {
                 for i in 0.. {
                     tokio::time::sleep_until(
-                        (start + i as u32 * std::time::Duration::from_secs(1) / qps as u32).into(),
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
                     let now = std::time::Instant::now();

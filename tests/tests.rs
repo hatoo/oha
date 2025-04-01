@@ -260,7 +260,7 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     rx.try_recv().unwrap()
 }
 
-async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
+async fn test_request_count(args: &[&str]) -> usize {
     let (tx, rx) = flume::unbounded();
 
     let app = Router::new().route(
@@ -278,15 +278,7 @@ async fn burst_10_req_delay_2s_rate_4(iteration: u8, args: &[&str]) -> usize {
     tokio::task::spawn_blocking(move || {
         Command::cargo_bin("oha")
             .unwrap()
-            .args([
-                "-n",
-                iteration.to_string().as_str(),
-                "--no-tui",
-                "--burst-delay",
-                "2s",
-                "--burst-rate",
-                "4",
-            ])
+            .args(["--no-tui"])
             .args(args)
             .arg(format!("http://127.0.0.1:{port}"))
             .assert()
@@ -711,8 +703,17 @@ async fn test_ipv6() {
 
 #[tokio::test]
 async fn test_query_limit() {
-    assert_eq!(burst_10_req_delay_2s_rate_4(10, &[],).await, 10);
-    assert_eq!(burst_10_req_delay_2s_rate_4(10, &["--http2"],).await, 10);
+    // burst 10 requests with delay of 2s and rate of 4
+    let mut args = vec!["-n", "10", "--burst-delay", "2s", "--burst-rate", "4"];
+    assert_eq!(test_request_count(args.as_slice()).await, 10);
+    args.push("--http2");
+    assert_eq!(test_request_count(args.as_slice()).await, 10);
+}
+
+#[tokio::test]
+async fn test_query_limit_with_time_limit() {
+    // 1.75 qps for 2sec = expect 4 requests at times 0, 0.571, 1.142, 1,714sec
+    assert_eq!(test_request_count(&["-z", "2s", "-q", "1.75"]).await, 4);
 }
 
 #[tokio::test]

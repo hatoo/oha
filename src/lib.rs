@@ -87,7 +87,7 @@ Examples: -z 10s -z 3m.",
     )]
     wait_ongoing_requests_after_deadline: bool,
     #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
-    query_per_second: Option<usize>,
+    query_per_second: Option<f64>,
     #[arg(
         help = "Introduce delay between a predefined number of requests.
 Note: If qps is specified, burst will be ignored",
@@ -895,7 +895,7 @@ impl Opts {
                 n_connections: self.n_connections,
                 n_http2_parallel: self.n_http2_parallel,
                 query_limit: match self.query_per_second {
-                    Some(0) | None => self.burst_duration.map(|burst_duration| {
+                    Some(0f64) | None => self.burst_duration.map(|burst_duration| {
                         client::QueryLimit::Burst(
                             burst_duration.into(),
                             self.burst_requests.unwrap_or(1),
@@ -912,7 +912,7 @@ impl Opts {
                 n_connections: self.n_connections,
                 n_http2_parallel: self.n_http2_parallel,
                 query_limit: match self.query_per_second {
-                    Some(0) | None => self.burst_duration.map(|burst_duration| {
+                    Some(0f64) | None => self.burst_duration.map(|burst_duration| {
                         client::QueryLimit::Burst(
                             burst_duration.into(),
                             self.burst_requests.unwrap_or(1),
