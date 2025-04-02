@@ -95,10 +95,12 @@ impl StyleScheme {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum)]
 pub enum PrintMode {
+    #[default]
     Text,
     Json,
+    Csv,
 }
 
 pub struct PrintConfig {
@@ -129,6 +131,7 @@ pub fn print_result(
             total_duration,
             config.stats_success_breakdown,
         )?,
+        PrintMode::Csv => print_csv(&mut config.output, start, res)?,
     }
     Ok(())
 }
@@ -371,6 +374,38 @@ fn print_json<W: Write>(
             error_distribution: res.error_distribution().clone(),
         },
     )
+}
+
+fn print_csv<W: Write>(w: &mut W, start: Instant, res: &ResultData) -> std::io::Result<()> {
+    // csv header
+    writeln!(
+        w,
+        "request-start,DNS,DNS+dialup,request-duration,bytes,status"
+    )?;
+
+    let mut success_requests = res.success().to_vec();
+    success_requests.sort_by_key(|r| r.start);
+
+    for request in success_requests {
+        let dns_and_dialup = match request.connection_time {
+            Some(connection_time) => (
+                connection_time.dns_lookup - request.start,
+                connection_time.dialup - request.start,
+            ),
+            None => (std::time::Duration::ZERO, std::time::Duration::ZERO),
+        };
+        writeln!(
+            w,
+            "{},{},{},{},{},{}",
+            (request.start - start).as_secs_f64(),
+            dns_and_dialup.0.as_secs_f64(),
+            dns_and_dialup.1.as_secs_f64(),
+            request.duration().as_secs_f64(),
+            request.len_bytes,
+            request.status.as_u16(),
+        )?;
+    }
+    Ok(())
 }
 
 /// Print all summary as Text

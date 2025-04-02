@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
-    "description": "JSON schema for the output of the `oha -j`",
+    "description": "JSON schema for the output of the `oha --output-format json`",
     "type": "object",
     "properties": {
         "summary": {

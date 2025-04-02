@@ -135,8 +135,6 @@ Options:
           Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.
       --no-tui
           No realtime tui
-  -j, --json
-          Print results as JSON
       --fps <FPS>
           Frame per second for tui. [default: 16]
   -m, --method <METHOD>
@@ -208,6 +206,8 @@ Options:
           Perform a single request and dump the request and response
   -o, --output <OUTPUT>
           Output file to write the results to. If not specified, results are written to stdout.
+      --output-format <OUTPUT_FORMAT>
+          Output format, either 'text', 'json' or 'csv'. [default 'text']
   -h, --help
           Print help
   -V, --version
@@ -218,10 +218,14 @@ Options:
 
 `oha` uses faster implementation when `--no-tui` option is set and both `-q` and `--burst-delay` are not set because it can avoid overhead to gather data realtime.
 
-# JSON output
+# Output
 
-`oha` prints JSON output when `-j` option is set.
+By default `oha` outputs a text summary of the results.
+
+`oha` prints JSON summary output when `--output-format json` option is set.
 The schema of JSON output is defined in [schema.json](./schema.json).
+
+When `--output-format csv` is used result of each request is printed as a line of comma separated values.
 
 # Tips
 
