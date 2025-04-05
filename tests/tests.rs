@@ -589,7 +589,7 @@ async fn test_query() {
             .uri()
             .to_string()
             .split('/')
-            .last()
+            .next_back()
             .unwrap(),
         "index?a=b&c=d".to_string()
     );
@@ -614,7 +614,7 @@ async fn test_query_rand_regex() {
         .uri()
         .to_string()
         .split('/')
-        .last()
+        .next_back()
         .unwrap()
         .chars()
         .collect::<Vec<char>>();
