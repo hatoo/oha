@@ -51,7 +51,7 @@ pub struct Monitor {
     pub print_config: PrintConfig,
     pub end_line: EndLine,
     /// All workers sends each result to this channel
-    pub report_receiver: flume::Receiver<Result<RequestResult, ClientError>>,
+    pub report_receiver: kanal::Receiver<Result<RequestResult, ClientError>>,
     // When started
     pub start: std::time::Instant,
     // Frame per second of TUI
@@ -96,11 +96,13 @@ impl Monitor {
             colors.set_colors();
         }
 
+        let mut buf = Vec::new();
         loop {
             let frame_start = std::time::Instant::now();
             let is_disconnected = self.report_receiver.is_disconnected();
 
-            for report in self.report_receiver.drain() {
+            let _ = self.report_receiver.drain_into(&mut buf);
+            for report in buf.drain(..) {
                 if let Ok(report) = report.as_ref() {
                     *status_dist.entry(report.status).or_default() += 1;
                 }
