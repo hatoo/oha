@@ -133,8 +133,6 @@ Note: If qps is specified, burst will be ignored",
     latency_correction: bool,
     #[arg(help = "No realtime tui", long = "no-tui")]
     no_tui: bool,
-    #[arg(help = "Print results as JSON", short, long)]
-    json: bool,
     #[arg(help = "Frame per second for tui.", default_value = "16", long = "fps")]
     fps: usize,
     #[arg(
@@ -278,6 +276,8 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         short
     )]
     output: Option<PathBuf>,
+    #[arg(help = "Output format", long, default_value = "text")]
+    output_format: Option<PrintMode>,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -598,11 +598,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let no_tui = opts.no_tui || !std::io::stdout().is_tty() || opts.debug;
 
     let print_config = {
-        let mode = if opts.json {
-            PrintMode::Json
-        } else {
-            PrintMode::Text
-        };
+        let mode = opts.output_format.unwrap_or_default();
 
         let disable_style =
             opts.disable_color || !std::io::stdout().is_tty() || opts.output.is_some();
