@@ -66,6 +66,7 @@ mod test_db {
             start_latency_correction: None,
             start: std::time::Instant::now(),
             connection_time: None,
+            first_byte: None,
             end: std::time::Instant::now(),
         };
         let test_vec = vec![test_val.clone(), test_val.clone()];

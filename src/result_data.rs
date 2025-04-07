@@ -198,6 +198,7 @@ mod tests {
         request_time: u64,
         connection_time_dns_lookup: u64,
         connection_time_dialup: u64,
+        first_byte: u64,
         size: usize,
     ) -> Result<RequestResult, ClientError> {
         let now = Instant::now();
@@ -213,6 +214,7 @@ mod tests {
                     .checked_add(Duration::from_millis(connection_time_dialup))
                     .unwrap(),
             }),
+            first_byte: Some(now.checked_add(Duration::from_millis(first_byte)).unwrap()),
             end: now
                 .checked_add(Duration::from_millis(request_time))
                 .unwrap(),
@@ -229,6 +231,7 @@ mod tests {
             1000,
             200,
             50,
+            300,
             100,
         ));
         results.push(build_mock_request_result(
@@ -236,6 +239,7 @@ mod tests {
             100000,
             250,
             100,
+            400,
             200,
         ));
         results.push(build_mock_request_result(
@@ -243,6 +247,7 @@ mod tests {
             1000000,
             300,
             150,
+            500,
             300,
         ));
         results
