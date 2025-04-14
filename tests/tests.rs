@@ -1008,30 +1008,30 @@ async fn test_csv_output() {
 
     // Validate that we get CSV output in following format,
     // header and one row for each request:
-    // request-start,DNS,DNS+dialup,request-duration,bytes,status
-    // 0.002219628,0.000309806,0.001021632,0.002023073,11,200
+    // request-start,DNS,DNS+dialup,Response-delay,request-duration,bytes,status
+    // 0.002211678,0.000374078,0.001148565,0.002619327,0.002626127,11,200
     // ...
 
     let lines: Vec<&str> = output_csv.lines().collect();
     assert_eq!(lines.len(), 6);
     assert_eq!(
         lines[0],
-        "request-start,DNS,DNS+dialup,request-duration,bytes,status"
+        "request-start,DNS,DNS+dialup,Response-delay,request-duration,bytes,status"
     );
     let mut latest_start = 0f64;
     for line in lines.iter().skip(1) {
         let parts: Vec<&str> = line.split(",").collect();
-        assert_eq!(parts.len(), 6);
+        assert_eq!(parts.len(), 7);
         // validate that the requests are in ascending time order
         let current_start = f64::from_str(parts[0]).unwrap();
-        println!("current: {current_start}");
         assert!(current_start >= latest_start);
         latest_start = current_start;
         assert!(f64::from_str(parts[1]).unwrap() > 0f64);
         assert!(f64::from_str(parts[2]).unwrap() > 0f64);
         assert!(f64::from_str(parts[3]).unwrap() > 0f64);
-        assert_eq!(usize::from_str(parts[4]).unwrap(), 11);
-        assert_eq!(u16::from_str(parts[5]).unwrap(), 200);
+        assert!(f64::from_str(parts[4]).unwrap() > 0f64);
+        assert_eq!(usize::from_str(parts[5]).unwrap(), 11);
+        assert_eq!(u16::from_str(parts[6]).unwrap(), 200);
     }
 }
 
