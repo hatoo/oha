@@ -4,6 +4,7 @@ use clap::Parser;
 use crossterm::tty::IsTty;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
+use hyper::body::Bytes;
 use hyper::{
     HeaderMap,
     http::{
@@ -15,6 +16,7 @@ use printer::{PrintConfig, PrintMode};
 use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
+use std::sync::atomic::AtomicUsize;
 use std::{
     env,
     fs::File,
@@ -153,10 +155,12 @@ Note: If qps is specified, burst will be ignored",
     timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[arg(help = "HTTP request body.", short = 'd')]
+    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines"])]
     body_string: Option<String>,
-    #[arg(help = "HTTP request body from file.", short = 'D')]
+    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines"])]
     body_path: Option<std::path::PathBuf>,
+    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path"])]
+    body_path_lines: Option<std::path::PathBuf>,
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
     #[arg(
@@ -525,14 +529,50 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             .collect::<anyhow::Result<HeaderMap<_>>>()?
     };
 
-    let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path) {
+    let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path.as_ref()) {
         (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
         (_, Some(path)) => {
             let mut buf = Vec::new();
-            std::fs::File::open(path)?.read_to_end(&mut buf)?;
+            File::open(path)
+                .with_context(|| format!("Failed to open body file: {}", path.display()))?
+                .read_to_end(&mut buf)
+                .with_context(|| format!("Failed to read body file: {}", path.display()))?;
             Some(Box::leak(buf.into_boxed_slice()))
         }
         _ => None,
+    };
+
+    let (body_lines_data, body_lines_idx): (Option<Arc<Vec<Bytes>>>, Option<Arc<AtomicUsize>>) =
+        if let Some(path) = &opts.body_path_lines {
+            let file = File::open(path).with_context(|| {
+                format!("Failed to open body lines file (-Z): {}", path.display())
+            })?;
+            let reader = std::io::BufReader::new(file);
+            let lines: Vec<Bytes> = reader
+                .lines()
+                .map(|line_result| {
+                    line_result.map(Bytes::from).with_context(|| {
+                        format!("Failed to read line from file: {}", path.display())
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            if lines.is_empty() {
+                anyhow::bail!(
+                    "Body lines file (-Z) is empty or contains no valid lines: {}",
+                    path.display()
+                );
+            }
+
+            (Some(Arc::new(lines)), Some(Arc::new(AtomicUsize::new(0))))
+        } else {
+            (None, None)
+        };
+
+    let body = if body_lines_data.is_some() {
+        None
+    } else {
+        body
     };
 
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
@@ -561,6 +601,8 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         headers,
         proxy_headers,
         body,
+        body_lines_data,
+        body_lines_idx,
         dns: client::Dns {
             resolver,
             connect_to: opts.connect_to,
