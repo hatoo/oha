@@ -380,7 +380,7 @@ fn print_csv<W: Write>(w: &mut W, start: Instant, res: &ResultData) -> std::io::
     // csv header
     writeln!(
         w,
-        "request-start,DNS,DNS+dialup,request-duration,bytes,status"
+        "request-start,DNS,DNS+dialup,Response-delay,request-duration,bytes,status"
     )?;
 
     let mut success_requests = res.success().to_vec();
@@ -394,12 +394,17 @@ fn print_csv<W: Write>(w: &mut W, start: Instant, res: &ResultData) -> std::io::
             ),
             None => (std::time::Duration::ZERO, std::time::Duration::ZERO),
         };
+        let first_byte = match request.first_byte {
+            Some(first_byte) => first_byte - request.start,
+            None => std::time::Duration::ZERO,
+        };
         writeln!(
             w,
-            "{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{}",
             (request.start - start).as_secs_f64(),
             dns_and_dialup.0.as_secs_f64(),
             dns_and_dialup.1.as_secs_f64(),
+            first_byte.as_secs_f64(),
             request.duration().as_secs_f64(),
             request.len_bytes,
             request.status.as_u16(),

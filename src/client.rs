@@ -46,6 +46,8 @@ pub struct RequestResult {
     /// DNS + dialup
     /// None when reuse connection
     pub connection_time: Option<ConnectionTime>,
+    /// First body byte received
+    pub first_byte: Option<std::time::Instant>,
     /// When the query ends
     pub end: std::time::Instant,
     /// HTTP status
@@ -616,6 +618,7 @@ impl Client {
         let do_req = async {
             let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
+            let mut first_byte: Option<std::time::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
 
             let mut send_request = if let Some(send_request) = client_state.send_request.take() {
@@ -646,6 +649,9 @@ impl Client {
 
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
+                        if first_byte.is_none() {
+                            first_byte = Some(std::time::Instant::now())
+                        }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
@@ -673,6 +679,7 @@ impl Client {
                         rng,
                         start_latency_correction: None,
                         start,
+                        first_byte,
                         end,
                         status,
                         len_bytes,
@@ -768,6 +775,7 @@ impl Client {
         let do_req = async {
             let (url, rng) = self.generate_url(&mut client_state.rng)?;
             let start = std::time::Instant::now();
+            let mut first_byte: Option<std::time::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
 
             let request = self.request(&url)?;
@@ -778,6 +786,9 @@ impl Client {
 
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
+                        if first_byte.is_none() {
+                            first_byte = Some(std::time::Instant::now())
+                        }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
@@ -787,6 +798,7 @@ impl Client {
                         rng,
                         start_latency_correction: None,
                         start,
+                        first_byte,
                         end,
                         status,
                         len_bytes,
