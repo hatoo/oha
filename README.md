@@ -21,11 +21,14 @@ This program is built on stable Rust, with both `make` and `cmake` prerequisites
 
 You can optionally build oha against [native-tls](https://github.com/sfackler/rust-native-tls) instead of [rustls](https://github.com/rustls/rustls).
 
-    cargo install --no-default-features --features rustls oha
+    cargo install --no-default-features --features native-tls oha
 
 You can enable VSOCK support by enabling `vsock` feature.
 
     cargo install --features vsock oha
+
+You can enable experimental HTTP3 support by enabling the `http3` feature. This uses the [H3](https://github.com/hyperium/h3/r) library by the developers of Hyper.
+It will remain experimental as long as H3 is experimental. It currently depends on using `rustls` for TLS.
 
 ## Download pre-built binary
 
@@ -166,7 +169,7 @@ Options:
       --proxy-http2
           Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2
       --http-version <HTTP_VERSION>
-          HTTP version. Available values 0.9, 1.0, 1.1, 2.
+          HTTP version. Available values 0.9, 1.0, 1.1, 2, 3.
       --http2
           Use HTTP/2. Shorthand for --http-version=2
       --host <HOST>

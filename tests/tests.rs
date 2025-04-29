@@ -11,6 +11,7 @@ use std::{
 
 use assert_cmd::Command;
 use axum::{Router, extract::Path, response::Redirect, routing::get};
+use bytes::Bytes;
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
 use http_mitm_proxy::MitmProxy;
@@ -20,74 +21,145 @@ use hyper::{
     service::{HttpService, service_fn},
 };
 use hyper_util::rt::{TokioExecutor, TokioIo};
+use rstest::rstest;
+use rstest_reuse::{self, *};
+#[cfg(feature = "http3")]
+mod common;
 
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
 
-async fn bind_port() -> (tokio::net::TcpListener, u16) {
-    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+async fn next_port() -> u16 {
+    PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+async fn bind_port(port: u16) -> tokio::net::TcpListener {
     let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
 
-    (tokio::net::TcpListener::bind(addr).await.unwrap(), port)
+    tokio::net::TcpListener::bind(addr).await.unwrap()
 }
 
-async fn bind_port_ipv6() -> (tokio::net::TcpListener, u16) {
-    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+async fn bind_port_and_increment() -> (tokio::net::TcpListener, u16) {
+    let port = next_port().await;
+    let listener = bind_port(port).await;
+    (listener, port)
+}
+
+async fn bind_port_ipv6(port: u16) -> tokio::net::TcpListener {
     let addr = SocketAddr::new(std::net::IpAddr::V6(Ipv6Addr::LOCALHOST), port);
 
-    (tokio::net::TcpListener::bind(addr).await.unwrap(), port)
+    tokio::net::TcpListener::bind(addr).await.unwrap()
 }
 
-async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
+#[derive(Clone, Copy, PartialEq)]
+enum HttpWorkType {
+    H1,
+    H2,
+    #[cfg(feature = "http3")]
+    H3,
+}
+
+fn http_work_type(args: &[&str]) -> HttpWorkType {
+    // Check for HTTP/2
+    if args.contains(&"--http2") || args.windows(2).any(|w| w == ["--http-version", "2"]) {
+        return HttpWorkType::H2;
+    }
+
+    // Check for HTTP/3 when the feature is enabled
+    #[cfg(feature = "http3")]
+    if args.contains(&"--http3") || args.windows(2).any(|w| w == ["--http-version", "3"]) {
+        return HttpWorkType::H3;
+    }
+
+    // Default to HTTP/1.1
+    HttpWorkType::H1
+}
+
+#[cfg(feature = "http3")]
+#[template]
+#[rstest]
+#[case("1.1")]
+#[case("2")]
+#[case("3")]
+fn test_all_http_versions(#[case] http_version_param: &str) {}
+
+#[cfg(not(feature = "http3"))]
+#[template]
+#[rstest]
+#[case("1.1")]
+#[case("2")]
+fn test_all_http_versions(#[case] http_version_param: &str) {}
+
+async fn get_req(path: &str, args: &[&str]) -> Request<Bytes> {
     let (tx, rx) = kanal::unbounded();
 
-    let (listener, port) = bind_port().await;
+    let port = next_port().await;
 
-    let http2 = args.contains(&"--http2") || args.windows(2).any(|w| w == ["--http-version", "2"]);
+    let work_type = http_work_type(args);
+    let listener = bind_port(port).await;
 
     tokio::spawn(async move {
-        if http2 {
-            loop {
+        match work_type {
+            HttpWorkType::H2 => loop {
                 let (tcp, _) = listener.accept().await.unwrap();
                 let tx = tx.clone();
                 let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
                     .serve_connection(
                         TokioIo::new(tcp),
-                        service_fn(move |req| {
+                        service_fn(move |req: Request<Incoming>| {
                             let tx = tx.clone();
-
                             async move {
+                                let (parts, body) = req.into_parts();
+                                let body_bytes = body.collect().await.unwrap().to_bytes();
+                                let req = Request::from_parts(parts, body_bytes);
                                 tx.send(req).unwrap();
                                 Ok::<_, Infallible>(Response::new("Hello World".to_string()))
                             }
                         }),
                     )
                     .await;
-            }
-        } else {
-            let (tcp, _) = listener.accept().await.unwrap();
-            hyper::server::conn::http1::Builder::new()
-                .serve_connection(
-                    TokioIo::new(tcp),
-                    service_fn(move |req| {
-                        let tx = tx.clone();
+            },
+            HttpWorkType::H1 => {
+                let (tcp, _) = listener.accept().await.unwrap();
+                hyper::server::conn::http1::Builder::new()
+                    .serve_connection(
+                        TokioIo::new(tcp),
+                        service_fn(move |req: Request<Incoming>| {
+                            let tx = tx.clone();
 
-                        async move {
-                            tx.send(req).unwrap();
-                            Ok::<_, Infallible>(Response::new("Hello World".to_string()))
-                        }
-                    }),
-                )
-                .await
-                .unwrap();
+                            async move {
+                                let (parts, body) = req.into_parts();
+                                let body_bytes = body.collect().await.unwrap().to_bytes();
+                                let req = Request::from_parts(parts, body_bytes);
+                                tx.send(req).unwrap();
+                                Ok::<_, Infallible>(Response::new("Hello World".to_string()))
+                            }
+                        }),
+                    )
+                    .await
+                    .unwrap();
+            }
+            #[cfg(feature = "http3")]
+            HttpWorkType::H3 => {
+                drop(listener);
+                common::h3_server(tx, port).await.unwrap();
+            }
         }
     });
 
     let mut command = Command::cargo_bin("oha").unwrap();
-    command
-        .args(["-n", "1", "--no-tui"])
-        .args(args)
-        .arg(format!("http://127.0.0.1:{port}{path}"));
+    command.args(["-n", "1", "--no-tui"]).args(args);
+    match work_type {
+        HttpWorkType::H1 | HttpWorkType::H2 => {
+            command.arg(format!("http://127.0.0.1:{port}{path}"));
+        }
+        #[cfg(feature = "http3")]
+        HttpWorkType::H3 => {
+            command
+                .arg("--insecure")
+                .arg(format!("https://127.0.0.1:{port}{path}"));
+        }
+    }
 
     tokio::task::spawn_blocking(move || {
         command.assert().success();
@@ -101,7 +173,7 @@ async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
 async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     let (tx, rx) = kanal::unbounded();
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
 
     let app = Router::new().route(
         "/{n}",
@@ -146,7 +218,7 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
         }),
     );
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
@@ -176,7 +248,8 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
         }),
     );
 
-    let (listener, port) = bind_port_ipv6().await;
+    let port = next_port().await;
+    let listener = bind_port_ipv6(port).await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
@@ -206,7 +279,7 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
         }),
     );
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
@@ -241,7 +314,7 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
             }),
         );
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
@@ -271,7 +344,7 @@ async fn test_request_count(args: &[&str]) -> usize {
         }),
     );
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
@@ -315,10 +388,10 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
         }),
     );
 
-    let (listener1, port1) = bind_port().await;
+    let (listener1, port1) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener1, app1).await });
 
-    let (listener2, port2) = bind_port().await;
+    let (listener2, port2) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener2, app2).await });
 
     tokio::task::spawn_blocking(move || {
@@ -350,22 +423,10 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
     (count1, count2)
 }
 
+#[apply(test_all_http_versions)]
 #[tokio::test]
-async fn test_enable_compression_default() {
-    let req = get_req("/", &[]).await;
-    let accept_encoding: Vec<&str> = req
-        .headers()
-        .get("accept-encoding")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(", ")
-        .collect();
-
-    assert!(accept_encoding.contains(&"gzip"));
-    assert!(accept_encoding.contains(&"br"));
-
-    let req = get_req("/", &["--http2"]).await;
+async fn test_enable_compression_default(http_version_param: &str) {
+    let req = get_req("/", &["--http-version", http_version_param]).await;
     let accept_encoding: Vec<&str> = req
         .headers()
         .get("accept-encoding")
@@ -379,38 +440,39 @@ async fn test_enable_compression_default() {
     assert!(accept_encoding.contains(&"br"));
 }
 
+#[apply(test_all_http_versions)]
 #[tokio::test]
-async fn test_setting_custom_header() {
-    let req = get_req("/", &["-H", "foo: bar", "--"]).await;
-    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
-    let req = get_req("/", &["-H", "foo:bar", "--"]).await;
-    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
-
-    let req = get_req("/", &["--http2", "-H", "foo: bar", "--"]).await;
-    assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
-    let req = get_req("/", &["--http2", "-H", "foo:bar", "--"]).await;
+async fn test_setting_custom_header(http_version_param: &str) {
+    let req = get_req(
+        "/",
+        &["--http-version", http_version_param, "-H", "foo: bar"],
+    )
+    .await;
     assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
 #[tokio::test]
-async fn test_setting_accept_header() {
-    let req = get_req("/", &["-A", "text/html"]).await;
+#[apply(test_all_http_versions)]
+async fn test_setting_accept_header(http_version_param: &str) {
+    let req = get_req(
+        "/",
+        &["-A", "text/html", "--http-version", http_version_param],
+    )
+    .await;
     assert_eq!(
         req.headers().get("accept").unwrap().to_str().unwrap(),
         "text/html"
     );
-    let req = get_req("/", &["-H", "accept:text/html"]).await;
-    assert_eq!(
-        req.headers().get("accept").unwrap().to_str().unwrap(),
-        "text/html"
-    );
-
-    let req = get_req("/", &["--http2", "-A", "text/html"]).await;
-    assert_eq!(
-        req.headers().get("accept").unwrap().to_str().unwrap(),
-        "text/html"
-    );
-    let req = get_req("/", &["--http2", "-H", "accept:text/html"]).await;
+    let req = get_req(
+        "/",
+        &[
+            "-H",
+            "accept:text/html",
+            "--http-version",
+            http_version_param,
+        ],
+    )
+    .await;
     assert_eq!(
         req.headers().get("accept").unwrap().to_str().unwrap(),
         "text/html"
@@ -418,16 +480,15 @@ async fn test_setting_accept_header() {
 }
 
 #[tokio::test]
-async fn test_setting_body() {
-    let req = get_req("/", &["-d", "hello body"]).await;
+#[apply(test_all_http_versions)]
+async fn test_setting_body(http_version_param: &str) {
+    let req = get_req(
+        "/",
+        &["-d", "hello body", "--http-version", http_version_param],
+    )
+    .await;
     assert_eq!(
-        req.into_body().collect().await.unwrap().to_bytes(),
-        &b"hello body"[..] /* This looks dirty... Any suggestion? */
-    );
-
-    let req = get_req("/", &["--http2", "-d", "hello body"]).await;
-    assert_eq!(
-        req.into_body().collect().await.unwrap().to_bytes(),
+        req.into_body(),
         &b"hello body"[..] /* This looks dirty... Any suggestion? */
     );
 }
@@ -457,19 +518,14 @@ async fn test_setting_content_type_header() {
     );
 }
 
+#[apply(test_all_http_versions)]
 #[tokio::test]
-async fn test_setting_basic_auth() {
-    let req = get_req("/", &["-a", "hatoo:pass"]).await;
-    assert_eq!(
-        req.headers()
-            .get("authorization")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "Basic aGF0b286cGFzcw=="
-    );
-
-    let req = get_req("/", &["--http2", "-a", "hatoo:pass"]).await;
+async fn test_setting_basic_auth(http_version_param: &str) {
+    let req = get_req(
+        "/",
+        &["-a", "hatoo:pass", "--http-version", http_version_param],
+    )
+    .await;
     assert_eq!(
         req.headers()
             .get("authorization")
@@ -684,7 +740,8 @@ async fn test_ipv6() {
         }),
     );
 
-    let (listener, port) = bind_port_ipv6().await;
+    let port = next_port().await;
+    let listener = bind_port_ipv6(port).await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
@@ -717,7 +774,7 @@ async fn test_query_limit_with_time_limit() {
 }
 
 #[tokio::test]
-async fn test_http2() {
+async fn test_http_versions() {
     assert_eq!(get_req("/", &[]).await.version(), http::Version::HTTP_11);
     assert_eq!(
         get_req("/", &["--http2"]).await.version(),
@@ -726,6 +783,11 @@ async fn test_http2() {
     assert_eq!(
         get_req("/", &["--http-version", "2"]).await.version(),
         http::Version::HTTP_2
+    );
+    #[cfg(feature = "http3")]
+    assert_eq!(
+        get_req("/", &["--http-version", "3"]).await.version(),
+        http::Version::HTTP_3
     );
 }
 
@@ -917,7 +979,7 @@ fn test_google() {
 async fn test_json_schema() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     const SCHEMA: &str = include_str!("../schema.json");
@@ -986,7 +1048,7 @@ async fn test_json_schema() {
 async fn test_csv_output() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 
-    let (listener, port) = bind_port().await;
+    let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
     let output_csv: String = String::from_utf8(
@@ -1061,6 +1123,9 @@ fn setup_mtls_server(
 
     let mut roots = rustls::RootCertStore::empty();
     roots.add(client_cert.cert.der().clone()).unwrap();
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
     let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
         .build()
         .unwrap();
