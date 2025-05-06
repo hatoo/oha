@@ -31,7 +31,7 @@ vsock = ["dep:tokio-vsock"]
 
 [dependencies]
 anyhow = "1.0.86"
-average = "0.15.1"
+average = "0.16.0"
 byte-unit = "5.1.4"
 clap = { version = "4.5.9", features = ["derive"] }
 float-ord = "0.3.2"
