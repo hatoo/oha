@@ -66,7 +66,7 @@ impl RequestResult {
 pub struct Dns {
     pub connect_to: Vec<ConnectToEntry>,
     pub resolver:
-        hickory_resolver::AsyncResolver<hickory_resolver::name_server::TokioConnectionProvider>,
+        hickory_resolver::Resolver<hickory_resolver::name_server::TokioConnectionProvider>,
 }
 
 impl Dns {
@@ -131,7 +131,7 @@ pub enum ClientError {
     TooManyRedirect,
     #[error(transparent)]
     // Use Box here because ResolveError is big.
-    ResolveError(#[from] Box<hickory_resolver::error::ResolveError>),
+    ResolveError(#[from] Box<hickory_resolver::ResolveError>),
 
     #[cfg(feature = "native-tls")]
     #[error(transparent)]
@@ -197,6 +197,7 @@ pub struct Client {
     pub native_tls_connectors: crate::tls_config::NativeTlsConnectors,
 }
 
+#[cfg(test)]
 impl Default for Client {
     fn default() -> Self {
         Self {
@@ -208,7 +209,7 @@ impl Default for Client {
             proxy_headers: http::header::HeaderMap::new(),
             body: None,
             dns: Dns {
-                resolver: hickory_resolver::AsyncResolver::tokio_from_system_conf().unwrap(),
+                resolver: hickory_resolver::Resolver::builder_tokio().unwrap().build(),
                 connect_to: Vec::new(),
             },
             timeout: None,

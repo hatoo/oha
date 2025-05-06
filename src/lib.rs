@@ -543,7 +543,12 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     };
     let (config, mut resolver_opts) = system_resolv_conf()?;
     resolver_opts.ip_strategy = ip_strategy;
-    let resolver = hickory_resolver::AsyncResolver::tokio(config, resolver_opts);
+    let resolver = hickory_resolver::Resolver::builder_with_config(
+        config,
+        hickory_resolver::name_server::TokioConnectionProvider::default(),
+    )
+    .with_options(resolver_opts)
+    .build();
     let cacert = opts.cacert.as_deref().map(std::fs::read).transpose()?;
     let client_auth = match (opts.cert, opts.key) {
         (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
