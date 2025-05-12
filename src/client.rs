@@ -8,7 +8,10 @@ use std::{
     io::Write,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering::Relaxed},
+        atomic::{
+            AtomicBool, AtomicUsize,
+            Ordering::{self, Relaxed},
+        },
     },
     time::Instant,
 };
@@ -181,6 +184,8 @@ pub struct Client {
     pub headers: http::header::HeaderMap,
     pub proxy_headers: http::header::HeaderMap,
     pub body: Option<&'static [u8]>,
+    pub body_lines_data: Option<Arc<Vec<Bytes>>>,
+    pub body_lines_idx: Option<Arc<AtomicUsize>>,
     pub dns: Dns,
     pub timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
@@ -208,6 +213,8 @@ impl Default for Client {
             headers: http::header::HeaderMap::new(),
             proxy_headers: http::header::HeaderMap::new(),
             body: None,
+            body_lines_data: None,
+            body_lines_idx: None,
             dns: Dns {
                 resolver: hickory_resolver::Resolver::builder_tokio().unwrap().build(),
                 connect_to: Vec::new(),
@@ -582,19 +589,26 @@ impl Client {
                 self.http_version
             });
 
-        let bytes = self.body.map(Bytes::from_static);
+        let body_bytes: Option<Bytes> = if let (Some(lines_data), Some(lines_idx)) =
+            (&self.body_lines_data, &self.body_lines_idx)
+        {
+            let num_lines = lines_data.len();
 
-        let body = if let Some(body) = &bytes {
-            Full::new(body.clone())
+            let current_idx = lines_idx.fetch_add(1, Ordering::Relaxed);
+            let line_idx = current_idx % num_lines;
+            Some(lines_data[line_idx].clone())
+        } else if let Some(static_body) = self.body {
+            let bytes = Bytes::from_static(static_body);
+            Some(bytes)
         } else {
-            Full::default()
+            None
         };
 
         let mut headers = self.headers.clone();
 
         // Apply AWS SigV4 if configured
         if let Some(aws_config) = &self.aws_config {
-            aws_config.sign_request(self.method.as_str(), &mut headers, url, bytes)?
+            aws_config.sign_request(self.method.as_str(), &mut headers, url, body_bytes.clone())?
         }
 
         if use_proxy {
@@ -606,6 +620,11 @@ impl Client {
         *builder
             .headers_mut()
             .ok_or(ClientError::GetHeaderFromBuilderError)? = headers;
+
+        let body = match body_bytes {
+            Some(bytes) => Full::new(bytes),
+            None => Full::default(),
+        };
 
         let request = builder.body(body)?;
 

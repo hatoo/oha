@@ -151,6 +151,8 @@ Options:
           HTTP request body.
   -D <BODY_PATH>
           HTTP request body from file.
+  -Z <BODY_PATH_LINES>
+          HTTP request body from file line by line.
   -T <CONTENT_TYPE>
           Content-Type.
   -a <BASIC_AUTH>
@@ -207,7 +209,7 @@ Options:
   -o, --output <OUTPUT>
           Output file to write the results to. If not specified, results are written to stdout.
       --output-format <OUTPUT_FORMAT>
-          Output format, either 'text', 'json' or 'csv'. [default 'text']
+          Output format [default: text] [possible values: text, json, csv]
   -h, --help
           Print help
   -V, --version
