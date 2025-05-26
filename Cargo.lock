@@ -2724,9 +2724,9 @@ dependencies = [
 
 [[package]]
 name = "rand_regex"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1eb7969b106060de455cbdb979d3d84c84ffec7b9fa6fa5c56343df409e1614a"
+checksum = "04db2e382d13679a1e42400e90e306cdbb79dc5cd41bb035ba4eae72e78cdf37"
 dependencies = [
  "rand 0.9.1",
  "regex-syntax 0.8.5",
