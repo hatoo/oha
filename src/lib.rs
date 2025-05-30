@@ -622,6 +622,9 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         }
     };
 
+    let run = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
     let start = std::time::Instant::now();
 
     let data_collect_future: Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>> =
@@ -846,7 +849,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     if let Some(db_url) = opts.db_url {
         eprintln!("Storing results to {db_url}");
-        db::store(&client, &db_url, start, res.success())?;
+        db::store(&client, &db_url, start, res.success(), run)?;
     }
 
     Ok(())
