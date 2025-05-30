@@ -43,8 +43,7 @@ async fn get_req(path: &str, args: &[&str]) -> Request<hyper::body::Incoming> {
 
     let (listener, port) = bind_port().await;
 
-    let http2 = args.iter().any(|&arg| arg == "--http2")
-        || args.windows(2).any(|w| w == ["--http-version", "2"]);
+    let http2 = args.contains(&"--http2") || args.windows(2).any(|w| w == ["--http-version", "2"]);
 
     tokio::spawn(async move {
         if http2 {
