@@ -24,6 +24,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+use timescale::TimeScale;
 use url::Url;
 use url_generator::UrlGenerator;
 
@@ -278,6 +279,12 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
     output: Option<PathBuf>,
     #[arg(help = "Output format", long, default_value = "text")]
     output_format: Option<PrintMode>,
+    #[arg(
+        help = "Time unit to be used. If not specified, the time unit is determined automatically. This option affects only text format.",
+        long,
+        short = 'u'
+    )]
+    time_unit: Option<TimeScale>,
 }
 
 /// An entry specified by `connect-to` to override DNS resolution and default
@@ -619,6 +626,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             output,
             disable_style,
             stats_success_breakdown: opts.stats_success_breakdown,
+            time_unit: opts.time_unit,
         }
     };
 
@@ -737,6 +745,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                             start,
                             fps: opts.fps,
                             disable_color: opts.disable_color,
+                            time_unit: opts.time_unit,
                         }
                         .monitor(),
                     );
