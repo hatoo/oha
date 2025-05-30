@@ -207,7 +207,9 @@ Options:
   -o, --output <OUTPUT>
           Output file to write the results to. If not specified, results are written to stdout.
       --output-format <OUTPUT_FORMAT>
-          Output format, either 'text', 'json' or 'csv'. [default 'text']
+          Output format [default: text] [possible values: text, json, csv]
+  -u, --time-unit <TIME_UNIT>
+          Time unit to be used. If not specified, the time unit is determined automatically. This option affects only text format. [possible values: ns, us, ms, s, m, h]
   -h, --help
           Print help
   -V, --version
