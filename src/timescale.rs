@@ -1,12 +1,15 @@
 use std::{fmt, time::Duration};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum TimeScale {
-    Second,
-    TenSeconds,
-    Minute,
-    TenMinutes,
-    Hour,
+    Nanosecond,  // 1e-9
+    Microsecond, // 1e-6
+    Millisecond, // 1e-3
+    Second,      // 1
+    TenSeconds,  // 10
+    Minute,      // 60
+    TenMinutes,  // 600
+    Hour,        // 3600
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -18,11 +21,14 @@ pub struct TimeLabel {
 impl fmt::Display for TimeScale {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TimeScale::Second => write!(f, "second"),
-            TimeScale::TenSeconds => write!(f, "10 seconds"),
-            TimeScale::Minute => write!(f, "minute"),
-            TimeScale::TenMinutes => write!(f, "10 minutes"),
-            TimeScale::Hour => write!(f, "hour"),
+            TimeScale::Nanosecond => write!(f, "ns"),
+            TimeScale::Microsecond => write!(f, "us"),
+            TimeScale::Millisecond => write!(f, "ms"),
+            TimeScale::Second => write!(f, "sec"),
+            TimeScale::TenSeconds => write!(f, "10 sec"),
+            TimeScale::Minute => write!(f, "min"),
+            TimeScale::TenMinutes => write!(f, "10 min"),
+            TimeScale::Hour => write!(f, "hr"),
         }
     }
 }
@@ -30,6 +36,18 @@ impl fmt::Display for TimeScale {
 impl fmt::Display for TimeLabel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            TimeLabel {
+                x,
+                timescale: TimeScale::Nanosecond,
+            } => write!(f, "{x}ns"),
+            TimeLabel {
+                x,
+                timescale: TimeScale::Microsecond,
+            } => write!(f, "{x}us"),
+            TimeLabel {
+                x,
+                timescale: TimeScale::Millisecond,
+            } => write!(f, "{x}ms"),
             TimeLabel {
                 x,
                 timescale: TimeScale::Second,
@@ -54,9 +72,37 @@ impl fmt::Display for TimeLabel {
     }
 }
 
+impl clap::ValueEnum for TimeScale {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self::Nanosecond,
+            Self::Microsecond,
+            Self::Millisecond,
+            Self::Second,
+            Self::Minute,
+            Self::Hour,
+        ]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            TimeScale::Nanosecond => Some(clap::builder::PossibleValue::new("ns")),
+            TimeScale::Microsecond => Some(clap::builder::PossibleValue::new("us")),
+            TimeScale::Millisecond => Some(clap::builder::PossibleValue::new("ms")),
+            TimeScale::Second => Some(clap::builder::PossibleValue::new("s")),
+            TimeScale::Minute => Some(clap::builder::PossibleValue::new("m")),
+            TimeScale::Hour => Some(clap::builder::PossibleValue::new("h")),
+            TimeScale::TenSeconds | TimeScale::TenMinutes => None,
+        }
+    }
+}
+
 impl TimeScale {
     pub fn as_secs_f64(&self) -> f64 {
         match self {
+            TimeScale::Nanosecond => 1e-9,
+            TimeScale::Microsecond => 1e-6,
+            TimeScale::Millisecond => 1e-3,
             TimeScale::Second => 1.0,
             TimeScale::TenSeconds => 10.0,
             TimeScale::Minute => 60.0,
@@ -65,24 +111,34 @@ impl TimeScale {
         }
     }
 
-    pub fn from_elapsed(duration: Duration) -> Self {
+    /// From seconds as f64
+    pub fn from_f64(seconds: f64) -> Self {
         for ts in &[
             TimeScale::Hour,
             TimeScale::TenMinutes,
             TimeScale::Minute,
             TimeScale::TenSeconds,
             TimeScale::Second,
+            TimeScale::Millisecond,
+            TimeScale::Microsecond,
+            TimeScale::Nanosecond,
         ] {
-            if duration.as_secs_f64() > ts.as_secs_f64() {
+            if seconds > ts.as_secs_f64() {
                 return *ts;
             }
         }
+        TimeScale::Nanosecond
+    }
 
-        TimeScale::Second
+    pub fn from_elapsed(duration: Duration) -> Self {
+        Self::from_f64(duration.as_secs_f64())
     }
 
     pub fn inc(&self) -> Self {
         match self {
+            TimeScale::Nanosecond => TimeScale::Microsecond,
+            TimeScale::Microsecond => TimeScale::Millisecond,
+            TimeScale::Millisecond => TimeScale::Second,
             TimeScale::Second => TimeScale::TenSeconds,
             TimeScale::TenSeconds => TimeScale::Minute,
             TimeScale::Minute => TimeScale::TenMinutes,
@@ -93,7 +149,10 @@ impl TimeScale {
 
     pub fn dec(&self) -> Self {
         match self {
-            TimeScale::Second => TimeScale::Second,
+            TimeScale::Nanosecond => TimeScale::Nanosecond,
+            TimeScale::Microsecond => TimeScale::Nanosecond,
+            TimeScale::Millisecond => TimeScale::Microsecond,
+            TimeScale::Second => TimeScale::Millisecond,
             TimeScale::TenSeconds => TimeScale::Second,
             TimeScale::Minute => TimeScale::TenSeconds,
             TimeScale::TenMinutes => TimeScale::Minute,
@@ -123,41 +182,55 @@ mod tests {
     #[test]
     fn test_timescale_ranges() {
         assert_timescale_correct_for_seconds_range(
-            [f64::MIN_POSITIVE, 10.0],
-            TimeScale::Second,
-            "second",
-            1.0,
+            [f64::MIN_POSITIVE, 1e-6],
+            TimeScale::Nanosecond,
+            "ns",
+            1e-9,
         );
+        assert_timescale_correct_for_seconds_range(
+            [0.000_001_1, 1e-3],
+            TimeScale::Microsecond,
+            "us",
+            1e-6,
+        );
+        assert_timescale_correct_for_seconds_range(
+            [0.001_1, 1.0],
+            TimeScale::Millisecond,
+            "ms",
+            1e-3,
+        );
+        assert_timescale_correct_for_seconds_range([1.1, 10.0], TimeScale::Second, "sec", 1.0);
         assert_timescale_correct_for_seconds_range(
             [10.1, 60.0],
             TimeScale::TenSeconds,
-            "10 seconds",
+            "10 sec",
             10.0,
         );
-        assert_timescale_correct_for_seconds_range(
-            [60.1, 600.0],
-            TimeScale::Minute,
-            "minute",
-            60.0,
-        );
+        assert_timescale_correct_for_seconds_range([60.1, 600.0], TimeScale::Minute, "min", 60.0);
         assert_timescale_correct_for_seconds_range(
             [600.1, 3600.0],
             TimeScale::TenMinutes,
-            "10 minutes",
+            "10 min",
             600.0,
         );
         assert_timescale_correct_for_seconds_range(
             [3600.1, 31536000.0],
             TimeScale::Hour,
-            "hour",
+            "hr",
             3600.0,
         );
     }
 
     #[test]
     fn test_timescale_inc() {
-        let timescale = TimeScale::from_elapsed(Duration::from_secs_f64(0.1));
-        let timescale_ten_seconds = timescale.inc();
+        let timescale = TimeScale::from_elapsed(Duration::from_secs_f64(1e-10));
+        let timescale_microsecond = timescale.inc();
+        assert_eq!(timescale_microsecond, TimeScale::Microsecond);
+        let timescale_millisecond = timescale_microsecond.inc();
+        assert_eq!(timescale_millisecond, TimeScale::Millisecond);
+        let timescale_second = timescale_millisecond.inc();
+        assert_eq!(timescale_second, TimeScale::Second);
+        let timescale_ten_seconds = timescale_second.inc();
         assert_eq!(timescale_ten_seconds, TimeScale::TenSeconds);
         let timescale_minute = timescale_ten_seconds.inc();
         assert_eq!(timescale_minute, TimeScale::Minute);
@@ -178,5 +251,11 @@ mod tests {
         assert_eq!(timescale_ten_seconds, TimeScale::TenSeconds);
         let timescale_second = timescale_ten_seconds.dec();
         assert_eq!(timescale_second, TimeScale::Second);
+        let timescale_millisecond = timescale_second.dec();
+        assert_eq!(timescale_millisecond, TimeScale::Millisecond);
+        let timescale_microsecond = timescale_millisecond.dec();
+        assert_eq!(timescale_microsecond, TimeScale::Microsecond);
+        let timescale_nanosecond = timescale_microsecond.dec();
+        assert_eq!(timescale_nanosecond, TimeScale::Nanosecond);
     }
 }

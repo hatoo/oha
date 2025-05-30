@@ -1,4 +1,4 @@
-use crate::result_data::ResultData;
+use crate::{result_data::ResultData, timescale::TimeScale};
 use average::{Max, Min, Variance};
 use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
@@ -108,6 +108,7 @@ pub struct PrintConfig {
     pub mode: PrintMode,
     pub disable_style: bool,
     pub stats_success_breakdown: bool,
+    pub time_unit: Option<TimeScale>,
 }
 
 pub fn print_result(
@@ -123,6 +124,7 @@ pub fn print_result(
             total_duration,
             config.disable_style,
             config.stats_success_breakdown,
+            config.time_unit,
         )?,
         PrintMode::Json => print_json(
             &mut config.output,
@@ -420,6 +422,7 @@ fn print_summary<W: Write>(
     total_duration: Duration,
     disable_style: bool,
     stats_success_breakdown: bool,
+    time_unit: Option<TimeScale>,
 ) -> std::io::Result<()> {
     let style = StyleScheme {
         style_enabled: !disable_style,
@@ -434,22 +437,42 @@ fn print_summary<W: Write>(
             success_rate
         )
     )?;
-    writeln!(w, "  Total:\t{:.4} secs", total_duration.as_secs_f64())?;
     let latency_stat = res.latency_stat();
+    // Determine timescale automatically
+    let timescale = if let Some(timescale) = time_unit {
+        timescale
+    } else {
+        // Use max latency (slowest request)
+        TimeScale::from_f64(latency_stat.max())
+    };
     writeln!(
         w,
-        "{}",
-        style.slowest(&format!("  Slowest:\t{:.4} secs", latency_stat.max()))
+        "  Total:\t{:.4} {timescale}",
+        total_duration.as_secs_f64() / timescale.as_secs_f64()
     )?;
     writeln!(
         w,
         "{}",
-        style.fastest(&format!("  Fastest:\t{:.4} secs", latency_stat.min()))
+        style.slowest(&format!(
+            "  Slowest:\t{:.4} {timescale}",
+            latency_stat.max() / timescale.as_secs_f64()
+        ))
     )?;
     writeln!(
         w,
         "{}",
-        style.average(&format!("  Average:\t{:.4} secs", latency_stat.mean()))
+        style.fastest(&format!(
+            "  Fastest:\t{:.4} {timescale}",
+            latency_stat.min() / timescale.as_secs_f64()
+        ))
+    )?;
+    writeln!(
+        w,
+        "{}",
+        style.average(&format!(
+            "  Average:\t{:.4} {timescale}",
+            latency_stat.mean() / timescale.as_secs_f64()
+        ))
     )?;
     writeln!(
         w,
@@ -481,11 +504,11 @@ fn print_summary<W: Write>(
     let duration_all_statistics = res.duration_all_statistics();
 
     writeln!(w, "{}", style.heading("Response time histogram:"))?;
-    print_histogram(w, &duration_all_statistics.histogram, style)?;
+    print_histogram(w, &duration_all_statistics.histogram, style, timescale)?;
     writeln!(w)?;
 
     writeln!(w, "{}", style.heading("Response time distribution:"))?;
-    print_distribution(w, &duration_all_statistics.percentiles, style)?;
+    print_distribution(w, &duration_all_statistics.percentiles, style, timescale)?;
     writeln!(w)?;
 
     if stats_success_breakdown {
@@ -496,7 +519,7 @@ fn print_summary<W: Write>(
             "{}",
             style.heading("Response time histogram (2xx only):")
         )?;
-        print_histogram(w, &durations_successful_statics.histogram, style)?;
+        print_histogram(w, &durations_successful_statics.histogram, style, timescale)?;
         writeln!(w)?;
 
         writeln!(
@@ -504,7 +527,12 @@ fn print_summary<W: Write>(
             "{}",
             style.heading("Response time distribution (2xx only):")
         )?;
-        print_distribution(w, &durations_successful_statics.percentiles, style)?;
+        print_distribution(
+            w,
+            &durations_successful_statics.percentiles,
+            style,
+            timescale,
+        )?;
         writeln!(w)?;
 
         let durations_not_successful = res.duration_not_successful_statistics();
@@ -514,7 +542,7 @@ fn print_summary<W: Write>(
             "{}",
             style.heading("Response time histogram (4xx + 5xx only):")
         )?;
-        print_histogram(w, &durations_not_successful.histogram, style)?;
+        print_histogram(w, &durations_not_successful.histogram, style, timescale)?;
         writeln!(w)?;
 
         writeln!(
@@ -522,7 +550,7 @@ fn print_summary<W: Write>(
             "{}",
             style.heading("Response time distribution (4xx + 5xx only):")
         )?;
-        print_distribution(w, &durations_not_successful.percentiles, style)?;
+        print_distribution(w, &durations_not_successful.percentiles, style, timescale)?;
         writeln!(w)?;
     }
     writeln!(w)?;
@@ -538,17 +566,17 @@ fn print_summary<W: Write>(
 
     writeln!(
         w,
-        "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        dns_dialup_stat.mean(),
-        dns_dialup_stat.min(),
-        dns_dialup_stat.max()
+        "  DNS+dialup:\t{:.4} {timescale}, {:.4} {timescale}, {:.4} {timescale}",
+        dns_dialup_stat.mean() / timescale.as_secs_f64(),
+        dns_dialup_stat.min() / timescale.as_secs_f64(),
+        dns_dialup_stat.max() / timescale.as_secs_f64()
     )?;
     writeln!(
         w,
-        "  DNS-lookup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        dns_lookup_stat.mean(),
-        dns_lookup_stat.min(),
-        dns_lookup_stat.max()
+        "  DNS-lookup:\t{:.4} {timescale}, {:.4} {timescale}, {:.4} {timescale}",
+        dns_lookup_stat.mean() / timescale.as_secs_f64(),
+        dns_lookup_stat.min() / timescale.as_secs_f64(),
+        dns_lookup_stat.max() / timescale.as_secs_f64()
     )?;
     writeln!(w)?;
 
@@ -593,12 +621,13 @@ fn print_histogram<W: Write>(
     w: &mut W,
     data: &[(f64, usize)],
     style: StyleScheme,
+    timescale: TimeScale,
 ) -> std::io::Result<()> {
     let max_bar = data.iter().map(|t| t.1).max().unwrap();
     let str_len_max = max_bar.to_string().len();
     let width = data
         .iter()
-        .map(|t| (t.0 as u64).to_string().len())
+        .map(|t| ((t.0 / timescale.as_secs_f64()) as u64).to_string().len())
         .max()
         .unwrap()
         + 4;
@@ -610,8 +639,8 @@ fn print_histogram<W: Write>(
             "{}",
             style.latency_distribution(
                 &format!(
-                    "  {:>width$.3} [{}]{} |",
-                    label,
+                    "  {:>width$.3} {timescale} [{}]{} |",
+                    label / timescale.as_secs_f64(),
                     b,
                     " ".repeat(indent),
                     width = width
@@ -651,12 +680,19 @@ fn print_distribution<W: Write>(
     w: &mut W,
     percentiles: &[(f64, f64)],
     style: StyleScheme,
+    timescale: TimeScale,
 ) -> std::io::Result<()> {
     for (p, v) in percentiles {
         writeln!(
             w,
             "{}",
-            style.latency_distribution(&format!("  {p:.2}% in {v:.4} secs"), *v)
+            style.latency_distribution(
+                &format!(
+                    "  {p:.2}% in {:.4} {timescale}",
+                    v / timescale.as_secs_f64()
+                ),
+                *v
+            )
         )?;
     }
 

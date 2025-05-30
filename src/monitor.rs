@@ -57,6 +57,7 @@ pub struct Monitor {
     // Frame per second of TUI
     pub fps: usize,
     pub disable_color: bool,
+    pub time_unit: Option<TimeScale>,
 }
 
 struct IntoRawMode;
@@ -89,7 +90,7 @@ impl Monitor {
         let nofile_limit = rlimit::getrlimit(rlimit::Resource::NOFILE);
 
         // None means auto timescale which depends on how long it takes
-        let mut timescale_auto = None;
+        let mut timescale_auto = self.time_unit;
 
         let mut colors = ColorScheme::new();
         if !self.disable_color {
@@ -123,11 +124,13 @@ impl Monitor {
 
             let count = 32;
 
-            let timescale = if let Some(timescale) = timescale_auto {
+            // Make ms smallest timescale viewable for TUI
+            let timescale = (if let Some(timescale) = timescale_auto {
                 timescale
             } else {
                 TimeScale::from_elapsed(self.start.elapsed())
-            };
+            })
+            .max(TimeScale::Millisecond);
 
             let bin = timescale.as_secs_f64();
 
@@ -277,7 +280,7 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let stats_title = format!("stats for last {timescale}");
+                let stats_title = format!("Stats for last {timescale}");
                 let stats = Paragraph::new(stats_text).block(
                     Block::default()
                         .title(Span::raw(stats_title))
@@ -394,7 +397,10 @@ impl Monitor {
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('+'),
                         ..
-                    }) => timescale_auto = Some(timescale.dec()),
+                    }) => {
+                        // Make ms the smallest timescale viewable in TUI
+                        timescale_auto = Some(timescale.dec().max(TimeScale::Millisecond))
+                    }
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('-'),
                         ..
