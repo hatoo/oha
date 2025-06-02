@@ -54,11 +54,12 @@ impl RuslsConfigs {
         }
     }
 
-    pub fn config(&self, is_http2: bool) -> &std::sync::Arc<rustls::ClientConfig> {
-        if is_http2 {
-            &self.alpn_h2
-        } else {
-            &self.no_alpn
+    pub fn config(&self, http: hyper::http::Version) -> &std::sync::Arc<rustls::ClientConfig> {
+        use hyper::http::Version;
+        match http {
+            Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11 => &self.no_alpn,
+            Version::HTTP_2 => &self.alpn_h2,
+            _ => panic!("nonsupported HTTP version"),
         }
     }
 }

@@ -63,6 +63,13 @@ impl RequestResult {
     }
 }
 
+// encapsulates the HTTP generation of the work type. Used internally only for conditional logic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum HttpWorkType {
+    H1,
+    H2,
+}
+
 pub struct Dns {
     pub connect_to: Vec<ConnectToEntry>,
     pub resolver:
@@ -255,7 +262,7 @@ pub enum QueryLimit {
 
 // To avoid dynamic dispatch
 // I'm not sure how much this is effective
-enum Stream {
+pub(crate) enum Stream {
     Tcp(TcpStream),
     #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
     Tls(tokio_native_tls::TlsStream<TcpStream>),
@@ -356,11 +363,16 @@ impl Client {
     }
 
     #[inline]
+    pub fn is_http1(&self) -> bool {
+        self.http_version <= http::Version::HTTP_11
+    }
+
+    #[inline]
     fn is_proxy_http2(&self) -> bool {
         self.proxy_http_version == http::Version::HTTP_2
     }
 
-    pub fn is_work_http2(&self) -> bool {
+    fn is_work_http2(&self) -> bool {
         if self.proxy_url.is_some() {
             let url = self
                 .url_generator
@@ -373,6 +385,14 @@ impl Client {
             }
         } else {
             self.is_http2()
+        }
+    }
+
+    fn work_type(&self) -> HttpWorkType {
+        if self.is_work_http2() {
+            HttpWorkType::H2
+        } else {
+            HttpWorkType::H1
         }
     }
 
@@ -403,11 +423,14 @@ impl Client {
         Ok((self.url_generator.generate(rng)?, snapshot))
     }
 
-    async fn client<R: Rng>(
+    /**
+     * Returns a stream of the underlying transport. NOT a HTTP client
+     */
+    pub(crate) async fn client<R: Rng>(
         &self,
         url: &Url,
         rng: &mut R,
-        is_http2: bool,
+        http_version: http::Version,
     ) -> Result<(Instant, Stream), ClientError> {
         // TODO: Allow the connect timeout to be configured
         let timeout_duration = tokio::time::Duration::from_secs(5);
@@ -418,7 +441,8 @@ impl Client {
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
             let stream =
-                tokio::time::timeout(timeout_duration, self.tls_client(addr, url, is_http2)).await;
+                tokio::time::timeout(timeout_duration, self.tls_client(addr, url, http_version))
+                    .await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, stream)),
                 Ok(Err(err)) => Err(err),
@@ -470,12 +494,12 @@ impl Client {
         &self,
         addr: (std::net::IpAddr, u16),
         url: &Url,
-        is_http2: bool,
+        http_version: http::Version,
     ) -> Result<Stream, ClientError> {
         let stream = tokio::net::TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
-        let stream = self.connect_tls(stream, url, is_http2).await?;
+        let stream = self.connect_tls(stream, url, http_version).await?;
 
         Ok(Stream::Tls(stream))
     }
@@ -485,12 +509,14 @@ impl Client {
         &self,
         stream: S,
         url: &Url,
-        is_http2: bool,
+        http_version: http::Version,
     ) -> Result<tokio_native_tls::TlsStream<S>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        let connector = self.native_tls_connectors.connector(is_http2);
+        let connector = self
+            .native_tls_connectors
+            .connector(http_version >= http::Version::HTTP_2);
         let stream = connector
             .connect(url.host_str().ok_or(ClientError::HostNotFound)?, stream)
             .await?;
@@ -503,13 +529,13 @@ impl Client {
         &self,
         stream: S,
         url: &Url,
-        is_http2: bool,
+        http_version: http::Version,
     ) -> Result<Box<tokio_rustls::client::TlsStream<S>>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
         let connector =
-            tokio_rustls::TlsConnector::from(self.rustls_configs.config(is_http2).clone());
+            tokio_rustls::TlsConnector::from(self.rustls_configs.config(http_version).clone());
         let domain = rustls_pki_types::ServerName::try_from(
             url.host_str().ok_or(ClientError::HostNotFound)?,
         )?;
@@ -524,7 +550,12 @@ impl Client {
         rng: &mut R,
     ) -> Result<(Instant, SendRequestHttp1), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
-            let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
+            let http_proxy_version = if self.is_proxy_http2() {
+                http::Version::HTTP_2
+            } else {
+                http::Version::HTTP_11
+            };
+            let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
             if url.scheme() == "https" {
                 // Do CONNECT request to proxy
                 let req = {
@@ -550,7 +581,9 @@ impl Client {
                     send_request.send_request(req).await?
                 };
                 let stream = hyper::upgrade::on(res).await?;
-                let stream = self.connect_tls(TokioIo::new(stream), url, false).await?;
+                let stream = self
+                    .connect_tls(TokioIo::new(stream), url, self.http_version)
+                    .await?;
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
                 tokio::spawn(conn);
@@ -560,17 +593,17 @@ impl Client {
                 Ok((dns_lookup, stream.handshake_http1(false).await?))
             }
         } else {
-            let (dns_lookup, stream) = self.client(url, rng, false).await?;
+            let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_11).await?;
             Ok((dns_lookup, stream.handshake_http1(false).await?))
         }
     }
 
     #[inline]
-    fn request(&self, url: &Url) -> Result<http::Request<Full<Bytes>>, ClientError> {
+    pub(crate) fn request(&self, url: &Url) -> Result<http::Request<Full<Bytes>>, ClientError> {
         let use_proxy = self.proxy_url.is_some() && url.scheme() == "http";
 
         let mut builder = http::Request::builder()
-            .uri(if self.is_http2() || use_proxy {
+            .uri(if !(self.is_http1()) || use_proxy {
                 &url[..]
             } else {
                 &url[url::Position::BeforePath..]
@@ -713,13 +746,19 @@ impl Client {
             do_req.await
         }
     }
+
     async fn connect_http2<R: Rng>(
         &self,
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
-            let (dns_lookup, stream) = self.client(proxy_url, rng, self.is_proxy_http2()).await?;
+            let http_proxy_version = if self.is_proxy_http2() {
+                http::Version::HTTP_2
+            } else {
+                http::Version::HTTP_11
+            };
+            let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
             if url.scheme() == "https" {
                 let req = {
                     let mut builder =
@@ -744,7 +783,9 @@ impl Client {
                     send_request.send_request(req).await?
                 };
                 let stream = hyper::upgrade::on(res).await?;
-                let stream = self.connect_tls(TokioIo::new(stream), url, true).await?;
+                let stream = self
+                    .connect_tls(TokioIo::new(stream), url, http::Version::HTTP_2)
+                    .await?;
                 let (send_request, conn) =
                     hyper::client::conn::http2::Builder::new(TokioExecutor::new())
                         // from nghttp2's default
@@ -762,7 +803,7 @@ impl Client {
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
             }
         } else {
-            let (dns_lookup, stream) = self.client(url, rng, true).await?;
+            let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
             Ok((ConnectionTime { dns_lookup, dialup }, send_request))
@@ -973,18 +1014,19 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
 
     writeln!(w, "{:#?}", request)?;
 
-    let response = if client.is_work_http2() {
-        let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
-        client_state.send_request(request).await?
-    } else {
-        let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
-
-        send_request.send_request(request).await?
+    let response = match client.work_type() {
+        HttpWorkType::H2 => {
+            let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
+            client_state.send_request(request).await?
+        }
+        HttpWorkType::H1 => {
+            let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
+            send_request.send_request(request).await?
+        }
     };
 
     let (parts, body) = response.into_parts();
     let body = body.collect().await.unwrap().to_bytes();
-
     let response = http::Response::from_parts(parts, body);
 
     writeln!(w, "{:#?}", response)?;
@@ -1003,103 +1045,108 @@ pub async fn work(
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
-    if client.is_work_http2() {
-        let futures = (0..n_connections)
-            .map(|_| {
-                let report_tx = report_tx.clone();
-                let counter = counter.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match setup_http2(&client).await {
-                            Ok((connection_time, send_request)) => {
-                                let futures = (0..n_http2_parallel)
-                                    .map(|_| {
-                                        let report_tx = report_tx.clone();
-                                        let counter = counter.clone();
-                                        let client = client.clone();
+    match client.work_type() {
+        HttpWorkType::H2 => {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match setup_http2(&client).await {
+                                Ok((connection_time, send_request)) => {
+                                    let futures = (0..n_http2_parallel)
+                                        .map(|_| {
+                                            let report_tx = report_tx.clone();
+                                            let counter = counter.clone();
+                                            let client = client.clone();
 
-                                        let mut client_state = ClientStateHttp2 {
-                                            rng: SeedableRng::from_os_rng(),
-                                            send_request: send_request.clone(),
-                                        };
-                                        tokio::spawn(async move {
-                                            while counter.fetch_add(1, Ordering::Relaxed) < n_tasks
-                                            {
-                                                let (is_cancel, is_reconnect) = work_http2_once(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    None,
-                                                )
-                                                .await;
+                                            let mut client_state = ClientStateHttp2 {
+                                                rng: SeedableRng::from_os_rng(),
+                                                send_request: send_request.clone(),
+                                            };
+                                            tokio::spawn(async move {
+                                                while counter.fetch_add(1, Ordering::Relaxed)
+                                                    < n_tasks
+                                                {
+                                                    let (is_cancel, is_reconnect) =
+                                                        work_http2_once(
+                                                            &client,
+                                                            &mut client_state,
+                                                            &report_tx,
+                                                            connection_time,
+                                                            None,
+                                                        )
+                                                        .await;
 
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+                                                    if is_cancel || is_reconnect {
+                                                        return is_cancel;
+                                                    }
                                                 }
-                                            }
 
-                                            true
+                                                true
+                                            })
                                         })
-                                    })
-                                    .collect::<Vec<_>>();
+                                        .collect::<Vec<_>>();
 
-                                let mut connection_gone = false;
-                                for f in futures {
-                                    match f.await {
-                                        Ok(true) => {
-                                            // All works done
-                                            connection_gone = true;
+                                    let mut connection_gone = false;
+                                    for f in futures {
+                                        match f.await {
+                                            Ok(true) => {
+                                                // All works done
+                                                connection_gone = true;
+                                            }
+                                            Err(_) => {
+                                                // Unexpected
+                                                connection_gone = true;
+                                            }
+                                            _ => {}
                                         }
-                                        Err(_) => {
-                                            // Unexpected
-                                            connection_gone = true;
-                                        }
-                                        _ => {}
+                                    }
+
+                                    if connection_gone {
+                                        return;
                                     }
                                 }
-
-                                if connection_gone {
-                                    return;
-                                }
-                            }
-                            Err(err) => {
-                                if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                    report_tx.send(Err(err)).unwrap();
-                                } else {
-                                    return;
+                                Err(err) => {
+                                    if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                                        report_tx.send(Err(err)).unwrap();
+                                    } else {
+                                        return;
+                                    }
                                 }
                             }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-        for f in futures {
-            let _ = f.await;
+                .collect::<Vec<_>>();
+            for f in futures {
+                let _ = f.await;
+            }
         }
-    } else {
-        let futures = (0..n_connections)
-            .map(|_| {
-                let report_tx = report_tx.clone();
-                let counter = counter.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    let mut client_state = ClientStateHttp1::default();
-                    while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel {
-                            break;
+        HttpWorkType::H1 => {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    tokio::spawn(async move {
+                        let mut client_state = ClientStateHttp1::default();
+                        while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
+                            let res = client.work_http1(&mut client_state).await;
+                            let is_cancel = is_cancel_error(&res);
+                            report_tx.send(res).unwrap();
+                            if is_cancel {
+                                break;
+                            }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-        for f in futures {
-            let _ = f.await;
+                .collect::<Vec<_>>();
+            for f in futures {
+                let _ = f.await;
+            }
         }
     };
 }
@@ -1152,103 +1199,107 @@ pub async fn work_with_qps(
     };
 
     let rx = rx.to_async();
-    if client.is_work_http2() {
-        let futures = (0..n_connections)
-            .map(|_| {
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match setup_http2(&client).await {
-                            Ok((connection_time, send_request)) => {
-                                let futures = (0..n_http2_parallel)
-                                    .map(|_| {
-                                        let report_tx = report_tx.clone();
-                                        let rx = rx.clone();
-                                        let client = client.clone();
-                                        let mut client_state = ClientStateHttp2 {
-                                            rng: SeedableRng::from_os_rng(),
-                                            send_request: send_request.clone(),
-                                        };
-                                        tokio::spawn(async move {
-                                            while let Ok(()) = rx.recv().await {
-                                                let (is_cancel, is_reconnect) = work_http2_once(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    None,
-                                                )
-                                                .await;
+    match client.work_type() {
+        HttpWorkType::H2 => {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let client = client.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match setup_http2(&client).await {
+                                Ok((connection_time, send_request)) => {
+                                    let futures = (0..n_http2_parallel)
+                                        .map(|_| {
+                                            let report_tx = report_tx.clone();
+                                            let rx = rx.clone();
+                                            let client = client.clone();
+                                            let mut client_state = ClientStateHttp2 {
+                                                rng: SeedableRng::from_os_rng(),
+                                                send_request: send_request.clone(),
+                                            };
+                                            tokio::spawn(async move {
+                                                while let Ok(()) = rx.recv().await {
+                                                    let (is_cancel, is_reconnect) =
+                                                        work_http2_once(
+                                                            &client,
+                                                            &mut client_state,
+                                                            &report_tx,
+                                                            connection_time,
+                                                            None,
+                                                        )
+                                                        .await;
 
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+                                                    if is_cancel || is_reconnect {
+                                                        return is_cancel;
+                                                    }
                                                 }
-                                            }
-                                            true
+                                                true
+                                            })
                                         })
-                                    })
-                                    .collect::<Vec<_>>();
-                                let mut connection_gone = false;
-                                for f in futures {
-                                    match f.await {
-                                        Ok(true) => {
-                                            // All works done
-                                            connection_gone = true;
+                                        .collect::<Vec<_>>();
+                                    let mut connection_gone = false;
+                                    for f in futures {
+                                        match f.await {
+                                            Ok(true) => {
+                                                // All works done
+                                                connection_gone = true;
+                                            }
+                                            Err(_) => {
+                                                // Unexpected
+                                                connection_gone = true;
+                                            }
+                                            _ => {}
                                         }
-                                        Err(_) => {
-                                            // Unexpected
-                                            connection_gone = true;
-                                        }
-                                        _ => {}
+                                    }
+                                    if connection_gone {
+                                        return;
                                     }
                                 }
-                                if connection_gone {
-                                    return;
-                                }
-                            }
-                            Err(err) => {
-                                // Consume a task
-                                if let Ok(()) = rx.recv().await {
-                                    report_tx.send(Err(err)).unwrap();
-                                } else {
-                                    return;
+                                Err(err) => {
+                                    // Consume a task
+                                    if let Ok(()) = rx.recv().await {
+                                        report_tx.send(Err(err)).unwrap();
+                                    } else {
+                                        return;
+                                    }
                                 }
                             }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        work_queue.await.unwrap();
-        for f in futures {
-            let _ = f.await;
+            work_queue.await.unwrap();
+            for f in futures {
+                let _ = f.await;
+            }
         }
-    } else {
-        let futures = (0..n_connections)
-            .map(|_| {
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    let mut client_state = ClientStateHttp1::default();
-                    while let Ok(()) = rx.recv().await {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel {
-                            break;
+        HttpWorkType::H1 => {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let client = client.clone();
+                    tokio::spawn(async move {
+                        let mut client_state = ClientStateHttp1::default();
+                        while let Ok(()) = rx.recv().await {
+                            let res = client.work_http1(&mut client_state).await;
+                            let is_cancel = is_cancel_error(&res);
+                            report_tx.send(res).unwrap();
+                            if is_cancel {
+                                break;
+                            }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        work_queue.await.unwrap();
-        for f in futures {
-            let _ = f.await;
+            work_queue.await.unwrap();
+            for f in futures {
+                let _ = f.await;
+            }
         }
     };
 }
@@ -1304,106 +1355,110 @@ pub async fn work_with_qps_latency_correction(
     };
 
     let rx = rx.to_async();
-    if client.is_work_http2() {
-        let futures = (0..n_connections)
-            .map(|_| {
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match setup_http2(&client).await {
-                            Ok((connection_time, send_request)) => {
-                                let futures = (0..n_http2_parallel)
-                                    .map(|_| {
-                                        let report_tx = report_tx.clone();
-                                        let rx = rx.clone();
-                                        let client = client.clone();
-                                        let mut client_state = ClientStateHttp2 {
-                                            rng: SeedableRng::from_os_rng(),
-                                            send_request: send_request.clone(),
-                                        };
-                                        tokio::spawn(async move {
-                                            while let Ok(start) = rx.recv().await {
-                                                let (is_cancel, is_reconnect) = work_http2_once(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    Some(start),
-                                                )
-                                                .await;
+    match client.work_type() {
+        HttpWorkType::H2 => {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let client = client.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match setup_http2(&client).await {
+                                Ok((connection_time, send_request)) => {
+                                    let futures = (0..n_http2_parallel)
+                                        .map(|_| {
+                                            let report_tx = report_tx.clone();
+                                            let rx = rx.clone();
+                                            let client = client.clone();
+                                            let mut client_state = ClientStateHttp2 {
+                                                rng: SeedableRng::from_os_rng(),
+                                                send_request: send_request.clone(),
+                                            };
+                                            tokio::spawn(async move {
+                                                while let Ok(start) = rx.recv().await {
+                                                    let (is_cancel, is_reconnect) =
+                                                        work_http2_once(
+                                                            &client,
+                                                            &mut client_state,
+                                                            &report_tx,
+                                                            connection_time,
+                                                            Some(start),
+                                                        )
+                                                        .await;
 
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+                                                    if is_cancel || is_reconnect {
+                                                        return is_cancel;
+                                                    }
                                                 }
-                                            }
-                                            true
+                                                true
+                                            })
                                         })
-                                    })
-                                    .collect::<Vec<_>>();
-                                let mut connection_gone = false;
-                                for f in futures {
-                                    match f.await {
-                                        Ok(true) => {
-                                            // All works done
-                                            connection_gone = true;
+                                        .collect::<Vec<_>>();
+                                    let mut connection_gone = false;
+                                    for f in futures {
+                                        match f.await {
+                                            Ok(true) => {
+                                                // All works done
+                                                connection_gone = true;
+                                            }
+                                            Err(_) => {
+                                                // Unexpected
+                                                connection_gone = true;
+                                            }
+                                            _ => {}
                                         }
-                                        Err(_) => {
-                                            // Unexpected
-                                            connection_gone = true;
-                                        }
-                                        _ => {}
+                                    }
+                                    if connection_gone {
+                                        return;
                                     }
                                 }
-                                if connection_gone {
-                                    return;
-                                }
-                            }
-                            Err(err) => {
-                                // Consume a task
-                                if rx.recv().await.is_ok() {
-                                    report_tx.send(Err(err)).unwrap();
-                                } else {
-                                    return;
+                                Err(err) => {
+                                    // Consume a task
+                                    if rx.recv().await.is_ok() {
+                                        report_tx.send(Err(err)).unwrap();
+                                    } else {
+                                        return;
+                                    }
                                 }
                             }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        work_queue.await.unwrap();
-        for f in futures {
-            let _ = f.await;
+            work_queue.await.unwrap();
+            for f in futures {
+                let _ = f.await;
+            }
         }
-    } else {
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let mut client_state = ClientStateHttp1::default();
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                tokio::spawn(async move {
-                    while let Ok(start) = rx.recv().await {
-                        let mut res = client.work_http1(&mut client_state).await;
-                        set_start_latency_correction(&mut res, start);
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel {
-                            break;
+        HttpWorkType::H1 => {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let mut client_state = ClientStateHttp1::default();
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    tokio::spawn(async move {
+                        while let Ok(start) = rx.recv().await {
+                            let mut res = client.work_http1(&mut client_state).await;
+                            set_start_latency_correction(&mut res, start);
+                            let is_cancel = is_cancel_error(&res);
+                            report_tx.send(res).unwrap();
+                            if is_cancel {
+                                break;
+                            }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        work_queue.await.unwrap();
-        for f in futures {
-            let _ = f.await;
+            work_queue.await.unwrap();
+            for f in futures {
+                let _ = f.await;
+            }
         }
-    };
+    }
 }
 
 /// Run until dead_line by n workers
@@ -1415,133 +1470,137 @@ pub async fn work_until(
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
-    if client.is_work_http2() {
-        // Using semaphore to control the deadline
-        // Maybe there is a better concurrent primitive to do this
-        let s = Arc::new(tokio::sync::Semaphore::new(0));
+    match client.work_type() {
+        HttpWorkType::H2 => {
+            // Using semaphore to control the deadline
+            // Maybe there is a better concurrent primitive to do this
+            let s = Arc::new(tokio::sync::Semaphore::new(0));
 
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let report_tx = report_tx.clone();
-                let s = s.clone();
-                tokio::spawn(async move {
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let report_tx = report_tx.clone();
                     let s = s.clone();
-                    // Keep trying to establish or re-establish connections up to the deadline
-                    loop {
-                        match setup_http2(&client).await {
-                            Ok((connection_time, send_request)) => {
-                                // Setup the parallel workers for each HTTP2 connection
-                                let futures = (0..n_http2_parallel)
-                                    .map(|_| {
-                                        let client = client.clone();
-                                        let report_tx = report_tx.clone();
-                                        let mut client_state = ClientStateHttp2 {
-                                            rng: SeedableRng::from_os_rng(),
-                                            send_request: send_request.clone(),
-                                        };
-                                        let s = s.clone();
-                                        tokio::spawn(async move {
-                                            // This is where HTTP2 loops to make all the requests for a given client and worker
-                                            loop {
-                                                let (is_cancel, is_reconnect) = work_http2_once(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    None,
-                                                )
-                                                .await;
+                    tokio::spawn(async move {
+                        let s = s.clone();
+                        // Keep trying to establish or re-establish connections up to the deadline
+                        loop {
+                            match setup_http2(&client).await {
+                                Ok((connection_time, send_request)) => {
+                                    // Setup the parallel workers for each HTTP2 connection
+                                    let futures = (0..n_http2_parallel)
+                                        .map(|_| {
+                                            let client = client.clone();
+                                            let report_tx = report_tx.clone();
+                                            let mut client_state = ClientStateHttp2 {
+                                                rng: SeedableRng::from_os_rng(),
+                                                send_request: send_request.clone(),
+                                            };
+                                            let s = s.clone();
+                                            tokio::spawn(async move {
+                                                // This is where HTTP2 loops to make all the requests for a given client and worker
+                                                loop {
+                                                    let (is_cancel, is_reconnect) =
+                                                        work_http2_once(
+                                                            &client,
+                                                            &mut client_state,
+                                                            &report_tx,
+                                                            connection_time,
+                                                            None,
+                                                        )
+                                                        .await;
 
-                                                let is_cancel = is_cancel || s.is_closed();
-                                                if is_cancel || is_reconnect {
-                                                    break is_cancel;
+                                                    let is_cancel = is_cancel || s.is_closed();
+                                                    if is_cancel || is_reconnect {
+                                                        break is_cancel;
+                                                    }
                                                 }
-                                            }
+                                            })
                                         })
-                                    })
-                                    .collect::<Vec<_>>();
+                                        .collect::<Vec<_>>();
 
-                                let mut connection_gone = false;
-                                for f in futures {
-                                    tokio::select! {
-                                        r = f => {
-                                            match r {
-                                                Ok(true) => {
-                                                    // All works done
-                                                    connection_gone = true;
+                                    let mut connection_gone = false;
+                                    for f in futures {
+                                        tokio::select! {
+                                            r = f => {
+                                                match r {
+                                                    Ok(true) => {
+                                                        // All works done
+                                                        connection_gone = true;
+                                                    }
+                                                    Err(_) => {
+                                                        // Unexpected
+                                                        connection_gone = true;
+                                                    }
+                                                    _ => {}
                                                 }
-                                                Err(_) => {
-                                                    // Unexpected
-                                                    connection_gone = true;
-                                                }
-                                                _ => {}
                                             }
-                                        }
-                                        _ = s.acquire() => {
-                                            report_tx.send(Err(ClientError::Deadline)).unwrap();
-                                            connection_gone = true;
+                                            _ = s.acquire() => {
+                                                report_tx.send(Err(ClientError::Deadline)).unwrap();
+                                                connection_gone = true;
+                                            }
                                         }
                                     }
+                                    if connection_gone {
+                                        return;
+                                    }
                                 }
-                                if connection_gone {
-                                    return;
-                                }
-                            }
 
-                            Err(err) => {
-                                report_tx.send(Err(err)).unwrap();
-                                if s.is_closed() {
-                                    break;
+                                Err(err) => {
+                                    report_tx.send(Err(err)).unwrap();
+                                    if s.is_closed() {
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        tokio::time::sleep_until(dead_line.into()).await;
-        s.close();
+            tokio::time::sleep_until(dead_line.into()).await;
+            s.close();
 
-        for f in futures {
-            let _ = f.await;
-        }
-    } else {
-        let is_end = Arc::new(AtomicBool::new(false));
-
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let report_tx = report_tx.clone();
-                let mut client_state = ClientStateHttp1::default();
-                let is_end = is_end.clone();
-                tokio::spawn(async move {
-                    loop {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel || is_end.load(Relaxed) {
-                            break;
-                        }
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        tokio::time::sleep_until(dead_line.into()).await;
-        is_end.store(true, Relaxed);
-
-        if wait_ongoing_requests_after_deadline {
             for f in futures {
                 let _ = f.await;
             }
-        } else {
-            for f in futures {
-                f.abort();
-                if let Err(e) = f.await {
-                    if e.is_cancelled() {
-                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+        }
+        HttpWorkType::H1 => {
+            let is_end = Arc::new(AtomicBool::new(false));
+
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let report_tx = report_tx.clone();
+                    let mut client_state = ClientStateHttp1::default();
+                    let is_end = is_end.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            let res = client.work_http1(&mut client_state).await;
+                            let is_cancel = is_cancel_error(&res);
+                            report_tx.send(res).unwrap();
+                            if is_cancel || is_end.load(Relaxed) {
+                                break;
+                            }
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            tokio::time::sleep_until(dead_line.into()).await;
+            is_end.store(true, Relaxed);
+
+            if wait_ongoing_requests_after_deadline {
+                for f in futures {
+                    let _ = f.await;
+                }
+            } else {
+                for f in futures {
+                    f.abort();
+                    if let Err(e) = f.await {
+                        if e.is_cancelled() {
+                            report_tx.send(Err(ClientError::Deadline)).unwrap();
+                        }
                     }
                 }
             }
@@ -1600,135 +1659,139 @@ pub async fn work_until_with_qps(
     };
 
     let rx = rx.to_async();
-    if client.is_work_http2() {
-        let s = Arc::new(tokio::sync::Semaphore::new(0));
+    match client.work_type() {
+        HttpWorkType::H2 => {
+            let s = Arc::new(tokio::sync::Semaphore::new(0));
 
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let s = s.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match setup_http2(&client).await {
-                            Ok((connection_time, send_request)) => {
-                                let futures = (0..n_http2_parallel)
-                                    .map(|_| {
-                                        let client = client.clone();
-                                        let report_tx = report_tx.clone();
-                                        let rx = rx.clone();
-                                        let mut client_state = ClientStateHttp2 {
-                                            rng: SeedableRng::from_os_rng(),
-                                            send_request: send_request.clone(),
-                                        };
-                                        let s = s.clone();
-                                        tokio::spawn(async move {
-                                            while let Ok(()) = rx.recv().await {
-                                                let (is_cancel, is_reconnect) = work_http2_once(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    None,
-                                                )
-                                                .await;
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let s = s.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match setup_http2(&client).await {
+                                Ok((connection_time, send_request)) => {
+                                    let futures = (0..n_http2_parallel)
+                                        .map(|_| {
+                                            let client = client.clone();
+                                            let report_tx = report_tx.clone();
+                                            let rx = rx.clone();
+                                            let mut client_state = ClientStateHttp2 {
+                                                rng: SeedableRng::from_os_rng(),
+                                                send_request: send_request.clone(),
+                                            };
+                                            let s = s.clone();
+                                            tokio::spawn(async move {
+                                                while let Ok(()) = rx.recv().await {
+                                                    let (is_cancel, is_reconnect) =
+                                                        work_http2_once(
+                                                            &client,
+                                                            &mut client_state,
+                                                            &report_tx,
+                                                            connection_time,
+                                                            None,
+                                                        )
+                                                        .await;
 
-                                                let is_cancel = is_cancel || s.is_closed();
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+                                                    let is_cancel = is_cancel || s.is_closed();
+                                                    if is_cancel || is_reconnect {
+                                                        return is_cancel;
+                                                    }
                                                 }
-                                            }
-                                            true
+                                                true
+                                            })
                                         })
-                                    })
-                                    .collect::<Vec<_>>();
-                                let mut connection_gone = false;
-                                for f in futures {
-                                    tokio::select! {
-                                        r = f => {
-                                            match r {
-                                                Ok(true) => {
-                                                    // All works done
-                                                    connection_gone = true;
+                                        .collect::<Vec<_>>();
+                                    let mut connection_gone = false;
+                                    for f in futures {
+                                        tokio::select! {
+                                            r = f => {
+                                                match r {
+                                                    Ok(true) => {
+                                                        // All works done
+                                                        connection_gone = true;
+                                                    }
+                                                    Err(_) => {
+                                                        // Unexpected
+                                                        connection_gone = true;
+                                                    }
+                                                    _ => {}
                                                 }
-                                                Err(_) => {
-                                                    // Unexpected
-                                                    connection_gone = true;
-                                                }
-                                                _ => {}
                                             }
-                                        }
-                                        _ = s.acquire() => {
-                                            report_tx.send(Err(ClientError::Deadline)).unwrap();
-                                            connection_gone = true;
+                                            _ = s.acquire() => {
+                                                report_tx.send(Err(ClientError::Deadline)).unwrap();
+                                                connection_gone = true;
+                                            }
                                         }
                                     }
+                                    if connection_gone {
+                                        return;
+                                    }
                                 }
-                                if connection_gone {
-                                    return;
-                                }
-                            }
-                            Err(err) => {
-                                // Consume a task
-                                if rx.recv().await.is_ok() {
-                                    report_tx.send(Err(err)).unwrap();
-                                } else {
-                                    return;
-                                }
+                                Err(err) => {
+                                    // Consume a task
+                                    if rx.recv().await.is_ok() {
+                                        report_tx.send(Err(err)).unwrap();
+                                    } else {
+                                        return;
+                                    }
 
-                                if s.is_closed() {
-                                    return;
+                                    if s.is_closed() {
+                                        return;
+                                    }
                                 }
                             }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        tokio::time::sleep_until(dead_line.into()).await;
-        s.close();
+            tokio::time::sleep_until(dead_line.into()).await;
+            s.close();
 
-        for f in futures {
-            let _ = f.await;
-        }
-    } else {
-        let is_end = Arc::new(AtomicBool::new(false));
-
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let mut client_state = ClientStateHttp1::default();
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let is_end = is_end.clone();
-                tokio::spawn(async move {
-                    while let Ok(()) = rx.recv().await {
-                        let res = client.work_http1(&mut client_state).await;
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel || is_end.load(Relaxed) {
-                            break;
-                        }
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        tokio::time::sleep_until(dead_line.into()).await;
-        is_end.store(true, Relaxed);
-
-        if wait_ongoing_requests_after_deadline {
             for f in futures {
                 let _ = f.await;
             }
-        } else {
-            for f in futures {
-                f.abort();
-                if let Err(e) = f.await {
-                    if e.is_cancelled() {
-                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+        }
+        HttpWorkType::H1 => {
+            let is_end = Arc::new(AtomicBool::new(false));
+
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let mut client_state = ClientStateHttp1::default();
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let is_end = is_end.clone();
+                    tokio::spawn(async move {
+                        while let Ok(()) = rx.recv().await {
+                            let res = client.work_http1(&mut client_state).await;
+                            let is_cancel = is_cancel_error(&res);
+                            report_tx.send(res).unwrap();
+                            if is_cancel || is_end.load(Relaxed) {
+                                break;
+                            }
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            tokio::time::sleep_until(dead_line.into()).await;
+            is_end.store(true, Relaxed);
+
+            if wait_ongoing_requests_after_deadline {
+                for f in futures {
+                    let _ = f.await;
+                }
+            } else {
+                for f in futures {
+                    f.abort();
+                    if let Err(e) = f.await {
+                        if e.is_cancelled() {
+                            report_tx.send(Err(ClientError::Deadline)).unwrap();
+                        }
                     }
                 }
             }
@@ -1786,135 +1849,139 @@ pub async fn work_until_with_qps_latency_correction(
     };
 
     let rx = rx.to_async();
-    if client.is_work_http2() {
-        let s = Arc::new(tokio::sync::Semaphore::new(0));
+    match client.work_type() {
+        HttpWorkType::H2 => {
+            let s = Arc::new(tokio::sync::Semaphore::new(0));
 
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let s = s.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match setup_http2(&client).await {
-                            Ok((connection_time, send_request)) => {
-                                let futures = (0..n_http2_parallel)
-                                    .map(|_| {
-                                        let client = client.clone();
-                                        let report_tx = report_tx.clone();
-                                        let rx = rx.clone();
-                                        let mut client_state = ClientStateHttp2 {
-                                            rng: SeedableRng::from_os_rng(),
-                                            send_request: send_request.clone(),
-                                        };
-                                        let s = s.clone();
-                                        tokio::spawn(async move {
-                                            while let Ok(start) = rx.recv().await {
-                                                let (is_cancel, is_reconnect) = work_http2_once(
-                                                    &client,
-                                                    &mut client_state,
-                                                    &report_tx,
-                                                    connection_time,
-                                                    Some(start),
-                                                )
-                                                .await;
-                                                let is_cancel = is_cancel || s.is_closed();
-                                                if is_cancel || is_reconnect {
-                                                    return is_cancel;
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let s = s.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match setup_http2(&client).await {
+                                Ok((connection_time, send_request)) => {
+                                    let futures = (0..n_http2_parallel)
+                                        .map(|_| {
+                                            let client = client.clone();
+                                            let report_tx = report_tx.clone();
+                                            let rx = rx.clone();
+                                            let mut client_state = ClientStateHttp2 {
+                                                rng: SeedableRng::from_os_rng(),
+                                                send_request: send_request.clone(),
+                                            };
+                                            let s = s.clone();
+                                            tokio::spawn(async move {
+                                                while let Ok(start) = rx.recv().await {
+                                                    let (is_cancel, is_reconnect) =
+                                                        work_http2_once(
+                                                            &client,
+                                                            &mut client_state,
+                                                            &report_tx,
+                                                            connection_time,
+                                                            Some(start),
+                                                        )
+                                                        .await;
+                                                    let is_cancel = is_cancel || s.is_closed();
+                                                    if is_cancel || is_reconnect {
+                                                        return is_cancel;
+                                                    }
                                                 }
-                                            }
-                                            true
+                                                true
+                                            })
                                         })
-                                    })
-                                    .collect::<Vec<_>>();
-                                let mut connection_gone = false;
-                                for f in futures {
-                                    tokio::select! {
-                                        r = f => {
-                                            match r {
-                                                Ok(true) => {
-                                                    // All works done
-                                                    connection_gone = true;
+                                        .collect::<Vec<_>>();
+                                    let mut connection_gone = false;
+                                    for f in futures {
+                                        tokio::select! {
+                                            r = f => {
+                                                match r {
+                                                    Ok(true) => {
+                                                        // All works done
+                                                        connection_gone = true;
+                                                    }
+                                                    Err(_) => {
+                                                        // Unexpected
+                                                        connection_gone = true;
+                                                    }
+                                                    _ => {}
                                                 }
-                                                Err(_) => {
-                                                    // Unexpected
-                                                    connection_gone = true;
-                                                }
-                                                _ => {}
                                             }
-                                        }
-                                        _ = s.acquire() => {
-                                            report_tx.send(Err(ClientError::Deadline)).unwrap();
-                                            connection_gone = true;
+                                            _ = s.acquire() => {
+                                                report_tx.send(Err(ClientError::Deadline)).unwrap();
+                                                connection_gone = true;
+                                            }
                                         }
                                     }
-                                }
-                                if connection_gone {
-                                    return;
-                                }
-                            }
-
-                            Err(err) => {
-                                if rx.recv().await.is_ok() {
-                                    report_tx.send(Err(err)).unwrap();
-                                } else {
-                                    return;
+                                    if connection_gone {
+                                        return;
+                                    }
                                 }
 
-                                if s.is_closed() {
-                                    return;
+                                Err(err) => {
+                                    if rx.recv().await.is_ok() {
+                                        report_tx.send(Err(err)).unwrap();
+                                    } else {
+                                        return;
+                                    }
+
+                                    if s.is_closed() {
+                                        return;
+                                    }
                                 }
                             }
                         }
-                    }
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
 
-        tokio::time::sleep_until(dead_line.into()).await;
-        s.close();
+            tokio::time::sleep_until(dead_line.into()).await;
+            s.close();
 
-        for f in futures {
-            let _ = f.await;
-        }
-    } else {
-        let is_end = Arc::new(AtomicBool::new(false));
-
-        let futures = (0..n_connections)
-            .map(|_| {
-                let client = client.clone();
-                let mut client_state = ClientStateHttp1::default();
-                let report_tx = report_tx.clone();
-                let rx = rx.clone();
-                let is_end = is_end.clone();
-                tokio::spawn(async move {
-                    while let Ok(start) = rx.recv().await {
-                        let mut res = client.work_http1(&mut client_state).await;
-                        set_start_latency_correction(&mut res, start);
-                        let is_cancel = is_cancel_error(&res);
-                        report_tx.send(res).unwrap();
-                        if is_cancel || is_end.load(Relaxed) {
-                            break;
-                        }
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        tokio::time::sleep_until(dead_line.into()).await;
-        is_end.store(true, Relaxed);
-
-        if wait_ongoing_requests_after_deadline {
             for f in futures {
                 let _ = f.await;
             }
-        } else {
-            for f in futures {
-                f.abort();
-                if let Err(e) = f.await {
-                    if e.is_cancelled() {
-                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+        }
+        HttpWorkType::H1 => {
+            let is_end = Arc::new(AtomicBool::new(false));
+
+            let futures = (0..n_connections)
+                .map(|_| {
+                    let client = client.clone();
+                    let mut client_state = ClientStateHttp1::default();
+                    let report_tx = report_tx.clone();
+                    let rx = rx.clone();
+                    let is_end = is_end.clone();
+                    tokio::spawn(async move {
+                        while let Ok(start) = rx.recv().await {
+                            let mut res = client.work_http1(&mut client_state).await;
+                            set_start_latency_correction(&mut res, start);
+                            let is_cancel = is_cancel_error(&res);
+                            report_tx.send(res).unwrap();
+                            if is_cancel || is_end.load(Relaxed) {
+                                break;
+                            }
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            tokio::time::sleep_until(dead_line.into()).await;
+            is_end.store(true, Relaxed);
+
+            if wait_ongoing_requests_after_deadline {
+                for f in futures {
+                    let _ = f.await;
+                }
+            } else {
+                for f in futures {
+                    f.abort();
+                    if let Err(e) = f.await {
+                        if e.is_cancelled() {
+                            report_tx.send(Err(ClientError::Deadline)).unwrap();
+                        }
                     }
                 }
             }
@@ -1930,8 +1997,8 @@ pub mod fast {
 
     use crate::{
         client::{
-            ClientError, ClientStateHttp1, ClientStateHttp2, is_cancel_error, is_hyper_error,
-            set_connection_time, setup_http2,
+            ClientError, ClientStateHttp1, ClientStateHttp2, HttpWorkType, is_cancel_error,
+            is_hyper_error, set_connection_time, setup_http2,
         },
         result_data::ResultData,
     };
@@ -1964,128 +2031,133 @@ pub mod fast {
         });
         let token = tokio_util::sync::CancellationToken::new();
 
-        let handles = if client.is_work_http2() {
-            connections
-                .map(|num_connections| {
-                    let report_tx = report_tx.clone();
-                    let counter = counter.clone();
-                    let client = client.clone();
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap();
-                    let token = token.clone();
-
-                    std::thread::spawn(move || {
+        let handles = match client.work_type() {
+            HttpWorkType::H2 => {
+                connections
+                    .map(|num_connections| {
+                        let report_tx = report_tx.clone();
+                        let counter = counter.clone();
                         let client = client.clone();
-                        let local = tokio::task::LocalSet::new();
-                        for _ in 0..num_connections {
-                            let report_tx = report_tx.clone();
-                            let counter = counter.clone();
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .unwrap();
+                        let token = token.clone();
+
+                        std::thread::spawn(move || {
                             let client = client.clone();
-                            let token = token.clone();
-                            local.spawn_local(Box::pin(async move {
-                                let mut has_err = false;
-                                let mut result_data_err = ResultData::default();
-                                loop {
-                                    let client = client.clone();
-                                    match setup_http2(&client).await {
-                                        Ok((connection_time, send_request)) => {
-                                            let futures = (0..n_http2_parallel)
-                                                .map(|_| {
-                                                    let mut client_state = ClientStateHttp2 {
-                                                        rng: SeedableRng::from_os_rng(),
-                                                        send_request: send_request.clone(),
-                                                    };
-                                                    let counter = counter.clone();
-                                                    let client = client.clone();
-                                                    let report_tx = report_tx.clone();
-                                                    let token = token.clone();
-                                                    tokio::task::spawn_local(async move {
-                                                        let mut result_data = ResultData::default();
+                            let local = tokio::task::LocalSet::new();
+                            for _ in 0..num_connections {
+                                let report_tx = report_tx.clone();
+                                let counter = counter.clone();
+                                let client = client.clone();
+                                let token = token.clone();
+                                local.spawn_local(Box::pin(async move {
+                                    let mut has_err = false;
+                                    let mut result_data_err = ResultData::default();
+                                    loop {
+                                        let client = client.clone();
+                                        match setup_http2(&client).await {
+                                            Ok((connection_time, send_request)) => {
+                                                let futures = (0..n_http2_parallel)
+                                                    .map(|_| {
+                                                        let mut client_state = ClientStateHttp2 {
+                                                            rng: SeedableRng::from_os_rng(),
+                                                            send_request: send_request.clone(),
+                                                        };
+                                                        let counter = counter.clone();
+                                                        let client = client.clone();
+                                                        let report_tx = report_tx.clone();
+                                                        let token = token.clone();
+                                                        tokio::task::spawn_local(async move {
+                                                            let mut result_data =
+                                                                ResultData::default();
 
-                                                        let work = async {
-                                                            while counter
-                                                                .fetch_add(1, Ordering::Relaxed)
-                                                                < n_tasks
-                                                            {
-                                                                let mut res = client
-                                                                    .work_http2(&mut client_state)
-                                                                    .await;
-                                                                let is_cancel =
-                                                                    is_cancel_error(&res);
-                                                                let is_reconnect =
-                                                                    is_hyper_error(&res);
-                                                                set_connection_time(
-                                                                    &mut res,
-                                                                    connection_time,
-                                                                );
+                                                            let work = async {
+                                                                while counter
+                                                                    .fetch_add(1, Ordering::Relaxed)
+                                                                    < n_tasks
+                                                                {
+                                                                    let mut res = client
+                                                                        .work_http2(
+                                                                            &mut client_state,
+                                                                        )
+                                                                        .await;
+                                                                    let is_cancel =
+                                                                        is_cancel_error(&res);
+                                                                    let is_reconnect =
+                                                                        is_hyper_error(&res);
+                                                                    set_connection_time(
+                                                                        &mut res,
+                                                                        connection_time,
+                                                                    );
 
-                                                                result_data.push(res);
+                                                                    result_data.push(res);
 
-                                                                if is_cancel || is_reconnect {
-                                                                    return is_cancel;
+                                                                    if is_cancel || is_reconnect {
+                                                                        return is_cancel;
+                                                                    }
                                                                 }
-                                                            }
-                                                            true
-                                                        };
-
-                                                        let is_cancel = tokio::select! {
-                                                            is_cancel = work => {
-                                                                is_cancel
-                                                            }
-                                                            _ = token.cancelled() => {
                                                                 true
-                                                            }
-                                                        };
+                                                            };
 
-                                                        report_tx.send(result_data).unwrap();
-                                                        is_cancel
+                                                            let is_cancel = tokio::select! {
+                                                                is_cancel = work => {
+                                                                    is_cancel
+                                                                }
+                                                                _ = token.cancelled() => {
+                                                                    true
+                                                                }
+                                                            };
+
+                                                            report_tx.send(result_data).unwrap();
+                                                            is_cancel
+                                                        })
                                                     })
-                                                })
-                                                .collect::<Vec<_>>();
+                                                    .collect::<Vec<_>>();
 
-                                            let mut connection_gone = false;
-                                            for f in futures {
-                                                match f.await {
-                                                    Ok(true) => {
-                                                        // All works done
-                                                        connection_gone = true;
+                                                let mut connection_gone = false;
+                                                for f in futures {
+                                                    match f.await {
+                                                        Ok(true) => {
+                                                            // All works done
+                                                            connection_gone = true;
+                                                        }
+                                                        Err(_) => {
+                                                            // Unexpected
+                                                            connection_gone = true;
+                                                        }
+                                                        _ => {}
                                                     }
-                                                    Err(_) => {
-                                                        // Unexpected
-                                                        connection_gone = true;
-                                                    }
-                                                    _ => {}
+                                                }
+
+                                                if connection_gone {
+                                                    break;
                                                 }
                                             }
-
-                                            if connection_gone {
-                                                break;
-                                            }
-                                        }
-                                        Err(err) => {
-                                            if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                                has_err = true;
-                                                result_data_err.push(Err(err));
-                                            } else {
-                                                break;
+                                            Err(err) => {
+                                                if counter.fetch_add(1, Ordering::Relaxed) < n_tasks
+                                                {
+                                                    has_err = true;
+                                                    result_data_err.push(Err(err));
+                                                } else {
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                if has_err {
-                                    report_tx.send(result_data_err).unwrap();
-                                }
-                            }));
-                        }
+                                    if has_err {
+                                        report_tx.send(result_data_err).unwrap();
+                                    }
+                                }));
+                            }
 
-                        rt.block_on(local);
+                            rt.block_on(local);
+                        })
                     })
-                })
-                .collect::<Vec<_>>()
-        } else {
-            connections
+                    .collect::<Vec<_>>()
+            }
+            HttpWorkType::H1 => connections
                 .map(|num_connection| {
                     let report_tx = report_tx.clone();
                     let counter = counter.clone();
@@ -2127,7 +2199,7 @@ pub mod fast {
                         rt.block_on(local);
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         };
 
         tokio::spawn(async move {
@@ -2169,122 +2241,123 @@ pub mod fast {
             }
         });
         let token = tokio_util::sync::CancellationToken::new();
-        let handles = if client.is_work_http2() {
-            connections
-            .map(|num_connections| {
-                let report_tx = report_tx.clone();
-                let client = client.clone();
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                let token = token.clone();
-                let is_end = is_end.clone();
-
-                std::thread::spawn(move || {
+        let handles = match client.work_type() {
+            HttpWorkType::H2 => {
+                connections
+                .map(|num_connections| {
+                    let report_tx = report_tx.clone();
                     let client = client.clone();
-                    let local = tokio::task::LocalSet::new();
-                    for _ in 0..num_connections {
-                        let report_tx = report_tx.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let token = token.clone();
+                    let is_end = is_end.clone();
+
+                    std::thread::spawn(move || {
                         let client = client.clone();
-                        let token = token.clone();
-                        let is_end = is_end.clone();
-                        local.spawn_local(Box::pin(async move {
-                            let mut has_err = false;
-                            let mut result_data_err = ResultData::default();
-                            loop {
-                                let client = client.clone();
-                                match setup_http2(&client).await {
-                                    Ok((connection_time, send_request)) => {
-                                        let futures = (0..n_http2_parallel)
-                                            .map(|_| {
-                                                let mut client_state = ClientStateHttp2 {
-                                                    rng: SeedableRng::from_os_rng(),
-                                                    send_request: send_request.clone(),
-                                                };
-                                                let client = client.clone();
-                                                let report_tx = report_tx.clone();
-                                                let token = token.clone();
-                                                let is_end = is_end.clone();
-                                                tokio::task::spawn_local(async move {
-                                                    let mut result_data = ResultData::default();
+                        let local = tokio::task::LocalSet::new();
+                        for _ in 0..num_connections {
+                            let report_tx = report_tx.clone();
+                            let client = client.clone();
+                            let token = token.clone();
+                            let is_end = is_end.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut has_err = false;
+                                let mut result_data_err = ResultData::default();
+                                loop {
+                                    let client = client.clone();
+                                    match setup_http2(&client).await {
+                                        Ok((connection_time, send_request)) => {
+                                            let futures = (0..n_http2_parallel)
+                                                .map(|_| {
+                                                    let mut client_state = ClientStateHttp2 {
+                                                        rng: SeedableRng::from_os_rng(),
+                                                        send_request: send_request.clone(),
+                                                    };
+                                                    let client = client.clone();
+                                                    let report_tx = report_tx.clone();
+                                                    let token = token.clone();
+                                                    let is_end = is_end.clone();
+                                                    tokio::task::spawn_local(async move {
+                                                        let mut result_data = ResultData::default();
 
-                                                    let work = async {
-                                                        loop {
-                                                            let mut res = client
-                                                                .work_http2(&mut client_state)
-                                                                .await;
-                                                            let is_cancel = is_cancel_error(&res) || is_end.load(Ordering::Relaxed);
-                                                            let is_reconnect = is_hyper_error(&res);
-                                                            set_connection_time(
-                                                                &mut res,
-                                                                connection_time,
-                                                            );
+                                                        let work = async {
+                                                            loop {
+                                                                let mut res = client
+                                                                    .work_http2(&mut client_state)
+                                                                    .await;
+                                                                let is_cancel = is_cancel_error(&res) || is_end.load(Ordering::Relaxed);
+                                                                let is_reconnect = is_hyper_error(&res);
+                                                                set_connection_time(
+                                                                    &mut res,
+                                                                    connection_time,
+                                                                );
 
-                                                            result_data.push(res);
+                                                                result_data.push(res);
 
-                                                            if is_cancel || is_reconnect {
-                                                                return is_cancel;
+                                                                if is_cancel || is_reconnect {
+                                                                    return is_cancel;
+                                                                }
                                                             }
-                                                        }
-                                                    };
+                                                        };
 
-                                                    let is_cancel = tokio::select! {
-                                                        is_cancel = work => {
-                                                            is_cancel
-                                                        }
-                                                        _ = token.cancelled() => {
-                                                            result_data.push(Err(ClientError::Deadline));
-                                                            true
-                                                        }
-                                                    };
+                                                        let is_cancel = tokio::select! {
+                                                            is_cancel = work => {
+                                                                is_cancel
+                                                            }
+                                                            _ = token.cancelled() => {
+                                                                result_data.push(Err(ClientError::Deadline));
+                                                                true
+                                                            }
+                                                        };
 
-                                                    report_tx.send(result_data).unwrap();
-                                                    is_cancel
+                                                        report_tx.send(result_data).unwrap();
+                                                        is_cancel
+                                                    })
                                                 })
-                                            })
-                                            .collect::<Vec<_>>();
+                                                .collect::<Vec<_>>();
 
-                                        let mut connection_gone = false;
-                                        for f in futures {
-                                            match f.await {
-                                                Ok(true) => {
-                                                    // All works done
-                                                    connection_gone = true;
+                                            let mut connection_gone = false;
+                                            for f in futures {
+                                                match f.await {
+                                                    Ok(true) => {
+                                                        // All works done
+                                                        connection_gone = true;
+                                                    }
+                                                    Err(_) => {
+                                                        // Unexpected
+                                                        connection_gone = true;
+                                                    }
+                                                    _ => {}
                                                 }
-                                                Err(_) => {
-                                                    // Unexpected
-                                                    connection_gone = true;
-                                                }
-                                                _ => {}
+                                            }
+
+                                            if connection_gone {
+                                                break;
                                             }
                                         }
-
-                                        if connection_gone {
-                                            break;
-                                        }
-                                    }
-                                    Err(err) => {
-                                        has_err = true;
-                                        result_data_err.push(Err(err));
-                                        if is_end.load(Ordering::Relaxed) {
-                                            break;
+                                        Err(err) => {
+                                            has_err = true;
+                                            result_data_err.push(Err(err));
+                                            if is_end.load(Ordering::Relaxed) {
+                                                break;
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            if has_err {
-                                report_tx.send(result_data_err).unwrap();
-                            }
-                        }));
-                    }
+                                if has_err {
+                                    report_tx.send(result_data_err).unwrap();
+                                }
+                            }));
+                        }
 
-                    rt.block_on(local);
+                        rt.block_on(local);
+                    })
                 })
-            })
-            .collect::<Vec<_>>()
-        } else {
-            connections
+                .collect::<Vec<_>>()
+            }
+            HttpWorkType::H1 => connections
                 .map(|num_connection| {
                     let report_tx = report_tx.clone();
                     let is_end = is_end.clone();
@@ -2331,7 +2404,7 @@ pub mod fast {
                         rt.block_on(local);
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         };
         tokio::select! {
             _ = tokio::time::sleep_until(dead_line.into()) => {
