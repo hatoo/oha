@@ -69,10 +69,9 @@ rustls-pki-types = { version = "1.7.0", optional = true }
 
 h3 = { version = "0.0.7", optional = true }
 h3-quinn = { version = "0.0.9", optional = true }
-quinn-proto = { version = "*", optional = true, features = ["aws-lc-rs"]}
+quinn-proto = { version = "0.11.10", optional = true, features = ["aws-lc-rs"]}
 http = { version = "1.3.1", optional = true }
-
-quinn = { version = "*", optional = true, features = ["aws-lc-rs", "runtime-tokio"]}
+quinn = { version = "0.11.7", optional = true, features = ["aws-lc-rs", "runtime-tokio"]}
 
 base64 = "0.22.1"
 rand = "0.9.1"
