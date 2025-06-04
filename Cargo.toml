@@ -77,7 +77,7 @@ base64 = "0.22.1"
 rand = "0.9.1"
 rand_core = "0.9.3"
 hickory-resolver = { version = "0.25.2", features = ["tokio"] }
-rand_regex = "0.18.0"
+rand_regex = "0.18.1"
 regex-syntax = "0.8.5"
 url = "2.5.2"
 http-body-util = "0.1.2"
