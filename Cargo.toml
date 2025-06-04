@@ -28,6 +28,13 @@ rustls = [
     "dep:rustls-pki-types",
 ]
 vsock = ["dep:tokio-vsock"]
+http3 = [
+    "dep:h3",
+    "dep:h3-quinn",
+    "dep:quinn-proto",
+    "dep:quinn",
+    "dep:http"
+]
 
 [dependencies]
 anyhow = "1.0.86"
@@ -59,6 +66,12 @@ rustls = { version = "0.23.18", optional = true }
 rustls-native-certs = { version = "0.8.0", optional = true }
 tokio-rustls = { version = "0.26.0", optional = true }
 rustls-pki-types = { version = "1.7.0", optional = true }
+
+h3 = { version = "0.0.7", optional = true }
+h3-quinn = { version = "0.0.9", optional = true }
+quinn-proto = { version = "0.11.10", optional = true, features = ["aws-lc-rs"]}
+http = { version = "1.3.1", optional = true }
+quinn = { version = "0.11.7", optional = true, features = ["aws-lc-rs", "runtime-tokio"]}
 
 base64 = "0.22.1"
 rand = "0.9.1"
@@ -96,6 +109,8 @@ rcgen = { version = "0.13.1", features = ["aws_lc_rs"] }
 regex = "1.10.5"
 tempfile = "3.10.1"
 rustls = "0.23.18"
+rstest = "0.25.0"
+rstest_reuse = "0.7.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 actix-web = "4"
@@ -113,3 +128,6 @@ overflow-checks = false
 
 [profile.release-ci]
 inherits = "pgo"
+
+[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies.socket2]
+version = "0.5"
