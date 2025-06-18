@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`oha` (おはよう) is a HTTP load testing tool written in Rust, inspired by `rakyll/hey`. It provides real-time TUI (Terminal User Interface) visualization of load testing results using `ratatui`.
+`oha` (おはよう) is an HTTP load testing tool written in Rust, inspired by `rakyll/hey`. It provides real-time TUI (Terminal User Interface) visualization of load testing results using `ratatui`.
 
 ## Key Technologies & Dependencies
 
