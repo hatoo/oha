@@ -5,7 +5,7 @@ use http::{Request, Response};
 use kanal::Sender;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
-use h3::{error::ErrorLevel, quic::BidiStream, server::RequestStream};
+use h3::{quic::BidiStream, server::RequestStream};
 use h3_quinn::quinn::{self, crypto::rustls::QuicServerConfig};
 
 static ALPN: &[u8] = b"h3";
@@ -56,28 +56,27 @@ pub async fn h3_server(
                         .await
                         .unwrap();
 
-                    loop {
-                        let tx = tx.clone();
-                        match h3_conn.accept().await {
-                            Ok(Some((req, stream))) => {
-                                return process_request(req, stream, tx).await;
-                            }
+                    let tx = tx.clone();
+                    match h3_conn.accept().await {
+                        Ok(Some(request_resolver)) => {
+                            let (req, stream) = request_resolver.resolve_request().await.unwrap();
+                            process_request(req, stream, tx).await
+                        }
 
-                            // indicating no more streams to be received
-                            Ok(None) => {
-                                return Ok(());
-                            }
+                        // indicating no more streams to be received
+                        Ok(None) => Ok(()),
 
-                            Err(err) => {
-                                // error!("error on accept {}", err);
-                                match err.get_error_level() {
-                                    ErrorLevel::ConnectionError => break,
-                                    ErrorLevel::StreamError => continue,
-                                }
+                        Err(_err) => {
+                            unimplemented!()
+                            // error!("error on accept {}", err);
+                            /*
+                            match err.get_error_level() {
+                                ErrorLevel::ConnectionError => break,
+                                ErrorLevel::StreamError => continue,
                             }
+                            */
                         }
                     }
-                    Ok(())
                 }
                 Err(_err) => Ok(()),
             }
@@ -96,7 +95,7 @@ async fn process_request<T>(
     req: Request<()>,
     mut stream: RequestStream<T, Bytes>,
     tx: Sender<Request<Bytes>>,
-) -> Result<(), h3::Error>
+) -> Result<(), h3::error::StreamError>
 where
     T: BidiStream<Bytes>,
 {

@@ -30,10 +30,12 @@ pub enum Http3Error {
     QuicConnect(#[from] quinn::ConnectError),
     #[error("QUIC connection: {0}")]
     QuicConnection(#[from] quinn::ConnectionError),
-    #[error("HTTP3: {0}")]
-    H3(#[from] h3::Error),
     #[error("Quic connection closed earlier than expected")]
     QuicDriverClosedEarly(#[from] tokio::sync::oneshot::error::RecvError),
+    #[error("HTTP3 connection: {0}")]
+    H3Connection(#[from] h3::error::ConnectionError),
+    #[error("HTTP3 Stream: {0}")]
+    H3Stream(#[from] h3::error::StreamError),
 }
 
 use crate::client::QueryLimit;
@@ -379,14 +381,24 @@ pub(crate) async fn spawn_http3_driver(
     tokio::spawn(async move {
         tokio::select! {
             // Drive the connection
-            closed = std::future::poll_fn(|cx| h3_connection.poll_close(cx)) => Ok(closed?),
+            closed = std::future::poll_fn(|cx| h3_connection.poll_close(cx)) => {
+                if closed.is_h3_no_error() {
+                    Ok(())
+                } else {
+                    Err(Http3Error::H3Connection(closed))
+                }
+            },
             // Listen for shutdown condition
             _ = shutdown_rx => {
                 // Initiate shutdown
                 h3_connection.shutdown(0).await?;
                 // Wait for ongoing work to complete
-                std::future::poll_fn(|cx| h3_connection.poll_close(cx)).await?;
-                Ok(())
+                let closed = std::future::poll_fn(|cx| h3_connection.poll_close(cx)).await;
+                if closed.is_h3_no_error() {
+                    Ok(())
+                } else {
+                    Err(Http3Error::H3Connection(closed))
+                }
             }
         }
     })
