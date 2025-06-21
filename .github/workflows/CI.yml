@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest, macos-14]
-        additional_args: ["", "--no-default-features --features native-tls"]
+        additional_args: ["", "--no-default-features --features native-tls", "--features http3"]
         # vsock feature is only on linux
         include:
           - os: ["ubuntu-latest"]
