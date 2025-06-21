@@ -56,30 +56,25 @@ pub async fn h3_server(
                         .await
                         .unwrap();
 
-                    loop {
-                        let tx = tx.clone();
-                        match h3_conn.accept().await {
-                            Ok(Some(request_resolver)) => {
-                                let (req, stream) =
-                                    request_resolver.resolve_request().await.unwrap();
-                                return process_request(req, stream, tx).await;
-                            }
+                    let tx = tx.clone();
+                    match h3_conn.accept().await {
+                        Ok(Some(request_resolver)) => {
+                            let (req, stream) = request_resolver.resolve_request().await.unwrap();
+                            process_request(req, stream, tx).await
+                        }
 
-                            // indicating no more streams to be received
-                            Ok(None) => {
-                                return Ok(());
-                            }
+                        // indicating no more streams to be received
+                        Ok(None) => Ok(()),
 
-                            Err(_err) => {
-                                unimplemented!()
-                                // error!("error on accept {}", err);
-                                /*
-                                match err.get_error_level() {
-                                    ErrorLevel::ConnectionError => break,
-                                    ErrorLevel::StreamError => continue,
-                                }
-                                */
+                        Err(_err) => {
+                            unimplemented!()
+                            // error!("error on accept {}", err);
+                            /*
+                            match err.get_error_level() {
+                                ErrorLevel::ConnectionError => break,
+                                ErrorLevel::StreamError => continue,
                             }
+                            */
                         }
                     }
                 }
