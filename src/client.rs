@@ -27,15 +27,10 @@ use crate::{
 };
 
 #[cfg(feature = "http3")]
-use crate::client_h3::{parallel_work_http3, send_debug_request_http3};
+use crate::client_h3::send_debug_request_http3;
 
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<Bytes>>;
-#[cfg(feature = "http3")]
-pub type SendRequestHttp3 = (
-    h3::client::Connection<h3_quinn::Connection, Bytes>,
-    h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
-);
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
@@ -148,34 +143,34 @@ pub enum ClientError {
     TooManyRedirect,
     #[error(transparent)]
     // Use Box here because ResolveError is big.
-    ResolveError(#[from] Box<hickory_resolver::ResolveError>),
+    Resolve(#[from] Box<hickory_resolver::ResolveError>),
 
     #[cfg(feature = "native-tls")]
     #[error(transparent)]
-    NativeTlsError(#[from] native_tls::Error),
+    NativeTls(#[from] native_tls::Error),
 
     #[cfg(feature = "rustls")]
     #[error(transparent)]
-    RustlsError(#[from] rustls::Error),
+    Rustls(#[from] rustls::Error),
 
     #[cfg(feature = "rustls")]
     #[error(transparent)]
     InvalidDnsName(#[from] rustls_pki_types::InvalidDnsNameError),
 
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    HttpError(#[from] http::Error),
+    Http(#[from] http::Error),
     #[error(transparent)]
-    HyperError(#[from] hyper::Error),
+    Hyper(#[from] hyper::Error),
     #[error(transparent)]
     InvalidUriParts(#[from] http::uri::InvalidUriParts),
     #[error(transparent)]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("Failed to get header from builder")]
-    GetHeaderFromBuilderError,
+    GetHeaderFromBuilder,
     #[error(transparent)]
-    HeaderToStrError(#[from] http::header::ToStrError),
+    HeaderToStr(#[from] http::header::ToStrError),
     #[error(transparent)]
     InvalidUri(#[from] http::uri::InvalidUri),
     #[error("timeout")]
@@ -183,26 +178,14 @@ pub enum ClientError {
     #[error("aborted due to deadline")]
     Deadline,
     #[error(transparent)]
-    UrlGeneratorError(#[from] UrlGeneratorError),
+    UrlGenerator(#[from] UrlGeneratorError),
     #[error(transparent)]
-    UrlParseError(#[from] ParseError),
+    UrlParse(#[from] ParseError),
     #[error("AWS SigV4 signature error: {0}")]
-    SigV4Error(&'static str),
+    SigV4(&'static str),
     #[cfg(feature = "http3")]
-    #[error("QUIC Client: {0}")]
-    QuicClientConfigError(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
-    #[cfg(feature = "http3")]
-    #[error("QUIC connect: {0}")]
-    QuicConnectError(#[from] quinn::ConnectError),
-    #[cfg(feature = "http3")]
-    #[error("QUIC connection: {0}")]
-    QuicConnectionError(#[from] quinn::ConnectionError),
-    #[cfg(feature = "http3")]
-    #[error("HTTP3: {0}")]
-    H3Error(#[from] h3::Error),
-    #[cfg(feature = "http3")]
-    #[error("Quic connection closed earlier than expected")]
-    QuicDriverClosedEarlyError(#[from] tokio::sync::oneshot::error::RecvError),
+    #[error(transparent)]
+    Http3(#[from] crate::client_h3::Http3Error),
 }
 
 pub struct Client {
@@ -509,7 +492,7 @@ impl Client {
             .await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, Stream::Unix(stream))),
-                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Ok(Err(err)) => Err(ClientError::Io(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
@@ -521,7 +504,7 @@ impl Client {
                     .await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, Stream::Vsock(stream))),
-                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Ok(Err(err)) => Err(ClientError::Io(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
@@ -535,7 +518,7 @@ impl Client {
                 stream.set_nodelay(true)?;
                 Ok((dns_lookup, Stream::Tcp(stream)))
             }
-            Ok(Err(err)) => Err(ClientError::IoError(err)),
+            Ok(Err(err)) => Err(ClientError::Io(err)),
             Err(_) => Err(ClientError::Timeout),
         }
     }
@@ -619,8 +602,7 @@ impl Client {
                             ));
                     *builder
                         .headers_mut()
-                        .ok_or(ClientError::GetHeaderFromBuilderError)? =
-                        self.proxy_headers.clone();
+                        .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
                     builder.body(http_body_util::Full::default())?
                 };
                 let res = if self.proxy_http_version == http::Version::HTTP_2 {
@@ -688,7 +670,7 @@ impl Client {
 
         *builder
             .headers_mut()
-            .ok_or(ClientError::GetHeaderFromBuilderError)? = headers;
+            .ok_or(ClientError::GetHeaderFromBuilder)? = headers;
 
         let request = builder.body(body)?;
 
@@ -821,8 +803,7 @@ impl Client {
                             ));
                     *builder
                         .headers_mut()
-                        .ok_or(ClientError::GetHeaderFromBuilderError)? =
-                        self.proxy_headers.clone();
+                        .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
                     builder.body(http_body_util::Full::default())?
                 };
                 let res = if self.proxy_http_version == http::Version::HTTP_2 {
@@ -993,7 +974,7 @@ fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
     res.as_ref()
         .err()
         .map(|err| match err {
-            ClientError::IoError(io_error) => io_error.raw_os_error() == Some(libc::EMFILE),
+            ClientError::Io(io_error) => io_error.raw_os_error() == Some(libc::EMFILE),
             _ => false,
         })
         .unwrap_or(false)
@@ -1006,8 +987,8 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
         .map(|err| match err {
             // REVIEW: IoErrors, if indicating the underlying connection has failed,
             // should also cause a stop of HTTP2 requests
-            ClientError::IoError(_) => true,
-            ClientError::HyperError(_) => true,
+            ClientError::Io(_) => true,
+            ClientError::Hyper(_) => true,
             _ => false,
         })
         .unwrap_or(false)
@@ -1106,30 +1087,18 @@ pub async fn work(
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work(client, report_tx, n_tasks, n_connections, n_http2_parallel).await;
+        return;
+    }
+
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let (tx, rx) = kanal::unbounded::<Option<Instant>>();
-            let rx = rx.to_async();
-
-            let n_tasks_emitter = async move {
-                for _ in 0..n_tasks {
-                    tx.send(None)?
-                }
-                drop(tx);
-                Ok::<(), kanal::SendError>(())
-            };
-            let futures =
-                parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None)
-                    .await;
-            n_tasks_emitter.await.unwrap();
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let futures = (0..n_connections)
                 .map(|_| {
@@ -1244,7 +1213,21 @@ pub async fn work_with_qps(
     n_connections: usize,
     n_http_parallel: usize,
 ) {
-    let (tx, rx) = kanal::unbounded::<Option<Instant>>();
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work_with_qps(
+            client,
+            report_tx,
+            query_limit,
+            n_tasks,
+            n_connections,
+            n_http_parallel,
+        )
+        .await;
+        return;
+    }
+
+    let (tx, rx) = kanal::unbounded::<()>();
 
     let work_queue = async move {
         match query_limit {
@@ -1255,7 +1238,7 @@ pub async fn work_with_qps(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    tx.send(None)?;
+                    tx.send(())?;
                 }
             }
             QueryLimit::Burst(duration, rate) => {
@@ -1264,7 +1247,7 @@ pub async fn work_with_qps(
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        tx.send(None)?;
+                        tx.send(())?;
                     }
                     n += rate;
                 }
@@ -1272,7 +1255,7 @@ pub async fn work_with_qps(
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
-                        tx.send(None)?;
+                        tx.send(())?;
                     }
                 }
             }
@@ -1285,15 +1268,7 @@ pub async fn work_with_qps(
     let rx = rx.to_async();
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let futures =
-                parallel_work_http3(n_connections, n_http_parallel, rx, report_tx, client, None)
-                    .await;
-            work_queue.await.unwrap();
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let futures = (0..n_connections)
                 .map(|_| {
@@ -1314,7 +1289,7 @@ pub async fn work_with_qps(
                                                 send_request: send_request.clone(),
                                             };
                                             tokio::spawn(async move {
-                                                while let Ok(None) = rx.recv().await {
+                                                while let Ok(()) = rx.recv().await {
                                                     let (is_cancel, is_reconnect) =
                                                         work_http2_once(
                                                             &client,
@@ -1353,7 +1328,7 @@ pub async fn work_with_qps(
                                 }
                                 Err(err) => {
                                     // Consume a task
-                                    if let Ok(None) = rx.recv().await {
+                                    if let Ok(()) = rx.recv().await {
                                         report_tx.send(Err(err)).unwrap();
                                     } else {
                                         return;
@@ -1378,7 +1353,7 @@ pub async fn work_with_qps(
                     let client = client.clone();
                     tokio::spawn(async move {
                         let mut client_state = ClientStateHttp1::default();
-                        while let Ok(None) = rx.recv().await {
+                        while let Ok(()) = rx.recv().await {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
                             report_tx.send(res).unwrap();
@@ -1407,6 +1382,20 @@ pub async fn work_with_qps_latency_correction(
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work_with_qps_latency_correction(
+            client,
+            report_tx,
+            query_limit,
+            n_tasks,
+            n_connections,
+            n_http2_parallel,
+        )
+        .await;
+        return;
+    }
+
     let (tx, rx) = kanal::unbounded();
 
     let work_queue = async move {
@@ -1419,7 +1408,7 @@ pub async fn work_with_qps_latency_correction(
                     )
                     .await;
                     let now = std::time::Instant::now();
-                    tx.send(Some(now))?;
+                    tx.send(now)?;
                 }
             }
             QueryLimit::Burst(duration, rate) => {
@@ -1429,7 +1418,7 @@ pub async fn work_with_qps_latency_correction(
                     tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     for _ in 0..rate {
-                        tx.send(Some(now))?;
+                        tx.send(now)?;
                     }
                     n += rate;
                 }
@@ -1438,7 +1427,7 @@ pub async fn work_with_qps_latency_correction(
                     tokio::time::sleep(duration).await;
                     let now = std::time::Instant::now();
                     for _ in 0..n_tasks - n {
-                        tx.send(Some(now))?;
+                        tx.send(now)?;
                     }
                 }
             }
@@ -1452,14 +1441,7 @@ pub async fn work_with_qps_latency_correction(
     let rx = rx.to_async();
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let futures =
-                parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None)
-                    .await;
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let futures = (0..n_connections)
                 .map(|_| {
@@ -1487,7 +1469,7 @@ pub async fn work_with_qps_latency_correction(
                                                             &mut client_state,
                                                             &report_tx,
                                                             connection_time,
-                                                            start,
+                                                            Some(start),
                                                         )
                                                         .await;
 
@@ -1544,7 +1526,7 @@ pub async fn work_with_qps_latency_correction(
                     let report_tx = report_tx.clone();
                     let rx = rx.clone();
                     tokio::spawn(async move {
-                        while let Ok(Some(start)) = rx.recv().await {
+                        while let Ok(start) = rx.recv().await {
                             let mut res = client.work_http1(&mut client_state).await;
                             set_start_latency_correction(&mut res, start);
                             let is_cancel = is_cancel_error(&res);
@@ -1574,30 +1556,23 @@ pub async fn work_until(
     n_http_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work_until(
+            client,
+            report_tx,
+            dead_line,
+            n_connections,
+            n_http_parallel,
+            wait_ongoing_requests_after_deadline,
+        )
+        .await;
+        return;
+    }
+
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let (tx, rx) = kanal::bounded_async::<Option<Instant>>(5000);
-            // This emitter is used for H3 to give it unlimited tokens to emit work.
-            let cancel_token = tokio_util::sync::CancellationToken::new();
-            let emitter_handle = endless_emitter(cancel_token.clone(), tx).await;
-            let futures = parallel_work_http3(
-                n_connections,
-                n_http_parallel,
-                rx,
-                report_tx.clone(),
-                client.clone(),
-                Some(dead_line),
-            )
-            .await;
-            for f in futures {
-                let _ = f.await;
-            }
-            // Cancel the emitter when we're done with the futures
-            cancel_token.cancel();
-            // Wait for the emitter to exit cleanly
-            let _ = emitter_handle.await;
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             // Using semaphore to control the deadline
             // Maybe there is a better concurrent primitive to do this
@@ -1735,27 +1710,6 @@ pub async fn work_until(
     };
 }
 
-#[cfg(feature = "http3")]
-async fn endless_emitter(
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: kanal::AsyncSender<Option<Instant>>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    break;
-                }
-                _ = async {
-                    // As we our `work_http2_once` function is limited by the number of `tx` we send, but we only
-                    // want to stop when our semaphore is closed, just dump unlimited `Nones` into the tx to un-constrain it
-                    let _ = tx.send(None).await;
-                } => {}
-            }
-        }
-    })
-}
-
 /// Run until dead_line by n workers limit to qps works in a second
 #[allow(clippy::too_many_arguments)]
 pub async fn work_until_with_qps(
@@ -1768,9 +1722,25 @@ pub async fn work_until_with_qps(
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work_until_with_qps(
+            client,
+            report_tx,
+            query_limit,
+            start,
+            dead_line,
+            n_connections,
+            n_http2_parallel,
+            wait_ongoing_requests_after_deadline,
+        )
+        .await;
+        return;
+    }
+
     let rx = match query_limit {
         QueryLimit::Qps(qps) => {
-            let (tx, rx) = kanal::unbounded::<Option<Instant>>();
+            let (tx, rx) = kanal::unbounded::<()>();
             tokio::spawn(async move {
                 for i in 0.. {
                     if std::time::Instant::now() > dead_line {
@@ -1780,7 +1750,7 @@ pub async fn work_until_with_qps(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    let _ = tx.send(None);
+                    let _ = tx.send(());
                 }
                 // tx gone
             });
@@ -1797,7 +1767,7 @@ pub async fn work_until_with_qps(
 
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        let _ = tx.send(None);
+                        let _ = tx.send(());
                     }
                 }
                 // tx gone
@@ -1809,20 +1779,7 @@ pub async fn work_until_with_qps(
     let rx = rx.to_async();
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let futures = parallel_work_http3(
-                n_connections,
-                n_http2_parallel,
-                rx,
-                report_tx,
-                client,
-                Some(dead_line),
-            )
-            .await;
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let s = Arc::new(tokio::sync::Semaphore::new(0));
 
@@ -1847,7 +1804,7 @@ pub async fn work_until_with_qps(
                                             };
                                             let s = s.clone();
                                             tokio::spawn(async move {
-                                                while let Ok(None) = rx.recv().await {
+                                                while let Ok(()) = rx.recv().await {
                                                     let (is_cancel, is_reconnect) =
                                                         work_http2_once(
                                                             &client,
@@ -1929,7 +1886,7 @@ pub async fn work_until_with_qps(
                     let rx = rx.clone();
                     let is_end = is_end.clone();
                     tokio::spawn(async move {
-                        while let Ok(None) = rx.recv().await {
+                        while let Ok(()) = rx.recv().await {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
                             report_tx.send(res).unwrap();
@@ -1974,6 +1931,22 @@ pub async fn work_until_with_qps_latency_correction(
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
 ) {
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work_until_with_qps_latency_correction(
+            client,
+            report_tx,
+            query_limit,
+            start,
+            dead_line,
+            n_connections,
+            n_http2_parallel,
+            wait_ongoing_requests_after_deadline,
+        )
+        .await;
+        return;
+    }
+
     let (tx, rx) = kanal::unbounded();
     match query_limit {
         QueryLimit::Qps(qps) => {
@@ -1987,7 +1960,7 @@ pub async fn work_until_with_qps_latency_correction(
                     if now > dead_line {
                         break;
                     }
-                    let _ = tx.send(Some(now));
+                    let _ = tx.send(now);
                 }
                 // tx gone
             });
@@ -2003,7 +1976,7 @@ pub async fn work_until_with_qps_latency_correction(
                     }
 
                     for _ in 0..rate {
-                        let _ = tx.send(Some(now));
+                        let _ = tx.send(now);
                     }
                 }
                 // tx gone
@@ -2014,20 +1987,7 @@ pub async fn work_until_with_qps_latency_correction(
     let rx = rx.to_async();
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let futures = parallel_work_http3(
-                n_connections,
-                n_http2_parallel,
-                rx,
-                report_tx,
-                client,
-                Some(dead_line),
-            )
-            .await;
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let s = Arc::new(tokio::sync::Semaphore::new(0));
 
@@ -2059,7 +2019,7 @@ pub async fn work_until_with_qps_latency_correction(
                                                             &mut client_state,
                                                             &report_tx,
                                                             connection_time,
-                                                            start,
+                                                            Some(start),
                                                         )
                                                         .await;
                                                     let is_cancel = is_cancel || s.is_closed();
@@ -2133,7 +2093,7 @@ pub async fn work_until_with_qps_latency_correction(
                     let rx = rx.clone();
                     let is_end = is_end.clone();
                     tokio::spawn(async move {
-                        while let Ok(Some(start)) = rx.recv().await {
+                        while let Ok(start) = rx.recv().await {
                             let mut res = client.work_http1(&mut client_state).await;
                             set_start_latency_correction(&mut res, start);
                             let is_cancel = is_cancel_error(&res);
@@ -2184,9 +2144,6 @@ pub mod fast {
         result_data::ResultData,
     };
 
-    #[cfg(feature = "http3")]
-    use crate::client_h3::http3_connection_fast_work_until;
-
     use super::Client;
 
     /// Run n tasks by m workers
@@ -2197,6 +2154,19 @@ pub mod fast {
         n_connections: usize,
         n_http_parallel: usize,
     ) {
+        #[cfg(feature = "http3")]
+        if matches!(client.work_type(), HttpWorkType::H3) {
+            crate::client_h3::fast::work(
+                client,
+                report_tx,
+                n_tasks,
+                n_connections,
+                n_http_parallel,
+            )
+            .await;
+            return;
+        }
+
         let counter = Arc::new(AtomicIsize::new(n_tasks as isize));
         let num_threads = num_cpus::get_physical();
         let connections = (0..num_threads).filter_map(|i| {
@@ -2216,34 +2186,7 @@ pub mod fast {
 
         let handles = match client.work_type() {
             #[cfg(feature = "http3")]
-            HttpWorkType::H3 => {
-                connections
-                    .map(|num_connections| {
-                        let report_tx = report_tx.clone();
-                        let client = client.clone();
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .unwrap();
-                        let token = token.clone();
-                        let counter = counter.clone();
-                        // will let is_end just stay false permanently
-                        let is_end = Arc::new(AtomicBool::new(false));
-                        std::thread::spawn(move || {
-                            http3_connection_fast_work_until(
-                                num_connections,
-                                n_http_parallel,
-                                report_tx,
-                                client,
-                                token,
-                                Some(counter),
-                                is_end,
-                                rt,
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            }
+            HttpWorkType::H3 => unreachable!(),
             HttpWorkType::H2 => {
                 connections
                     .map(|num_connections| {
@@ -2434,6 +2377,20 @@ pub mod fast {
         n_http_parallel: usize,
         wait_ongoing_requests_after_deadline: bool,
     ) {
+        #[cfg(feature = "http3")]
+        if matches!(client.work_type(), HttpWorkType::H3) {
+            crate::client_h3::fast::work_until(
+                client,
+                report_tx,
+                dead_line,
+                n_connections,
+                n_http_parallel,
+                wait_ongoing_requests_after_deadline,
+            )
+            .await;
+            return;
+        }
+
         let num_threads = num_cpus::get_physical();
 
         let is_end = Arc::new(AtomicBool::new(false));
@@ -2453,30 +2410,7 @@ pub mod fast {
         let token = tokio_util::sync::CancellationToken::new();
         let handles = match client.work_type() {
             #[cfg(feature = "http3")]
-            HttpWorkType::H3 => connections
-                .map(|num_connections| {
-                    let report_tx = report_tx.clone();
-                    let client = client.clone();
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap();
-                    let token = token.clone();
-                    let is_end = is_end.clone();
-                    std::thread::spawn(move || {
-                        http3_connection_fast_work_until(
-                            num_connections,
-                            n_http_parallel,
-                            report_tx,
-                            client,
-                            token,
-                            None,
-                            is_end,
-                            rt,
-                        )
-                    })
-                })
-                .collect::<Vec<_>>(),
+            HttpWorkType::H3 => unreachable!(),
             HttpWorkType::H2 => {
                 connections
                 .map(|num_connections| {
