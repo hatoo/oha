@@ -618,17 +618,392 @@ pub async fn work_with_qps(
         Ok::<(), kanal::SendError>(())
     };
 
-    let futures = parallel_work_http3(
-        n_connections,
-        n_http_parallel,
-        rx.to_async(),
-        report_tx,
-        client,
-        None,
-    )
-    .await;
+    let rx = rx.to_async();
+    let futures =
+        parallel_work_http3(n_connections, n_http_parallel, rx, report_tx, client, None).await;
     work_queue.await.unwrap();
     for f in futures {
         let _ = f.await;
+    }
+}
+
+/// n tasks by m workers limit to qps works in a second with latency correction
+pub async fn work_with_qps_latency_correction(
+    client: Arc<Client>,
+    report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
+    query_limit: QueryLimit,
+    n_tasks: usize,
+    n_connections: usize,
+    n_http2_parallel: usize,
+) {
+    let (tx, rx) = kanal::unbounded();
+
+    let _work_queue = async move {
+        match query_limit {
+            QueryLimit::Qps(qps) => {
+                let start = std::time::Instant::now();
+                for i in 0..n_tasks {
+                    tokio::time::sleep_until(
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                    )
+                    .await;
+                    let now = std::time::Instant::now();
+                    tx.send(Some(now))?;
+                }
+            }
+            QueryLimit::Burst(duration, rate) => {
+                let mut n = 0;
+                // Handle via rate till n_tasks out of bound
+                while n + rate < n_tasks {
+                    tokio::time::sleep(duration).await;
+                    let now = std::time::Instant::now();
+                    for _ in 0..rate {
+                        tx.send(Some(now))?;
+                    }
+                    n += rate;
+                }
+                // Handle the remaining tasks
+                if n_tasks > n {
+                    tokio::time::sleep(duration).await;
+                    let now = std::time::Instant::now();
+                    for _ in 0..n_tasks - n {
+                        tx.send(Some(now))?;
+                    }
+                }
+            }
+        }
+
+        // tx gone
+        drop(tx);
+        Ok::<(), kanal::SendError>(())
+    };
+
+    let rx = rx.to_async();
+    let futures =
+        parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None).await;
+    for f in futures {
+        let _ = f.await;
+    }
+}
+
+/// Run until dead_line by n workers
+pub async fn work_until(
+    client: Arc<Client>,
+    report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
+    dead_line: std::time::Instant,
+    n_connections: usize,
+    n_http_parallel: usize,
+    _wait_ongoing_requests_after_deadline: bool,
+) {
+    let (tx, rx) = kanal::bounded_async::<Option<Instant>>(5000);
+    // This emitter is used for H3 to give it unlimited tokens to emit work.
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let emitter_handle = endless_emitter(cancel_token.clone(), tx).await;
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http_parallel,
+        rx,
+        report_tx.clone(),
+        client.clone(),
+        Some(dead_line),
+    )
+    .await;
+    for f in futures {
+        let _ = f.await;
+    }
+    // Cancel the emitter when we're done with the futures
+    cancel_token.cancel();
+    // Wait for the emitter to exit cleanly
+    let _ = emitter_handle.await;
+}
+
+/// Run until dead_line by n workers limit to qps works in a second
+#[allow(clippy::too_many_arguments)]
+pub async fn work_until_with_qps(
+    client: Arc<Client>,
+    report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
+    query_limit: QueryLimit,
+    start: std::time::Instant,
+    dead_line: std::time::Instant,
+    n_connections: usize,
+    n_http2_parallel: usize,
+    _wait_ongoing_requests_after_deadline: bool,
+) {
+    let rx = match query_limit {
+        QueryLimit::Qps(qps) => {
+            let (tx, rx) = kanal::unbounded::<Option<Instant>>();
+            tokio::spawn(async move {
+                for i in 0.. {
+                    if std::time::Instant::now() > dead_line {
+                        break;
+                    }
+                    tokio::time::sleep_until(
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                    )
+                    .await;
+                    let _ = tx.send(None);
+                }
+                // tx gone
+            });
+            rx
+        }
+        QueryLimit::Burst(duration, rate) => {
+            let (tx, rx) = kanal::unbounded();
+            tokio::spawn(async move {
+                // Handle via rate till deadline is reached
+                for _ in 0.. {
+                    if std::time::Instant::now() > dead_line {
+                        break;
+                    }
+
+                    tokio::time::sleep(duration).await;
+                    for _ in 0..rate {
+                        let _ = tx.send(None);
+                    }
+                }
+                // tx gone
+            });
+            rx
+        }
+    };
+    let rx = rx.to_async();
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http2_parallel,
+        rx,
+        report_tx,
+        client,
+        Some(dead_line),
+    )
+    .await;
+    for f in futures {
+        let _ = f.await;
+    }
+}
+
+/// Run until dead_line by n workers limit to qps works in a second with latency correction
+#[allow(clippy::too_many_arguments)]
+pub async fn work_until_with_qps_latency_correction(
+    client: Arc<Client>,
+    report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
+    query_limit: QueryLimit,
+    start: std::time::Instant,
+    dead_line: std::time::Instant,
+    n_connections: usize,
+    n_http2_parallel: usize,
+    _wait_ongoing_requests_after_deadline: bool,
+) {
+    let (tx, rx) = kanal::unbounded();
+    match query_limit {
+        QueryLimit::Qps(qps) => {
+            tokio::spawn(async move {
+                for i in 0.. {
+                    tokio::time::sleep_until(
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                    )
+                    .await;
+                    let now = std::time::Instant::now();
+                    if now > dead_line {
+                        break;
+                    }
+                    let _ = tx.send(Some(now));
+                }
+                // tx gone
+            });
+        }
+        QueryLimit::Burst(duration, rate) => {
+            tokio::spawn(async move {
+                // Handle via rate till deadline is reached
+                loop {
+                    tokio::time::sleep(duration).await;
+                    let now = std::time::Instant::now();
+                    if now > dead_line {
+                        break;
+                    }
+
+                    for _ in 0..rate {
+                        let _ = tx.send(Some(now));
+                    }
+                }
+                // tx gone
+            });
+        }
+    };
+
+    let rx = rx.to_async();
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http2_parallel,
+        rx,
+        report_tx,
+        client,
+        Some(dead_line),
+    )
+    .await;
+    for f in futures {
+        let _ = f.await;
+    }
+}
+
+#[cfg(feature = "http3")]
+async fn endless_emitter(
+    cancellation_token: tokio_util::sync::CancellationToken,
+    tx: kanal::AsyncSender<Option<Instant>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    break;
+                }
+                _ = async {
+                    // As we our `work_http2_once` function is limited by the number of `tx` we send, but we only
+                    // want to stop when our semaphore is closed, just dump unlimited `Nones` into the tx to un-constrain it
+                    let _ = tx.send(None).await;
+                } => {}
+            }
+        }
+    })
+}
+
+pub mod fast {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicIsize, Ordering},
+    };
+
+    use crate::{
+        client::Client, client_h3::http3_connection_fast_work_until, result_data::ResultData,
+    };
+
+    /// Run n tasks by m workers
+    pub async fn work(
+        client: Arc<Client>,
+        report_tx: kanal::Sender<ResultData>,
+        n_tasks: usize,
+        n_connections: usize,
+        n_http_parallel: usize,
+    ) {
+        let counter = Arc::new(AtomicIsize::new(n_tasks as isize));
+        let num_threads = num_cpus::get_physical();
+        let connections = (0..num_threads).filter_map(|i| {
+            let num_connection = n_connections / num_threads
+                + (if (n_connections % num_threads) > i {
+                    1
+                } else {
+                    0
+                });
+            if num_connection > 0 {
+                Some(num_connection)
+            } else {
+                None
+            }
+        });
+        let token = tokio_util::sync::CancellationToken::new();
+        let handles = connections
+            .map(|num_connections| {
+                let report_tx = report_tx.clone();
+                let client = client.clone();
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let token = token.clone();
+                let counter = counter.clone();
+                // will let is_end just stay false permanently
+                let is_end = Arc::new(AtomicBool::new(false));
+                std::thread::spawn(move || {
+                    http3_connection_fast_work_until(
+                        num_connections,
+                        n_http_parallel,
+                        report_tx,
+                        client,
+                        token,
+                        Some(counter),
+                        is_end,
+                        rt,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            token.cancel();
+        });
+
+        tokio::task::block_in_place(|| {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
+    }
+
+    /// Run until dead_line by n workers
+    pub async fn work_until(
+        client: Arc<Client>,
+        report_tx: kanal::Sender<ResultData>,
+        dead_line: std::time::Instant,
+        n_connections: usize,
+        n_http_parallel: usize,
+        wait_ongoing_requests_after_deadline: bool,
+    ) {
+        let num_threads = num_cpus::get_physical();
+
+        let is_end = Arc::new(AtomicBool::new(false));
+        let connections = (0..num_threads).filter_map(|i| {
+            let num_connection = n_connections / num_threads
+                + (if (n_connections % num_threads) > i {
+                    1
+                } else {
+                    0
+                });
+            if num_connection > 0 {
+                Some(num_connection)
+            } else {
+                None
+            }
+        });
+        let token = tokio_util::sync::CancellationToken::new();
+        let handles = connections
+            .map(|num_connections| {
+                let report_tx = report_tx.clone();
+                let client = client.clone();
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let token = token.clone();
+                let is_end = is_end.clone();
+                std::thread::spawn(move || {
+                    http3_connection_fast_work_until(
+                        num_connections,
+                        n_http_parallel,
+                        report_tx,
+                        client,
+                        token,
+                        None,
+                        is_end,
+                        rt,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        tokio::select! {
+            _ = tokio::time::sleep_until(dead_line.into()) => {
+            }
+            _ = tokio::signal::ctrl_c() => {
+            }
+        }
+
+        is_end.store(true, Ordering::Relaxed);
+
+        if !wait_ongoing_requests_after_deadline {
+            token.cancel();
+        }
+        tokio::task::block_in_place(|| {
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
     }
 }
