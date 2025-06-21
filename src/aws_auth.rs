@@ -47,11 +47,11 @@ impl AwsSignatureConfig {
         if !headers.contains_key(header::HOST) {
             let host = url
                 .host_str()
-                .ok_or_else(|| ClientError::SigV4Error("URL must contain a host"))?;
+                .ok_or_else(|| ClientError::SigV4("URL must contain a host"))?;
             headers.insert(
                 header::HOST,
                 host.parse()
-                    .map_err(|_| ClientError::SigV4Error("Invalid host header name"))?,
+                    .map_err(|_| ClientError::SigV4("Invalid host header name"))?,
             );
         }
         headers.insert("x-amz-date", header_amz_date);
@@ -97,7 +97,7 @@ impl AwsSignatureConfig {
             header::AUTHORIZATION,
             signature
                 .parse()
-                .map_err(|_| ClientError::SigV4Error("Invalid authorization header name"))?,
+                .map_err(|_| ClientError::SigV4("Invalid authorization header name"))?,
         );
 
         Ok(())

@@ -16,8 +16,28 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use url::Url;
 
+pub type SendRequestHttp3 = (
+    h3::client::Connection<h3_quinn::Connection, Bytes>,
+    h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
+);
+
+// HTTP3-specific error types
+#[derive(thiserror::Error, Debug)]
+pub enum Http3Error {
+    #[error("QUIC Client: {0}")]
+    QuicClientConfig(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
+    #[error("QUIC connect: {0}")]
+    QuicConnect(#[from] quinn::ConnectError),
+    #[error("QUIC connection: {0}")]
+    QuicConnection(#[from] quinn::ConnectionError),
+    #[error("HTTP3: {0}")]
+    H3(#[from] h3::Error),
+    #[error("Quic connection closed earlier than expected")]
+    QuicDriverClosedEarly(#[from] tokio::sync::oneshot::error::RecvError),
+}
+
 use crate::client::{
-    Client, ClientError, ConnectionTime, RequestResult, SendRequestHttp3, Stream, is_cancel_error,
+    Client, ClientError, ConnectionTime, RequestResult, Stream, is_cancel_error,
     set_connection_time, set_start_latency_correction,
 };
 use crate::pcg64si::Pcg64Si;
@@ -69,15 +89,18 @@ impl Client {
 
         let tls_config = self.rustls_configs.config(http::Version::HTTP_3).clone();
         let client_config = quinn::ClientConfig::new(Arc::new(
-            quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?,
+            quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)
+                .map_err(Http3Error::from)?,
         ));
         client_endpoint.set_default_client_config(client_config);
 
         let remote_socket_address = SocketAddr::new(addr.0, addr.1);
         let server_name = url.host_str().ok_or(ClientError::HostNotFound)?;
         let conn = client_endpoint
-            .connect(remote_socket_address, server_name)?
-            .await?;
+            .connect(remote_socket_address, server_name)
+            .map_err(Http3Error::from)?
+            .await
+            .map_err(Http3Error::from)?;
         Ok(Stream::Quic(conn))
     }
 
@@ -97,22 +120,26 @@ impl Client {
             // with not doing this for now
             let (head, mut req_body) = request.into_parts();
             let request = http::request::Request::from_parts(head, ());
-            let mut stream = client_state.send_request.send_request(request).await?;
+            let mut stream = client_state
+                .send_request
+                .send_request(request)
+                .await
+                .map_err(Http3Error::from)?;
             // send the request body now
             if let Some(Ok(frame)) = req_body.frame().await {
                 if let Ok(data) = frame.into_data() {
-                    stream.send_data(data).await?;
+                    stream.send_data(data).await.map_err(Http3Error::from)?;
                 }
             }
-            stream.finish().await?;
+            stream.finish().await.map_err(Http3Error::from)?;
 
             // now read the response headers
-            let response = stream.recv_response().await?;
+            let response = stream.recv_response().await.map_err(Http3Error::from)?;
             let (parts, _) = response.into_parts();
             let status = parts.status;
             // now read the response body
             let mut len_bytes = 0;
-            while let Some(chunk) = stream.recv_data().await? {
+            while let Some(chunk) = stream.recv_data().await.map_err(Http3Error::from)? {
                 if first_byte.is_none() {
                     first_byte = Some(std::time::Instant::now())
                 }
@@ -150,7 +177,7 @@ impl Client {
 }
 
 impl Stream {
-    async fn handshake_http3(self) -> Result<SendRequestHttp3, ClientError> {
+    async fn handshake_http3(self) -> Result<SendRequestHttp3, Http3Error> {
         let Stream::Quic(quic_conn) = self else {
             panic!("You cannot call http3 handshake on a non-quic stream");
         };
@@ -165,7 +192,7 @@ pub(crate) async fn send_debug_request_http3(
     h3_connection: h3::client::Connection<h3_quinn::Connection, Bytes>,
     mut client_state: h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
     request: Request<http_body_util::Full<Bytes>>,
-) -> Result<http::Response<Bytes>, ClientError> {
+) -> Result<http::Response<Bytes>, Http3Error> {
     // Prepare a channel to stop the driver thread
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     // Run the driver
@@ -347,20 +374,20 @@ pub(crate) async fn setup_http3(
 pub(crate) async fn spawn_http3_driver(
     mut h3_connection: h3::client::Connection<h3_quinn::Connection, Bytes>,
     shutdown_rx: tokio::sync::oneshot::Receiver<usize>,
-) -> tokio::task::JoinHandle<std::result::Result<(), ClientError>> {
+) -> tokio::task::JoinHandle<std::result::Result<(), Http3Error>> {
     tokio::spawn(async move {
-        let result = tokio::select! {
+        tokio::select! {
             // Drive the connection
-            closed = std::future::poll_fn(|cx| h3_connection.poll_close(cx)) => closed.map_err(ClientError::from),
+            closed = std::future::poll_fn(|cx| h3_connection.poll_close(cx)) => Ok(closed?),
             // Listen for shutdown condition
             _ = shutdown_rx => {
                 // Initiate shutdown
                 h3_connection.shutdown(0).await?;
                 // Wait for ongoing work to complete
-                std::future::poll_fn(|cx| h3_connection.poll_close(cx)).await.map_err(ClientError::from)
+                std::future::poll_fn(|cx| h3_connection.poll_close(cx)).await?;
+                Ok(())
             }
-        };
-        result
+        }
     })
 }
 
@@ -385,7 +412,7 @@ pub(crate) async fn work_http3_once(
 fn is_h3_error(res: &Result<RequestResult, ClientError>) -> bool {
     res.as_ref()
         .err()
-        .map(|err| matches!(err, ClientError::H3Error(_) | ClientError::IoError(_)))
+        .map(|err| matches!(err, ClientError::Http3(_) | ClientError::Io(_)))
         .unwrap_or(false)
 }
 

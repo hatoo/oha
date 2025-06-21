@@ -31,11 +31,6 @@ use crate::client_h3::{parallel_work_http3, send_debug_request_http3};
 
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<Bytes>>;
-#[cfg(feature = "http3")]
-pub type SendRequestHttp3 = (
-    h3::client::Connection<h3_quinn::Connection, Bytes>,
-    h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
-);
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
@@ -148,34 +143,34 @@ pub enum ClientError {
     TooManyRedirect,
     #[error(transparent)]
     // Use Box here because ResolveError is big.
-    ResolveError(#[from] Box<hickory_resolver::ResolveError>),
+    Resolve(#[from] Box<hickory_resolver::ResolveError>),
 
     #[cfg(feature = "native-tls")]
     #[error(transparent)]
-    NativeTlsError(#[from] native_tls::Error),
+    NativeTls(#[from] native_tls::Error),
 
     #[cfg(feature = "rustls")]
     #[error(transparent)]
-    RustlsError(#[from] rustls::Error),
+    Rustls(#[from] rustls::Error),
 
     #[cfg(feature = "rustls")]
     #[error(transparent)]
     InvalidDnsName(#[from] rustls_pki_types::InvalidDnsNameError),
 
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    HttpError(#[from] http::Error),
+    Http(#[from] http::Error),
     #[error(transparent)]
-    HyperError(#[from] hyper::Error),
+    Hyper(#[from] hyper::Error),
     #[error(transparent)]
     InvalidUriParts(#[from] http::uri::InvalidUriParts),
     #[error(transparent)]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("Failed to get header from builder")]
-    GetHeaderFromBuilderError,
+    GetHeaderFromBuilder,
     #[error(transparent)]
-    HeaderToStrError(#[from] http::header::ToStrError),
+    HeaderToStr(#[from] http::header::ToStrError),
     #[error(transparent)]
     InvalidUri(#[from] http::uri::InvalidUri),
     #[error("timeout")]
@@ -183,26 +178,14 @@ pub enum ClientError {
     #[error("aborted due to deadline")]
     Deadline,
     #[error(transparent)]
-    UrlGeneratorError(#[from] UrlGeneratorError),
+    UrlGenerator(#[from] UrlGeneratorError),
     #[error(transparent)]
-    UrlParseError(#[from] ParseError),
+    UrlParse(#[from] ParseError),
     #[error("AWS SigV4 signature error: {0}")]
-    SigV4Error(&'static str),
+    SigV4(&'static str),
     #[cfg(feature = "http3")]
-    #[error("QUIC Client: {0}")]
-    QuicClientConfigError(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
-    #[cfg(feature = "http3")]
-    #[error("QUIC connect: {0}")]
-    QuicConnectError(#[from] quinn::ConnectError),
-    #[cfg(feature = "http3")]
-    #[error("QUIC connection: {0}")]
-    QuicConnectionError(#[from] quinn::ConnectionError),
-    #[cfg(feature = "http3")]
-    #[error("HTTP3: {0}")]
-    H3Error(#[from] h3::Error),
-    #[cfg(feature = "http3")]
-    #[error("Quic connection closed earlier than expected")]
-    QuicDriverClosedEarlyError(#[from] tokio::sync::oneshot::error::RecvError),
+    #[error(transparent)]
+    Http3(#[from] crate::client_h3::Http3Error),
 }
 
 pub struct Client {
@@ -509,7 +492,7 @@ impl Client {
             .await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, Stream::Unix(stream))),
-                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Ok(Err(err)) => Err(ClientError::Io(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
@@ -521,7 +504,7 @@ impl Client {
                     .await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, Stream::Vsock(stream))),
-                Ok(Err(err)) => Err(ClientError::IoError(err)),
+                Ok(Err(err)) => Err(ClientError::Io(err)),
                 Err(_) => Err(ClientError::Timeout),
             };
         }
@@ -535,7 +518,7 @@ impl Client {
                 stream.set_nodelay(true)?;
                 Ok((dns_lookup, Stream::Tcp(stream)))
             }
-            Ok(Err(err)) => Err(ClientError::IoError(err)),
+            Ok(Err(err)) => Err(ClientError::Io(err)),
             Err(_) => Err(ClientError::Timeout),
         }
     }
@@ -619,8 +602,7 @@ impl Client {
                             ));
                     *builder
                         .headers_mut()
-                        .ok_or(ClientError::GetHeaderFromBuilderError)? =
-                        self.proxy_headers.clone();
+                        .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
                     builder.body(http_body_util::Full::default())?
                 };
                 let res = if self.proxy_http_version == http::Version::HTTP_2 {
@@ -688,7 +670,7 @@ impl Client {
 
         *builder
             .headers_mut()
-            .ok_or(ClientError::GetHeaderFromBuilderError)? = headers;
+            .ok_or(ClientError::GetHeaderFromBuilder)? = headers;
 
         let request = builder.body(body)?;
 
@@ -821,8 +803,7 @@ impl Client {
                             ));
                     *builder
                         .headers_mut()
-                        .ok_or(ClientError::GetHeaderFromBuilderError)? =
-                        self.proxy_headers.clone();
+                        .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
                     builder.body(http_body_util::Full::default())?
                 };
                 let res = if self.proxy_http_version == http::Version::HTTP_2 {
@@ -993,7 +974,7 @@ fn is_too_many_open_files(res: &Result<RequestResult, ClientError>) -> bool {
     res.as_ref()
         .err()
         .map(|err| match err {
-            ClientError::IoError(io_error) => io_error.raw_os_error() == Some(libc::EMFILE),
+            ClientError::Io(io_error) => io_error.raw_os_error() == Some(libc::EMFILE),
             _ => false,
         })
         .unwrap_or(false)
@@ -1006,8 +987,8 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
         .map(|err| match err {
             // REVIEW: IoErrors, if indicating the underlying connection has failed,
             // should also cause a stop of HTTP2 requests
-            ClientError::IoError(_) => true,
-            ClientError::HyperError(_) => true,
+            ClientError::Io(_) => true,
+            ClientError::Hyper(_) => true,
             _ => false,
         })
         .unwrap_or(false)
