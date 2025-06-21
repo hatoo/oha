@@ -1087,30 +1087,18 @@ pub async fn work(
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work(client, report_tx, n_tasks, n_connections, n_http2_parallel).await;
+        return;
+    }
+
     use std::sync::atomic::{AtomicUsize, Ordering};
     let counter = Arc::new(AtomicUsize::new(0));
 
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let (tx, rx) = kanal::unbounded::<Option<Instant>>();
-            let rx = rx.to_async();
-
-            let n_tasks_emitter = async move {
-                for _ in 0..n_tasks {
-                    tx.send(None)?
-                }
-                drop(tx);
-                Ok::<(), kanal::SendError>(())
-            };
-            let futures =
-                parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None)
-                    .await;
-            n_tasks_emitter.await.unwrap();
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let futures = (0..n_connections)
                 .map(|_| {

@@ -543,3 +543,28 @@ pub(crate) fn http3_connection_fast_work_until(
     }
     rt.block_on(local);
 }
+
+pub async fn work(
+    client: Arc<Client>,
+    report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
+    n_tasks: usize,
+    n_connections: usize,
+    n_http2_parallel: usize,
+) {
+    let (tx, rx) = kanal::unbounded::<Option<Instant>>();
+    let rx = rx.to_async();
+
+    let n_tasks_emitter = async move {
+        for _ in 0..n_tasks {
+            tx.send(None)?
+        }
+        drop(tx);
+        Ok::<(), kanal::SendError>(())
+    };
+    let futures =
+        parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None).await;
+    n_tasks_emitter.await.unwrap();
+    for f in futures {
+        let _ = f.await;
+    }
+}
