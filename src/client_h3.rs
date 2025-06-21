@@ -36,6 +36,7 @@ pub enum Http3Error {
     QuicDriverClosedEarly(#[from] tokio::sync::oneshot::error::RecvError),
 }
 
+use crate::client::QueryLimit;
 use crate::client::{
     Client, ClientError, ConnectionTime, RequestResult, Stream, is_cancel_error,
     set_connection_time, set_start_latency_correction,
@@ -544,6 +545,7 @@ pub(crate) fn http3_connection_fast_work_until(
     rt.block_on(local);
 }
 
+/// Work function for HTTP3 client that generates `n_tasks` tasks.
 pub async fn work(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
@@ -564,6 +566,68 @@ pub async fn work(
     let futures =
         parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None).await;
     n_tasks_emitter.await.unwrap();
+    for f in futures {
+        let _ = f.await;
+    }
+}
+
+/// n tasks by m workers limit to qps works in a second
+pub async fn work_with_qps(
+    client: Arc<Client>,
+    report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
+    query_limit: QueryLimit,
+    n_tasks: usize,
+    n_connections: usize,
+    n_http_parallel: usize,
+) {
+    let (tx, rx) = kanal::unbounded::<Option<Instant>>();
+
+    let work_queue = async move {
+        match query_limit {
+            QueryLimit::Qps(qps) => {
+                let start = std::time::Instant::now();
+                for i in 0..n_tasks {
+                    tokio::time::sleep_until(
+                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                    )
+                    .await;
+                    tx.send(None)?;
+                }
+            }
+            QueryLimit::Burst(duration, rate) => {
+                let mut n = 0;
+                // Handle via rate till n_tasks out of bound
+                while n + rate < n_tasks {
+                    tokio::time::sleep(duration).await;
+                    for _ in 0..rate {
+                        tx.send(None)?;
+                    }
+                    n += rate;
+                }
+                // Handle the remaining tasks
+                if n_tasks > n {
+                    tokio::time::sleep(duration).await;
+                    for _ in 0..n_tasks - n {
+                        tx.send(None)?;
+                    }
+                }
+            }
+        }
+        // tx gone
+        drop(tx);
+        Ok::<(), kanal::SendError>(())
+    };
+
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http_parallel,
+        rx.to_async(),
+        report_tx,
+        client,
+        None,
+    )
+    .await;
+    work_queue.await.unwrap();
     for f in futures {
         let _ = f.await;
     }

@@ -1213,7 +1213,21 @@ pub async fn work_with_qps(
     n_connections: usize,
     n_http_parallel: usize,
 ) {
-    let (tx, rx) = kanal::unbounded::<Option<Instant>>();
+    #[cfg(feature = "http3")]
+    if matches!(client.work_type(), HttpWorkType::H3) {
+        crate::client_h3::work_with_qps(
+            client,
+            report_tx,
+            query_limit,
+            n_tasks,
+            n_connections,
+            n_http_parallel,
+        )
+        .await;
+        return;
+    }
+
+    let (tx, rx) = kanal::unbounded::<()>();
 
     let work_queue = async move {
         match query_limit {
@@ -1224,7 +1238,7 @@ pub async fn work_with_qps(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    tx.send(None)?;
+                    tx.send(())?;
                 }
             }
             QueryLimit::Burst(duration, rate) => {
@@ -1233,7 +1247,7 @@ pub async fn work_with_qps(
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
                     for _ in 0..rate {
-                        tx.send(None)?;
+                        tx.send(())?;
                     }
                     n += rate;
                 }
@@ -1241,7 +1255,7 @@ pub async fn work_with_qps(
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
                     for _ in 0..n_tasks - n {
-                        tx.send(None)?;
+                        tx.send(())?;
                     }
                 }
             }
@@ -1254,15 +1268,7 @@ pub async fn work_with_qps(
     let rx = rx.to_async();
     match client.work_type() {
         #[cfg(feature = "http3")]
-        HttpWorkType::H3 => {
-            let futures =
-                parallel_work_http3(n_connections, n_http_parallel, rx, report_tx, client, None)
-                    .await;
-            work_queue.await.unwrap();
-            for f in futures {
-                let _ = f.await;
-            }
-        }
+        HttpWorkType::H3 => unreachable!(),
         HttpWorkType::H2 => {
             let futures = (0..n_connections)
                 .map(|_| {
@@ -1283,7 +1289,7 @@ pub async fn work_with_qps(
                                                 send_request: send_request.clone(),
                                             };
                                             tokio::spawn(async move {
-                                                while let Ok(None) = rx.recv().await {
+                                                while let Ok(()) = rx.recv().await {
                                                     let (is_cancel, is_reconnect) =
                                                         work_http2_once(
                                                             &client,
@@ -1322,7 +1328,7 @@ pub async fn work_with_qps(
                                 }
                                 Err(err) => {
                                     // Consume a task
-                                    if let Ok(None) = rx.recv().await {
+                                    if let Ok(()) = rx.recv().await {
                                         report_tx.send(Err(err)).unwrap();
                                     } else {
                                         return;
@@ -1347,7 +1353,7 @@ pub async fn work_with_qps(
                     let client = client.clone();
                     tokio::spawn(async move {
                         let mut client_state = ClientStateHttp1::default();
-                        while let Ok(None) = rx.recv().await {
+                        while let Ok(()) = rx.recv().await {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
                             report_tx.send(res).unwrap();
