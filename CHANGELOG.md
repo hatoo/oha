@@ -1,5 +1,14 @@
 # Unreleased
 
+# 1.9.0 (2025-06-21)
+
+- Implement experimental HTTP3 support #746 
+- Allow appending to database if oha table has already been created #742 
+- Add -u/--time-unit option #741 
+- Add RequestResult.first_byte field for measuring first body byte latency #727 
+- Add support for results in csv format #725 
+- Add support for fractional QPS values #724 
+
 # 1.8.0 (2025-02-15)
 
 - Support mtls #687 
