@@ -174,7 +174,7 @@ mod tests {
         for durations in range {
             let timescale = TimeScale::from_elapsed(Duration::from_secs_f64(durations));
             assert_eq!(timescale, expected_timescale);
-            assert_eq!(format!("{}", timescale), expected_timescale_str);
+            assert_eq!(format!("{timescale}"), expected_timescale_str);
             assert_eq!(timescale.as_secs_f64(), expected_timescale_as_secs);
         }
     }
