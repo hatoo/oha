@@ -435,7 +435,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         let mut rng = rand::rng();
         for _ in 0..n {
             let url = url_generator.generate(&mut rng)?;
-            println!("{}", url);
+            println!("{url}");
         }
         return Ok(());
     }

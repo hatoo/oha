@@ -15,7 +15,7 @@ fn main() {
         .unwrap();
 
     if let Err(e) = rt.block_on(run(Opts::parse())) {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(libc::EXIT_FAILURE);
     }
 }

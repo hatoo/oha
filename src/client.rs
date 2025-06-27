@@ -1042,11 +1042,11 @@ pub(crate) fn set_start_latency_correction<E>(
 pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
     let mut rng = StdRng::from_os_rng();
     let url = client.url_generator.generate(&mut rng)?;
-    writeln!(w, "URL: {}", url)?;
+    writeln!(w, "URL: {url}")?;
 
     let request = client.request(&url)?;
 
-    writeln!(w, "{:#?}", request)?;
+    writeln!(w, "{request:#?}")?;
 
     let response = match client.work_type() {
         #[cfg(feature = "http3")]
@@ -1074,7 +1074,7 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
         }
     };
 
-    writeln!(w, "{:#?}", response)?;
+    writeln!(w, "{response:#?}")?;
 
     Ok(())
 }
