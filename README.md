@@ -158,6 +158,8 @@ Options:
           Content-Type.
   -a <BASIC_AUTH>
           Basic authentication (username:password), or AWS credentials (access_key:secret_key)
+  -F, --form <FORM>
+          Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'
       --aws-session <AWS_SESSION>
           AWS session token
       --aws-sigv4 <AWS_SIGV4>
@@ -169,7 +171,7 @@ Options:
       --proxy-http2
           Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2
       --http-version <HTTP_VERSION>
-          HTTP version. Available values 0.9, 1.0, 1.1, 2, 3.
+          HTTP version. Available values 0.9, 1.0, 1.1, 2, 3
       --http2
           Use HTTP/2. Shorthand for --http-version=2
       --host <HOST>
