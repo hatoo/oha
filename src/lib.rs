@@ -463,7 +463,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         for form_str in opts.form {
             let part: curl_compat::FormPart = form_str
                 .parse()
-                .with_context(|| format!("Failed to parse form data: {}", form_str))?;
+                .with_context(|| format!("Failed to parse form data: {form_str}"))?;
             form.add_part(part);
         }
 

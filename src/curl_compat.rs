@@ -1,6 +1,5 @@
+//! Curl compatibility utilities
 use std::str::FromStr;
-
-///! Curl compatibility utilities
 
 pub struct Form {
     pub boundary: String,
@@ -83,10 +82,10 @@ impl Form {
         // Convert to hex string manually to avoid external hex dependency
         let hex_string = random_bytes
             .iter()
-            .map(|b| format!("{:02x}", b))
+            .map(|b| format!("{b:02x}"))
             .collect::<String>();
 
-        format!("----formdata-oha-{}", hex_string)
+        format!("----formdata-oha-{hex_string}")
     }
 }
 
@@ -117,8 +116,8 @@ impl FromStr for FormPart {
         let data;
 
         // Check if this is a file upload (@filename or <filename)
-        if value_part.starts_with('@') {
-            let file_path = &value_part[1..]; // Remove '@' prefix
+        if let Some(file_path) = value_part.strip_prefix('@') {
+            // Remove '@' prefix
 
             // Read file content
             data = std::fs::read(file_path)
@@ -129,8 +128,8 @@ impl FromStr for FormPart {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .map(|s| s.to_string());
-        } else if value_part.starts_with('<') {
-            let file_path = &value_part[1..]; // Remove '<' prefix
+        } else if let Some(file_path) = value_part.strip_prefix('<') {
+            // Remove '<' prefix
 
             // Read file content
             data = std::fs::read(file_path)
