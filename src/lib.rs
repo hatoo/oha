@@ -32,6 +32,7 @@ mod aws_auth;
 mod client;
 #[cfg(feature = "http3")]
 mod client_h3;
+mod curl_compat;
 mod db;
 mod histogram;
 mod monitor;
@@ -167,6 +168,12 @@ Note: If qps is specified, burst will be ignored",
         short = 'a'
     )]
     basic_auth: Option<String>,
+    #[arg(
+        help = "Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'",
+        short = 'F',
+        long = "form"
+    )]
+    form: Vec<String>,
     #[arg(help = "AWS session token", long = "aws-session")]
     aws_session: Option<String>,
     #[arg(
@@ -442,6 +449,52 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     let url = url_generator.generate(&mut rand::rng())?;
 
+    // Process form data or regular body first
+    let has_form_data = !opts.form.is_empty();
+    let (body, form_content_type): (Option<&'static [u8]>, Option<String>) = if has_form_data {
+        // Handle form data (-F option)
+        anyhow::ensure!(
+            opts.body_string.is_none() && opts.body_path.is_none(),
+            "Cannot use -F with -d or -D options"
+        );
+
+        let mut form = curl_compat::Form::new();
+
+        for form_str in opts.form {
+            let part: curl_compat::FormPart = form_str
+                .parse()
+                .with_context(|| format!("Failed to parse form data: {}", form_str))?;
+            form.add_part(part);
+        }
+
+        let form_body = form.body();
+        let content_type = form.content_type();
+
+        (
+            Some(Box::leak(form_body.into_boxed_slice())),
+            Some(content_type),
+        )
+    } else {
+        // Handle regular body data (-d or -D option)
+        let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path) {
+            (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
+            (_, Some(path)) => {
+                let mut buf = Vec::new();
+                std::fs::File::open(path)?.read_to_end(&mut buf)?;
+                Some(Box::leak(buf.into_boxed_slice()))
+            }
+            _ => None,
+        };
+        (body, None)
+    };
+
+    // Set method to POST if form data is used and method is GET
+    let method = if has_form_data && opts.method == http::Method::GET {
+        http::Method::POST
+    } else {
+        opts.method
+    };
+
     let headers = {
         let mut headers: http::header::HeaderMap = Default::default();
 
@@ -471,7 +524,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             headers.insert(http::header::ACCEPT, HeaderValue::from_bytes(h.as_bytes())?);
         }
 
-        if let Some(h) = opts.content_type {
+        if let Some(h) = opts.content_type.or(form_content_type) {
             headers.insert(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_bytes(h.as_bytes())?,
@@ -539,16 +592,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             .collect::<anyhow::Result<HeaderMap<_>>>()?
     };
 
-    let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path) {
-        (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
-        (_, Some(path)) => {
-            let mut buf = Vec::new();
-            std::fs::File::open(path)?.read_to_end(&mut buf)?;
-            Some(Box::leak(buf.into_boxed_slice()))
-        }
-        _ => None,
-    };
-
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
         (false, false) => Default::default(),
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
@@ -576,7 +619,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         http_version,
         proxy_http_version,
         url_generator,
-        method: opts.method,
+        method,
         headers,
         proxy_headers,
         body,
