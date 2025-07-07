@@ -127,4 +127,4 @@ overflow-checks = false
 inherits = "pgo"
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies.socket2]
-version = "0.5"
+version = "0.6"
