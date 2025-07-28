@@ -1690,7 +1690,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "moka",
- "rcgen",
+ "rcgen 0.13.2",
  "thiserror 2.0.12",
  "tokio",
  "tokio-rustls",
@@ -2481,7 +2481,7 @@ dependencies = [
  "rand_core 0.9.3",
  "rand_regex",
  "ratatui",
- "rcgen",
+ "rcgen 0.14.3",
  "regex",
  "regex-syntax 0.8.5",
  "rlimit",
@@ -2923,6 +2923,19 @@ name = "rcgen"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+dependencies = [
+ "pem",
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0068c5b3cab1d4e271e0bb6539c87563c43411cad90b057b15c79958fbeb41f7"
 dependencies = [
  "aws-lc-rs",
  "pem",
