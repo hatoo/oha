@@ -102,7 +102,7 @@ lazy_static = "1.5.0"
 predicates = "3.1.0"
 # features = ["aws_lc_rs"] is a workaround for mac & native-tls
 # https://github.com/sfackler/rust-native-tls/issues/225
-rcgen = { version = "0.13.1", features = ["aws_lc_rs"] }
+rcgen = { version = "0.14.3", features = ["aws_lc_rs"] }
 regex = "1.10.5"
 tempfile = "3.10.1"
 rustls = "0.23.18"
