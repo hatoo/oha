@@ -440,7 +440,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn generate_url(&self, rng: &mut Pcg64Si) -> Result<(Cow<Url>, Pcg64Si), ClientError> {
+    pub fn generate_url(&self, rng: &mut Pcg64Si) -> Result<(Cow<'_, Url>, Pcg64Si), ClientError> {
         let snapshot = *rng;
         Ok((self.url_generator.generate(rng)?, snapshot))
     }

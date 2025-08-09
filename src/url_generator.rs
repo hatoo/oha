@@ -38,7 +38,7 @@ impl UrlGenerator {
         Self::Dynamic(regex)
     }
 
-    pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<Url>, UrlGeneratorError> {
+    pub fn generate<R: Rng>(&self, rng: &mut R) -> Result<Cow<'_, Url>, UrlGeneratorError> {
         match self {
             Self::Static(url) => Ok(Cow::Borrowed(url)),
             Self::MultiStatic(urls) => {
