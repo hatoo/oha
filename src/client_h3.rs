@@ -280,9 +280,10 @@ async fn create_and_load_up_single_connection_http3(
     client: Arc<Client>,
     s: Arc<Semaphore>,
 ) {
+    let mut rng: Pcg64Si = SeedableRng::from_os_rng();
     loop {
         // create a HTTP3 connection
-        match setup_http3(&client).await {
+        match setup_http3(&client, &mut rng).await {
             Ok((connection_time, (h3_connection, send_request))) => {
                 let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
                 let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx).await;
@@ -363,13 +364,13 @@ async fn create_and_load_up_single_connection_http3(
  * This is structured to work very similarly to the `setup_http2`
  * function in `client.rs`
  */
-pub(crate) async fn setup_http3(
+pub(crate) async fn setup_http3<R: Rng>(
     client: &Client,
+    rng: &mut R,
 ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
     // Whatever rng state, all urls should have the same authority
-    let mut rng: Pcg64Si = SeedableRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0]);
-    let url = client.url_generator.generate(&mut rng)?;
-    let (connection_time, send_request) = client.connect_http3(&url, &mut rng).await?;
+    let url = client.url_generator.generate(rng)?;
+    let (connection_time, send_request) = client.connect_http3(&url, rng).await?;
 
     Ok((connection_time, send_request))
 }
@@ -457,9 +458,10 @@ pub(crate) fn http3_connection_fast_work_until(
         local.spawn_local(Box::pin(async move {
             let mut has_err = false;
             let mut result_data_err = ResultData::default();
+            let mut rng: Pcg64Si = SeedableRng::from_os_rng();
             loop {
                 let client = client.clone();
-                match setup_http3(&client).await {
+                match setup_http3(&client, &mut rng).await {
                     Ok((connection_time, (h3_connection, send_request))) => {
                         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
                         let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx).await;

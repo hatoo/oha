@@ -994,11 +994,13 @@ fn is_hyper_error(res: &Result<RequestResult, ClientError>) -> bool {
         .unwrap_or(false)
 }
 
-async fn setup_http2(client: &Client) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
+async fn setup_http2<R: Rng>(
+    client: &Client,
+    rng: &mut R,
+) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
     // Whatever rng state, all urls should have the same authority
-    let mut rng: Pcg64Si = SeedableRng::from_seed([0, 0, 0, 0, 0, 0, 0, 0]);
-    let url = client.url_generator.generate(&mut rng)?;
-    let (connection_time, send_request) = client.connect_http2(&url, &mut rng).await?;
+    let url = client.url_generator.generate(rng)?;
+    let (connection_time, send_request) = client.connect_http2(&url, rng).await?;
 
     Ok((connection_time, send_request))
 }
@@ -1106,8 +1108,9 @@ pub async fn work(
                     let counter = counter.clone();
                     let client = client.clone();
                     tokio::spawn(async move {
+                        let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                         loop {
-                            match setup_http2(&client).await {
+                            match setup_http2(&client, &mut rng).await {
                                 Ok((connection_time, send_request)) => {
                                     let futures = (0..n_http2_parallel)
                                         .map(|_| {
@@ -1276,8 +1279,9 @@ pub async fn work_with_qps(
                     let rx = rx.clone();
                     let client = client.clone();
                     tokio::spawn(async move {
+                        let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                         loop {
-                            match setup_http2(&client).await {
+                            match setup_http2(&client, &mut rng).await {
                                 Ok((connection_time, send_request)) => {
                                     let futures = (0..n_http_parallel)
                                         .map(|_| {
@@ -1449,8 +1453,9 @@ pub async fn work_with_qps_latency_correction(
                     let rx = rx.clone();
                     let client = client.clone();
                     tokio::spawn(async move {
+                        let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                         loop {
-                            match setup_http2(&client).await {
+                            match setup_http2(&client, &mut rng).await {
                                 Ok((connection_time, send_request)) => {
                                     let futures = (0..n_http2_parallel)
                                         .map(|_| {
@@ -1586,8 +1591,9 @@ pub async fn work_until(
                     tokio::spawn(async move {
                         let s = s.clone();
                         // Keep trying to establish or re-establish connections up to the deadline
+                        let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                         loop {
-                            match setup_http2(&client).await {
+                            match setup_http2(&client, &mut rng).await {
                                 Ok((connection_time, send_request)) => {
                                     // Setup the parallel workers for each HTTP2 connection
                                     let futures = (0..n_http_parallel)
@@ -1790,8 +1796,9 @@ pub async fn work_until_with_qps(
                     let rx = rx.clone();
                     let s = s.clone();
                     tokio::spawn(async move {
+                        let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                         loop {
-                            match setup_http2(&client).await {
+                            match setup_http2(&client, &mut rng).await {
                                 Ok((connection_time, send_request)) => {
                                     let futures = (0..n_http2_parallel)
                                         .map(|_| {
@@ -1998,8 +2005,9 @@ pub async fn work_until_with_qps_latency_correction(
                     let rx = rx.clone();
                     let s = s.clone();
                     tokio::spawn(async move {
+                        let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                         loop {
-                            match setup_http2(&client).await {
+                            match setup_http2(&client, &mut rng).await {
                                 Ok((connection_time, send_request)) => {
                                     let futures = (0..n_http2_parallel)
                                         .map(|_| {
@@ -2141,6 +2149,7 @@ pub mod fast {
             ClientError, ClientStateHttp1, ClientStateHttp2, HttpWorkType, is_cancel_error,
             is_hyper_error, set_connection_time, setup_http2,
         },
+        pcg64si::Pcg64Si,
         result_data::ResultData,
     };
 
@@ -2210,9 +2219,10 @@ pub mod fast {
                                 local.spawn_local(Box::pin(async move {
                                     let mut has_err = false;
                                     let mut result_data_err = ResultData::default();
+                                    let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                                     loop {
                                         let client = client.clone();
-                                        match setup_http2(&client).await {
+                                        match setup_http2(&client, &mut rng).await {
                                             Ok((connection_time, send_request)) => {
                                                 let futures = (0..n_http_parallel)
                                                     .map(|_| {
@@ -2434,9 +2444,10 @@ pub mod fast {
                             local.spawn_local(Box::pin(async move {
                                 let mut has_err = false;
                                 let mut result_data_err = ResultData::default();
+                                let mut rng: Pcg64Si = SeedableRng::from_os_rng();
                                 loop {
                                     let client = client.clone();
-                                    match setup_http2(&client).await {
+                                    match setup_http2(&client, &mut rng).await {
                                         Ok((connection_time, send_request)) => {
                                             let futures = (0..n_http_parallel)
                                                 .map(|_| {
