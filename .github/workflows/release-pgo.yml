@@ -38,7 +38,7 @@ jobs:
 
     steps:
       - uses: ilammy/setup-nasm@v1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install musl-tools on Linux
         run: sudo apt-get update --yes && sudo apt-get install --yes musl-tools
         if: contains(matrix.target, 'musl')
