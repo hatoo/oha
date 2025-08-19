@@ -79,8 +79,8 @@ regex-syntax = "0.8.5"
 url = "2.5.2"
 http-body-util = "0.1.2"
 hyper-util = { version = "0.1.6", features = ["tokio"] }
-tokio-vsock = { version = "0.5.0", optional = true }
-rusqlite = { version = "0.36.0", features = ["bundled"] }
+tokio-vsock = { version = "0.7.2", optional = true }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 num_cpus = "1.16.0"
 tokio-util = "0.7.13"
 
@@ -96,17 +96,17 @@ axum = { version = "0.8.1", features = ["http2"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
-http-mitm-proxy = { version = "0.15.0", default-features = false }
-jsonschema = "0.30.0"
+http-mitm-proxy = { version = "0.16.0", default-features = false }
+jsonschema = "0.32.1"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
 # features = ["aws_lc_rs"] is a workaround for mac & native-tls
 # https://github.com/sfackler/rust-native-tls/issues/225
-rcgen = { version = "0.13.1", features = ["aws_lc_rs"] }
+rcgen = { version = "0.14.3", features = ["aws_lc_rs"] }
 regex = "1.10.5"
 tempfile = "3.10.1"
 rustls = "0.23.18"
-rstest = "0.25.0"
+rstest = "0.26.0"
 rstest_reuse = "0.7.0"
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -125,6 +125,3 @@ overflow-checks = false
 
 [profile.release-ci]
 inherits = "pgo"
-
-[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies.socket2]
-version = "0.5"

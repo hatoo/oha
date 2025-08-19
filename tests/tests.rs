@@ -838,24 +838,23 @@ async fn test_unix_socket() {
     rx.try_recv().unwrap().unwrap();
 }
 
-fn make_root_cert() -> rcgen::CertifiedKey {
-    let mut param = rcgen::CertificateParams::default();
+fn make_root_issuer() -> rcgen::Issuer<'static, rcgen::KeyPair> {
+    let mut params = rcgen::CertificateParams::default();
 
-    param.distinguished_name = rcgen::DistinguishedName::new();
-    param.distinguished_name.push(
+    params.distinguished_name = rcgen::DistinguishedName::new();
+    params.distinguished_name.push(
         rcgen::DnType::CommonName,
         rcgen::DnValue::Utf8String("<HTTP-MITM-PROXY CA>".to_string()),
     );
-    param.key_usages = vec![
+    params.key_usages = vec![
         rcgen::KeyUsagePurpose::KeyCertSign,
         rcgen::KeyUsagePurpose::CrlSign,
     ];
-    param.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
 
-    let key_pair = rcgen::KeyPair::generate().unwrap();
-    let cert = param.self_signed(&key_pair).unwrap();
+    let signing_key = rcgen::KeyPair::generate().unwrap();
 
-    rcgen::CertifiedKey { cert, key_pair }
+    rcgen::Issuer::new(params, signing_key)
 }
 
 async fn bind_proxy<S>(service: S, http2: bool) -> (u16, impl Future<Output = ()>)
@@ -872,8 +871,8 @@ where
         .await
         .unwrap();
 
-    let cert = make_root_cert();
-    let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(cert), None));
+    let issuer = make_root_issuer();
+    let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
 
     let serve = async move {
         let (stream, _) = tcp_listener.accept().await.unwrap();
@@ -1111,18 +1110,17 @@ fn setup_mtls_server(
         // Workaround for mac & native-tls
         // https://github.com/sfackler/rust-native-tls/issues/225
         let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).unwrap();
-        let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
-            .unwrap()
-            .self_signed(&key_pair)
-            .unwrap();
-        rcgen::CertifiedKey { cert, key_pair }
+        let params = rcgen::CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+
+        let cert = params.self_signed(&key_pair).unwrap();
+        (cert, key_pair)
     };
 
     let server_cert = make_cert();
     let client_cert = make_cert();
 
     let mut roots = rustls::RootCertStore::empty();
-    roots.add(client_cert.cert.der().clone()).unwrap();
+    roots.add(client_cert.0.der().clone()).unwrap();
     let _ = rustls::crypto::CryptoProvider::install_default(
         rustls::crypto::aws_lc_rs::default_provider(),
     );
@@ -1133,9 +1131,9 @@ fn setup_mtls_server(
     let config = rustls::ServerConfig::builder()
         .with_client_cert_verifier(verifier)
         .with_single_cert(
-            vec![server_cert.cert.der().clone()],
+            vec![server_cert.0.der().clone()],
             rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
-                server_cert.key_pair.serialize_der(),
+                server_cert.1.serialize_der(),
             )),
         )
         .unwrap();
@@ -1144,17 +1142,17 @@ fn setup_mtls_server(
 
     File::create(dir.join("server.crt"))
         .unwrap()
-        .write_all(server_cert.cert.pem().as_bytes())
+        .write_all(server_cert.0.pem().as_bytes())
         .unwrap();
 
     File::create(dir.join("client.crt"))
         .unwrap()
-        .write_all(client_cert.cert.pem().as_bytes())
+        .write_all(client_cert.0.pem().as_bytes())
         .unwrap();
 
     File::create(dir.join("client.key"))
         .unwrap()
-        .write_all(client_cert.key_pair.serialize_pem().as_bytes())
+        .write_all(client_cert.1.serialize_pem().as_bytes())
         .unwrap();
 
     (
