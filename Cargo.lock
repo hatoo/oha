@@ -1680,9 +1680,9 @@ dependencies = [
 
 [[package]]
 name = "http-mitm-proxy"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba0a3e7a1346ab88161f84acdb869d513762e7b7f3a7d52203cae61f59dd2cbf"
+checksum = "da94bb49ccee87ff5436becfff1a88876cca2e1653c915d643c03349cdb5b5f9"
 dependencies = [
  "bytes",
  "futures",
@@ -2933,9 +2933,9 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
-version = "0.13.2"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+checksum = "0068c5b3cab1d4e271e0bb6539c87563c43411cad90b057b15c79958fbeb41f7"
 dependencies = [
  "aws-lc-rs",
  "pem",
