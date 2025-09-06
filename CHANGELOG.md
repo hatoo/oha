@@ -1,5 +1,10 @@
 # Unreleased
 
+# 1.10.0 (2025-09-06)
+
+- fix dns lookup on http2/http3 #771 
+- feat: add curl-compatible multipart form data support (-F option) #755
+
 # 1.9.0 (2025-06-21)
 
 - Implement experimental HTTP3 support #746 
