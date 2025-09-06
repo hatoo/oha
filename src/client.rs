@@ -213,7 +213,9 @@ impl Default for Client {
     fn default() -> Self {
         Self {
             request_generator: RequestGenerator {
-                url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
+                url_generator: crate::url_generator::UrlGenerator::new_static(
+                    "http://example.com".parse().unwrap(),
+                ),
                 http_proxy: None,
                 method: http::Method::GET,
                 version: http::Version::HTTP_11,
