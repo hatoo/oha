@@ -4,7 +4,6 @@ use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
-    borrow::Cow,
     io::Write,
     sync::{
         Arc,
@@ -21,10 +20,9 @@ use url::{ParseError, Url};
 
 use crate::{
     ConnectToEntry,
-    aws_auth::AwsSignatureConfig,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
-    url_generator::{UrlGenerator, UrlGeneratorError},
+    url_generator::UrlGeneratorError,
 };
 
 #[cfg(feature = "http3")]
@@ -182,8 +180,6 @@ pub enum ClientError {
     UrlGenerator(#[from] UrlGeneratorError),
     #[error(transparent)]
     UrlParse(#[from] ParseError),
-    #[error("AWS SigV4 signature error: {0}")]
-    SigV4(&'static str),
     #[error("Request generation error: {0}")]
     RequestGeneration(#[from] RequestGenerationError),
     #[cfg(feature = "http3")]

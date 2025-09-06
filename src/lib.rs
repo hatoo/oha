@@ -3,10 +3,7 @@ use aws_auth::AwsSignatureConfig;
 use bytes::Bytes;
 use clap::Parser;
 use crossterm::tty::IsTty;
-use hickory_resolver::{
-    config::{ResolverConfig, ResolverOpts},
-    proto::op,
-};
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
 use hyper::{
     HeaderMap,
