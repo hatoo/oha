@@ -1,5 +1,6 @@
 use anyhow::Context;
 use aws_auth::AwsSignatureConfig;
+use bytes::Bytes;
 use clap::Parser;
 use crossterm::tty::IsTty;
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
@@ -38,6 +39,7 @@ mod histogram;
 mod monitor;
 mod pcg64si;
 mod printer;
+mod request_generator;
 mod result_data;
 mod timescale;
 mod tls_config;
@@ -45,6 +47,8 @@ mod url_generator;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
+
+use crate::request_generator::{Proxy, RequestGenerator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -451,7 +455,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     // Process form data or regular body first
     let has_form_data = !opts.form.is_empty();
-    let (body, form_content_type): (Option<&'static [u8]>, Option<String>) = if has_form_data {
+    let (body, form_content_type): (Bytes, Option<String>) = if has_form_data {
         // Handle form data (-F option)
         anyhow::ensure!(
             opts.body_string.is_none() && opts.body_path.is_none(),
@@ -470,20 +474,17 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         let form_body = form.body();
         let content_type = form.content_type();
 
-        (
-            Some(Box::leak(form_body.into_boxed_slice())),
-            Some(content_type),
-        )
+        (form_body.into(), Some(content_type))
     } else {
         // Handle regular body data (-d or -D option)
-        let body: Option<&'static [u8]> = match (opts.body_string, opts.body_path) {
-            (Some(body), _) => Some(Box::leak(body.into_boxed_str().into_boxed_bytes())),
+        let body: Bytes = match (opts.body_string, opts.body_path) {
+            (Some(body), _) => body.into(),
             (_, Some(path)) => {
                 let mut buf = Vec::new();
                 std::fs::File::open(path)?.read_to_end(&mut buf)?;
-                Some(Box::leak(buf.into_boxed_slice()))
+                buf.into()
             }
-            _ => None,
+            _ => Bytes::new(),
         };
         (body, None)
     };
@@ -615,14 +616,28 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     };
 
     let client = Arc::new(client::Client {
-        aws_config,
+        url: url.into_owned(),
+        request_generator: RequestGenerator {
+            url_generator,
+            version: http_version,
+            aws_config,
+            method: method.clone(),
+            headers: headers.clone(),
+            body,
+            http_proxy: if let Some(proxy) = &opts.proxy {
+                Some(Proxy {
+                    headers: proxy_headers.clone(),
+                    version: proxy_http_version,
+                })
+            } else {
+                None
+            },
+        },
         http_version,
         proxy_http_version,
-        url_generator,
         method,
         headers,
         proxy_headers,
-        body,
         dns: client::Dns {
             resolver,
             connect_to: opts.connect_to,

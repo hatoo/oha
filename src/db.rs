@@ -32,7 +32,8 @@ pub fn store(
     let mut affected_rows = 0;
 
     for request in request_records {
-        let url = client.generate_url(&mut request.rng.clone()).unwrap().0;
+        let req = client.generate_request(&mut request.rng.clone()).unwrap().0;
+        let url = req.uri();
         affected_rows += t.execute(
             "INSERT INTO oha (url, start, start_latency_correction, end, duration, status, len_bytes, run) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             (

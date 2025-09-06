@@ -1,4 +1,3 @@
-use crate::client::ClientError;
 use anyhow::Result;
 
 use bytes::Bytes;
@@ -6,6 +5,7 @@ use hyper::{
     HeaderMap,
     header::{self, HeaderName},
 };
+use thiserror::Error;
 use url::Url;
 
 pub struct AwsSignatureConfig {
@@ -14,6 +14,16 @@ pub struct AwsSignatureConfig {
     pub session_token: Option<String>,
     pub service: String,
     pub region: String,
+}
+
+#[derive(Error, Debug)]
+pub enum AwsSignatureError {
+    #[error("URL must contain a host")]
+    NoHost,
+    #[error("Invalid host header name")]
+    InvalidHost,
+    #[error("Invalid authorization header name")]
+    InvalidAuthorization,
 }
 
 // Initialize unsignable headers as a static constant
@@ -34,8 +44,8 @@ impl AwsSignatureConfig {
         method: &str,
         headers: &mut HeaderMap,
         url: &Url,
-        body: Option<Bytes>,
-    ) -> Result<(), ClientError> {
+        body: &Bytes,
+    ) -> Result<(), AwsSignatureError> {
         let datetime = chrono::Utc::now();
 
         let header_amz_date = datetime
@@ -45,13 +55,10 @@ impl AwsSignatureConfig {
             .unwrap();
 
         if !headers.contains_key(header::HOST) {
-            let host = url
-                .host_str()
-                .ok_or_else(|| ClientError::SigV4("URL must contain a host"))?;
+            let host = url.host_str().ok_or_else(|| AwsSignatureError::NoHost)?;
             headers.insert(
                 header::HOST,
-                host.parse()
-                    .map_err(|_| ClientError::SigV4("Invalid host header name"))?,
+                host.parse().map_err(|_| AwsSignatureError::InvalidHost)?,
             );
         }
         headers.insert("x-amz-date", header_amz_date);
@@ -68,7 +75,6 @@ impl AwsSignatureConfig {
             .filter_map(|k| headers.remove(k).map(|v| (k.clone(), v)))
             .collect();
 
-        let body = body.as_deref().unwrap_or_default();
         headers.insert(
             header::CONTENT_LENGTH,
             body.len().to_string().parse().unwrap(),
@@ -97,7 +103,7 @@ impl AwsSignatureConfig {
             header::AUTHORIZATION,
             signature
                 .parse()
-                .map_err(|_| ClientError::SigV4("Invalid authorization header name"))?,
+                .map_err(|_| AwsSignatureError::InvalidAuthorization)?,
         );
 
         Ok(())

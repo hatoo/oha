@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use hyper::{Method, http};
+use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
@@ -23,6 +23,7 @@ use crate::{
     ConnectToEntry,
     aws_auth::AwsSignatureConfig,
     pcg64si::Pcg64Si,
+    request_generator::{RequestGenerationError, RequestGenerator},
     url_generator::{UrlGenerator, UrlGeneratorError},
 };
 
@@ -183,25 +184,26 @@ pub enum ClientError {
     UrlParse(#[from] ParseError),
     #[error("AWS SigV4 signature error: {0}")]
     SigV4(&'static str),
+    #[error("Request generation error: {0}")]
+    RequestGeneration(#[from] RequestGenerationError),
     #[cfg(feature = "http3")]
     #[error(transparent)]
     Http3(#[from] crate::client_h3::Http3Error),
 }
 
 pub struct Client {
+    pub request_generator: RequestGenerator,
+    pub url: Url,
     pub http_version: http::Version,
     pub proxy_http_version: http::Version,
-    pub url_generator: UrlGenerator,
     pub method: http::Method,
     pub headers: http::header::HeaderMap,
     pub proxy_headers: http::header::HeaderMap,
-    pub body: Option<&'static [u8]>,
     pub dns: Dns,
     pub timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
     pub proxy_url: Option<Url>,
-    pub aws_config: Option<AwsSignatureConfig>,
     #[cfg(unix)]
     pub unix_socket: Option<std::path::PathBuf>,
     #[cfg(feature = "vsock")]
@@ -216,13 +218,21 @@ pub struct Client {
 impl Default for Client {
     fn default() -> Self {
         Self {
+            request_generator: RequestGenerator {
+                url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
+                http_proxy: None,
+                method: http::Method::GET,
+                version: http::Version::HTTP_11,
+                headers: http::header::HeaderMap::new(),
+                body: Bytes::new(),
+                aws_config: None,
+            },
+            url: "http://example.com".parse().unwrap(),
             http_version: http::Version::HTTP_11,
             proxy_http_version: http::Version::HTTP_11,
-            url_generator: UrlGenerator::new_static("http://example.com".parse().unwrap()),
             method: http::Method::GET,
             headers: http::header::HeaderMap::new(),
             proxy_headers: http::header::HeaderMap::new(),
-            body: None,
             dns: Dns {
                 resolver: hickory_resolver::Resolver::builder_tokio().unwrap().build(),
                 connect_to: Vec::new(),
@@ -231,7 +241,6 @@ impl Default for Client {
             redirect_limit: 0,
             disable_keepalive: false,
             proxy_url: None,
-            aws_config: None,
             #[cfg(unix)]
             unix_socket: None,
             #[cfg(feature = "vsock")]
@@ -392,11 +401,7 @@ impl Client {
 
     fn is_work_http2(&self) -> bool {
         if self.proxy_url.is_some() {
-            let url = self
-                .url_generator
-                .generate(&mut Pcg64Si::from_seed([0, 0, 0, 0, 0, 0, 0, 0]))
-                .unwrap();
-            if url.scheme() == "https" {
+            if self.url.scheme() == "https" {
                 self.is_http2()
             } else {
                 self.is_proxy_http2()
@@ -433,16 +438,18 @@ impl Client {
         }
 
         let mut rng = StdRng::from_os_rng();
-        let url = self.url_generator.generate(&mut rng)?;
-
         // It automatically caches the result
-        self.dns.lookup(&url, &mut rng).await?;
+        self.dns.lookup(&self.url, &mut rng).await?;
         Ok(())
     }
 
-    pub fn generate_url(&self, rng: &mut Pcg64Si) -> Result<(Cow<'_, Url>, Pcg64Si), ClientError> {
+    pub fn generate_request(
+        &self,
+        rng: &mut Pcg64Si,
+    ) -> Result<(Request<Full<Bytes>>, Pcg64Si), ClientError> {
         let snapshot = *rng;
-        Ok((self.url_generator.generate(rng)?, snapshot))
+        let req = self.request_generator.generate(rng)?;
+        Ok((req, snapshot))
     }
 
     /**
@@ -630,6 +637,7 @@ impl Client {
         }
     }
 
+    /*
     #[inline]
     pub(crate) fn request(&self, url: &Url) -> Result<http::Request<Full<Bytes>>, ClientError> {
         let use_proxy = self.proxy_url.is_some() && url.scheme() == "http";
@@ -676,13 +684,14 @@ impl Client {
 
         Ok(request)
     }
+    */
 
     async fn work_http1(
         &self,
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (url, rng) = self.generate_url(&mut client_state.rng)?;
+            let (request, rng) = self.generate_request(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
@@ -691,7 +700,7 @@ impl Client {
                 send_request
             } else {
                 let (dns_lookup, send_request) =
-                    self.client_http1(&url, &mut client_state.rng).await?;
+                    self.client_http1(&self.url, &mut client_state.rng).await?;
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
@@ -702,16 +711,15 @@ impl Client {
                 // This re-connects
                 start = std::time::Instant::now();
                 let (dns_lookup, send_request_) =
-                    self.client_http1(&url, &mut client_state.rng).await?;
+                    self.client_http1(&self.url, &mut client_state.rng).await?;
                 send_request = send_request_;
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
-            let request = self.request(&url)?;
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
-                    let mut status = parts.status;
+                    let status = parts.status;
 
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
@@ -721,12 +729,13 @@ impl Client {
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
+                    /*
                     if self.redirect_limit != 0 {
                         if let Some(location) = parts.headers.get("Location") {
                             let (send_request_redirect, new_status, len) = self
                                 .redirect(
                                     send_request,
-                                    &url,
+                                    &self.url,
                                     location,
                                     self.redirect_limit,
                                     &mut client_state.rng,
@@ -738,6 +747,7 @@ impl Client {
                             len_bytes = len;
                         }
                     }
+                    */
 
                     let end = std::time::Instant::now();
 
@@ -846,12 +856,11 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (url, rng) = self.generate_url(&mut client_state.rng)?;
+            let (request, rng) = self.generate_request(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
 
-            let request = self.request(&url)?;
             match client_state.send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
@@ -898,6 +907,7 @@ impl Client {
         }
     }
 
+    /*
     #[allow(clippy::type_complexity)]
     async fn redirect<R: Rng + Send>(
         &self,
@@ -962,6 +972,7 @@ impl Client {
             Ok((send_request, status, len_bytes))
         }
     }
+    */
 }
 
 /// Check error and decide whether to cancel the connection
@@ -998,9 +1009,7 @@ async fn setup_http2<R: Rng>(
     client: &Client,
     rng: &mut R,
 ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-    // Whatever rng state, all urls should have the same authority
-    let url = client.url_generator.generate(rng)?;
-    let (connection_time, send_request) = client.connect_http2(&url, rng).await?;
+    let (connection_time, send_request) = client.connect_http2(&client.url, rng).await?;
 
     Ok((connection_time, send_request))
 }
@@ -1042,11 +1051,8 @@ pub(crate) fn set_start_latency_correction<E>(
 }
 
 pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
-    let mut rng = StdRng::from_os_rng();
-    let url = client.url_generator.generate(&mut rng)?;
-    writeln!(w, "URL: {url}")?;
-
-    let request = client.request(&url)?;
+    let mut rng = Pcg64Si::from_os_rng();
+    let (request, _) = client.generate_request(&mut rng)?;
 
     writeln!(w, "{request:#?}")?;
 
@@ -1058,7 +1064,7 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
             send_debug_request_http3(h3_connection, client_state, request).await?
         }
         HttpWorkType::H2 => {
-            let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
+            let (_, mut client_state) = client.connect_http2(&client.url, &mut rng).await?;
             let response = client_state.send_request(request).await?;
             let (parts, body) = response.into_parts();
             let body = body.collect().await.unwrap().to_bytes();
@@ -1066,7 +1072,8 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
             http::Response::from_parts(parts, body)
         }
         HttpWorkType::H1 => {
-            let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
+            let (_dns_lookup, mut send_request) =
+                client.client_http1(&client.url, &mut rng).await?;
 
             let response = send_request.send_request(request).await?;
             let (parts, body) = response.into_parts();
