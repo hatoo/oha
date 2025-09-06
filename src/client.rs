@@ -384,11 +384,6 @@ impl Client {
     }
 
     #[inline]
-    pub fn is_http1(&self) -> bool {
-        self.http_version <= http::Version::HTTP_11
-    }
-
-    #[inline]
     fn is_proxy_http2(&self) -> bool {
         self.proxy_http_version == http::Version::HTTP_2
     }
@@ -437,10 +432,10 @@ impl Client {
         Ok(())
     }
 
-    pub fn generate_request(
+    pub fn generate_request<R: Rng + Copy>(
         &self,
-        rng: &mut Pcg64Si,
-    ) -> Result<(Request<Full<Bytes>>, Pcg64Si), ClientError> {
+        rng: &mut R,
+    ) -> Result<(Request<Full<Bytes>>, R), ClientError> {
         let snapshot = *rng;
         let req = self.request_generator.generate(rng)?;
         Ok((req, snapshot))
@@ -631,55 +626,6 @@ impl Client {
         }
     }
 
-    /*
-    #[inline]
-    pub(crate) fn request(&self, url: &Url) -> Result<http::Request<Full<Bytes>>, ClientError> {
-        let use_proxy = self.proxy_url.is_some() && url.scheme() == "http";
-
-        let mut builder = http::Request::builder()
-            .uri(if !(self.is_http1()) || use_proxy {
-                &url[..]
-            } else {
-                &url[url::Position::BeforePath..]
-            })
-            .method(self.method.clone())
-            .version(if use_proxy {
-                self.proxy_http_version
-            } else {
-                self.http_version
-            });
-
-        let bytes = self.body.map(Bytes::from_static);
-
-        let body = if let Some(body) = &bytes {
-            Full::new(body.clone())
-        } else {
-            Full::default()
-        };
-
-        let mut headers = self.headers.clone();
-
-        // Apply AWS SigV4 if configured
-        if let Some(aws_config) = &self.aws_config {
-            aws_config.sign_request(self.method.as_str(), &mut headers, url, bytes)?
-        }
-
-        if use_proxy {
-            for (key, value) in self.proxy_headers.iter() {
-                headers.insert(key, value.clone());
-            }
-        }
-
-        *builder
-            .headers_mut()
-            .ok_or(ClientError::GetHeaderFromBuilder)? = headers;
-
-        let request = builder.body(body)?;
-
-        Ok(request)
-    }
-    */
-
     async fn work_http1(
         &self,
         client_state: &mut ClientStateHttp1,
@@ -713,7 +659,7 @@ impl Client {
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
-                    let status = parts.status;
+                    let mut status = parts.status;
 
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
@@ -723,13 +669,12 @@ impl Client {
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
-                    /*
                     if self.redirect_limit != 0 {
                         if let Some(location) = parts.headers.get("Location") {
                             let (send_request_redirect, new_status, len) = self
                                 .redirect(
+                                    rng,
                                     send_request,
-                                    &self.url,
                                     location,
                                     self.redirect_limit,
                                     &mut client_state.rng,
@@ -741,7 +686,6 @@ impl Client {
                             len_bytes = len;
                         }
                     }
-                    */
 
                     let end = std::time::Instant::now();
 
@@ -901,12 +845,11 @@ impl Client {
         }
     }
 
-    /*
     #[allow(clippy::type_complexity)]
-    async fn redirect<R: Rng + Send>(
+    async fn redirect<R: Rng + Send + Copy>(
         &self,
+        seed: R,
         send_request: SendRequestHttp1,
-        base_url: &Url,
         location: &http::header::HeaderValue,
         limit: usize,
         rng: &mut R,
@@ -917,13 +860,13 @@ impl Client {
         let url = match Url::parse(location.to_str()?) {
             Ok(url) => url,
             Err(ParseError::RelativeUrlWithoutBase) => Url::options()
-                .base_url(Some(base_url))
+                .base_url(Some(&self.url))
                 .parse(location.to_str()?)?,
             Err(err) => Err(err)?,
         };
 
         let (mut send_request, send_request_base) =
-            if base_url.authority() == url.authority() && !self.disable_keepalive {
+            if self.url.authority() == url.authority() && !self.disable_keepalive {
                 // reuse connection
                 (send_request, None)
             } else {
@@ -936,13 +879,19 @@ impl Client {
             send_request = stream;
         }
 
-        let mut request = self.request(&url)?;
-        if url.authority() != base_url.authority() {
+        let mut request = self.generate_request(&mut seed.clone())?.0;
+        if url.authority() != self.url.authority() {
             request.headers_mut().insert(
                 http::header::HOST,
                 http::HeaderValue::from_str(url.authority())?,
             );
         }
+        *request.uri_mut() = if self.proxy_url.is_some() && url.scheme() == "http" {
+            // Full URL in request() for HTTP proxy
+            url.as_str().parse()?
+        } else {
+            url[url::Position::BeforePath..].parse()?
+        };
         let res = send_request.send_request(request).await?;
         let (parts, mut stream) = res.into_parts();
         let mut status = parts.status;
@@ -954,7 +903,7 @@ impl Client {
 
         if let Some(location) = parts.headers.get("Location") {
             let (send_request_redirect, new_status, len) =
-                Box::pin(self.redirect(send_request, &url, location, limit - 1, rng)).await?;
+                Box::pin(self.redirect(seed, send_request, location, limit - 1, rng)).await?;
             send_request = send_request_redirect;
             status = new_status;
             len_bytes = len;
@@ -966,7 +915,6 @@ impl Client {
             Ok((send_request, status, len_bytes))
         }
     }
-    */
 }
 
 /// Check error and decide whether to cancel the connection

@@ -298,7 +298,6 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
     rx.try_recv().unwrap().unwrap()
 }
 
-/*
 async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let (tx, rx) = kanal::unbounded();
 
@@ -333,7 +332,6 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
 
     rx.try_recv().unwrap().unwrap()
 }
-    */
 
 async fn test_request_count(args: &[&str]) -> usize {
     let (tx, rx) = kanal::unbounded();
@@ -682,7 +680,6 @@ async fn test_query_rand_regex() {
     assert!(chars[2].is_ascii_lowercase());
 }
 
-/*
 #[tokio::test]
 async fn test_redirect() {
     for n in 1..=5 {
@@ -694,7 +691,6 @@ async fn test_redirect() {
         assert!(!redirect(n, false, 10).await);
     }
 }
-*/
 
 #[tokio::test]
 async fn test_connect_to() {
@@ -724,7 +720,6 @@ async fn test_connect_to_ipv6_requested() {
     assert_eq!(get_host_with_connect_to_ipv6_requested().await, "[::1]")
 }
 
-/*
 #[tokio::test]
 async fn test_connect_to_redirect() {
     assert_eq!(
@@ -732,7 +727,6 @@ async fn test_connect_to_redirect() {
         "invalid.example.org"
     )
 }
-*/
 
 #[tokio::test]
 async fn test_ipv6() {
