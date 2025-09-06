@@ -1053,7 +1053,8 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
     let response = match client.work_type() {
         #[cfg(feature = "http3")]
         HttpWorkType::H3 => {
-            let (_, (h3_connection, client_state)) = client.connect_http3(&url, &mut rng).await?;
+            let (_, (h3_connection, client_state)) =
+                client.connect_http3(&client.url, &mut rng).await?;
 
             send_debug_request_http3(h3_connection, client_state, request).await?
         }

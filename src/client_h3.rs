@@ -112,12 +112,11 @@ impl Client {
         client_state: &mut ClientStateHttp3,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (url, rng) = self.generate_url(&mut client_state.rng)?;
+            let (request, rng) = self.generate_request(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let connection_time: Option<ConnectionTime> = None;
             let mut first_byte: Option<std::time::Instant> = None;
 
-            let request = self.request(&url)?;
             // if we implement http_body::Body on our H3 SendRequest, we can do some nice streaming stuff
             // with the response here. However as we don't really use the response we can get away
             // with not doing this for now
@@ -369,8 +368,7 @@ pub(crate) async fn setup_http3<R: Rng>(
     rng: &mut R,
 ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
     // Whatever rng state, all urls should have the same authority
-    let url = client.url_generator.generate(rng)?;
-    let (connection_time, send_request) = client.connect_http3(&url, rng).await?;
+    let (connection_time, send_request) = client.connect_http3(&client.url, rng).await?;
 
     Ok((connection_time, send_request))
 }
