@@ -615,8 +615,8 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         _ => anyhow::bail!("Both --cert and --key must be specified"),
     };
 
+    let url = url.into_owned();
     let client = Arc::new(client::Client {
-        url: url.into_owned(),
         request_generator: RequestGenerator {
             url_generator,
             version: http_version,
@@ -624,7 +624,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             method,
             headers,
             body,
-            http_proxy: if opts.proxy.is_some() {
+            http_proxy: if opts.proxy.is_some() && url.scheme() == "http" {
                 Some(Proxy {
                     headers: proxy_headers.clone(),
                     version: proxy_http_version,
@@ -633,6 +633,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                 None
             },
         },
+        url,
         http_version,
         proxy_http_version,
         proxy_headers,
