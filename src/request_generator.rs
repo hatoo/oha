@@ -3,9 +3,11 @@ use http_body_util::Full;
 use hyper::http;
 use hyper::{HeaderMap, Method, Version};
 use rand::Rng;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 use crate::aws_auth::{self, AwsSignatureConfig};
+use crate::line_reader::LineReader;
 use crate::url_generator;
 
 pub struct Proxy {
@@ -20,7 +22,8 @@ pub struct RequestGenerator {
     pub method: Method,
     pub version: Version,
     pub headers: HeaderMap,
-    pub body: Bytes,
+    pub body: Option<Bytes>,
+    pub body_lines_reader: Option<Arc<Mutex<LineReader>>>,
     pub aws_config: Option<AwsSignatureConfig>,
 }
 
@@ -62,9 +65,21 @@ impl RequestGenerator {
 
         let mut headers = self.headers.clone();
 
+        let body = if let Some(reader) = &self.body_lines_reader {
+            let mut guard = reader.lock().unwrap();
+            match guard.next_line() {
+                Ok(Some(line)) => line,
+                _ => Bytes::new(),
+            }
+        } else if let Some(body) = &self.body {
+            body.clone()
+        } else {
+            Bytes::new()
+        };
+
         // Apply AWS SigV4 if configured
         if let Some(aws_config) = &self.aws_config {
-            aws_config.sign_request(self.method.as_str(), &mut headers, &url, &self.body)?;
+            aws_config.sign_request(self.method.as_str(), &mut headers, &url, &body.clone())?;
         }
 
         if let Some(proxy) = &self.http_proxy {
@@ -75,7 +90,7 @@ impl RequestGenerator {
 
         *builder.headers_mut().unwrap() = headers;
 
-        let req = builder.body(Full::new(self.body.clone()))?;
+        let req = builder.body(Full::new(body))?;
         Ok(req)
     }
 }

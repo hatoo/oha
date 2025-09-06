@@ -154,6 +154,8 @@ Options:
           HTTP request body.
   -D <BODY_PATH>
           HTTP request body from file.
+  -Z <BODY_PATH_LINES>
+          HTTP request body from file line by line.
   -T <CONTENT_TYPE>
           Content-Type.
   -a <BASIC_AUTH>

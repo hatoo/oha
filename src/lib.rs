@@ -16,6 +16,7 @@ use printer::{PrintConfig, PrintMode};
 use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
+use std::sync::Mutex;
 use std::{
     env,
     fs::File,
@@ -36,6 +37,7 @@ mod client_h3;
 mod curl_compat;
 mod db;
 mod histogram;
+mod line_reader;
 mod monitor;
 mod pcg64si;
 mod printer;
@@ -45,10 +47,10 @@ mod timescale;
 mod tls_config;
 mod url_generator;
 
+use crate::line_reader::LineReader;
+use crate::request_generator::{Proxy, RequestGenerator};
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
-
-use crate::request_generator::{Proxy, RequestGenerator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -161,10 +163,12 @@ Note: If qps is specified, burst will be ignored",
     timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[arg(help = "HTTP request body.", short = 'd')]
+    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines"])]
     body_string: Option<String>,
-    #[arg(help = "HTTP request body from file.", short = 'D')]
+    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines"])]
     body_path: Option<std::path::PathBuf>,
+    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path"])]
+    body_path_lines: Option<std::path::PathBuf>,
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
     #[arg(
@@ -489,6 +493,13 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         (body, None)
     };
 
+    let body_lines_reader: Option<Arc<Mutex<LineReader>>> =
+        if let Some(path) = &opts.body_path_lines {
+            Some(Arc::new(Mutex::new(LineReader::new(path)?)))
+        } else {
+            None
+        };
+
     // Set method to POST if form data is used and method is GET
     let method = if has_form_data && opts.method == http::Method::GET {
         http::Method::POST
@@ -623,7 +634,8 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             aws_config,
             method,
             headers,
-            body,
+            body: Some(body),
+            body_lines_reader,
             http_proxy: if opts.proxy.is_some() && url.scheme() == "http" {
                 Some(Proxy {
                     headers: proxy_headers.clone(),
