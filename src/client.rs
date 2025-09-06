@@ -196,8 +196,6 @@ pub struct Client {
     pub url: Url,
     pub http_version: http::Version,
     pub proxy_http_version: http::Version,
-    pub method: http::Method,
-    pub headers: http::header::HeaderMap,
     pub proxy_headers: http::header::HeaderMap,
     pub dns: Dns,
     pub timeout: Option<std::time::Duration>,
@@ -230,8 +228,6 @@ impl Default for Client {
             url: "http://example.com".parse().unwrap(),
             http_version: http::Version::HTTP_11,
             proxy_http_version: http::Version::HTTP_11,
-            method: http::Method::GET,
-            headers: http::header::HeaderMap::new(),
             proxy_headers: http::header::HeaderMap::new(),
             dns: Dns {
                 resolver: hickory_resolver::Resolver::builder_tokio().unwrap().build(),

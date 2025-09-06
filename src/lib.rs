@@ -3,7 +3,10 @@ use aws_auth::AwsSignatureConfig;
 use bytes::Bytes;
 use clap::Parser;
 use crossterm::tty::IsTty;
-use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use hickory_resolver::{
+    config::{ResolverConfig, ResolverOpts},
+    proto::op,
+};
 use humantime::Duration;
 use hyper::{
     HeaderMap,
@@ -621,10 +624,10 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             url_generator,
             version: http_version,
             aws_config,
-            method: method.clone(),
-            headers: headers.clone(),
+            method,
+            headers,
             body,
-            http_proxy: if let Some(proxy) = &opts.proxy {
+            http_proxy: if opts.proxy.is_some() {
                 Some(Proxy {
                     headers: proxy_headers.clone(),
                     version: proxy_http_version,
@@ -635,8 +638,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         },
         http_version,
         proxy_http_version,
-        method,
-        headers,
         proxy_headers,
         dns: client::Dns {
             resolver,
