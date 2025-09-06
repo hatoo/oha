@@ -5,7 +5,7 @@ on:
     branches:
       - master
     tags:
-      - "*.*.*"
+      - "v*.*.*"
   pull_request:
 
 jobs:
@@ -20,12 +20,18 @@ jobs:
             release_name: oha-linux-amd64-pgo
             target: x86_64-unknown-linux-musl
             additional_args: "--features vsock"
+          # tikv-jemalloc-sys@0.6.0+5.3.0-1: background_threads_runtime_support not supported for aarch64-unknown-linux-musl
+#          - os: ubuntu-24.04-arm
+#            artifact_name: oha
+#            release_name: oha-linux-arm64-pgo
+#            target: aarch64-unknown-linux-musl
+#            additional_args: "--features vsock"
           - os: windows-latest
             artifact_name: oha.exe
             release_name: oha-windows-amd64-pgo.exe
             target: x86_64-pc-windows-msvc
             additional_args: ""
-#          - os: macos-latest
+#          - os: macos-14-large
 #            artifact_name: oha
 #            release_name: oha-macos-amd64-pgo
 #            target: x86_64-apple-darwin
@@ -47,11 +53,10 @@ jobs:
           targets: ${{ matrix.target }}
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-pgo --version 0.2.8
+      - run: cargo install cargo-pgo --version 0.2.9
       - uses: oven-sh/setup-bun@v2
       - run: bun run pgo.js --target ${{ matrix.target }} ${{ matrix.additional_args }}
-      - name: Upload
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.release_name }}
           path: target/${{ matrix.target }}/pgo/${{ matrix.artifact_name }}
@@ -62,4 +67,3 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/${{ matrix.target }}/pgo/${{ matrix.artifact_name }}
           asset_name: ${{ matrix.release_name }}
-          tag: ${{ github.ref }}

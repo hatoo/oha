@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.85
+ARG RUST_VERSION=slim
 FROM docker.io/library/rust:${RUST_VERSION} AS build
 WORKDIR /app
 COPY . /app
@@ -15,6 +15,6 @@ RUN strip /usr/local/cargo/bin/oha
 FROM registry.fedoraproject.org/fedora-minimal
 USER 65535
 
-COPY --chown=65535:65535 --from=build /usr/local/cargo/bin/oha /bin/oha
+COPY --chown=65535:65535 --from=build /usr/local/cargo/bin/oha /bin/
 
 ENTRYPOINT ["/bin/oha"]

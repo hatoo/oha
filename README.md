@@ -66,13 +66,13 @@ x env use oha
 You can also build and create a container image including oha
 
 ```sh
-docker build . -t example.com/hatoo/oha:latest
+docker build -t hatoo/oha:latest .
 ```
 
 Then you can use oha directly through the container
 
 ```sh
-docker run -it example.com/hatoo/oha:latest https://example.com:3000
+docker run --rm -it --network=host hatoo/oha:latest https://example.com:3000
 ```
 
 ## Profile-Guided Optimization (PGO)

@@ -1,1 +1,5 @@
-target
+*
+
+!pgo
+!src
+!Cargo.*
