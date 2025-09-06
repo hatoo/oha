@@ -55,7 +55,7 @@ impl AwsSignatureConfig {
             .unwrap();
 
         if !headers.contains_key(header::HOST) {
-            let host = url.host_str().ok_or_else(|| AwsSignatureError::NoHost)?;
+            let host = url.host_str().ok_or(AwsSignatureError::NoHost)?;
             headers.insert(
                 header::HOST,
                 host.parse().map_err(|_| AwsSignatureError::InvalidHost)?,
