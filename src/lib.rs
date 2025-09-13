@@ -63,7 +63,8 @@ pub struct Opts {
     #[arg(
         help = "Number of requests to run.",
         short = 'n',
-        default_value = "200"
+        default_value = "200",
+        conflicts_with = "duration"
     )]
     n_requests: usize,
     #[arg(
@@ -79,33 +80,39 @@ pub struct Opts {
     )]
     n_http2_parallel: usize,
     #[arg(
-        help = "Duration of application to send requests. If duration is specified, n is ignored.
+        help = "Duration of application to send requests.
 On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
 You can change this behavior with `-w` option.
 Currently, on HTTP/2, When the duration is reached, ongoing requests are waited. `-w` option is ignored.
 Examples: -z 10s -z 3m.",
-        short = 'z'
+        short = 'z',
+        conflicts_with = "n_requests"
     )]
     duration: Option<Duration>,
     #[arg(
         help = "When the duration is reached, ongoing requests are waited",
         short,
         long,
-        default_value = "false"
+        default_value = "false",
+        requires = "duration"
     )]
     wait_ongoing_requests_after_deadline: bool,
-    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
+    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"])]
     query_per_second: Option<f64>,
     #[arg(
         help = "Introduce delay between a predefined number of requests.
 Note: If qps is specified, burst will be ignored",
-        long = "burst-delay"
+        long = "burst-delay",
+        requires = "burst_requests",
+        conflicts_with = "query_per_second"
     )]
     burst_duration: Option<Duration>,
     #[arg(
         help = "Rates of requests for burst. Default is 1
 Note: If qps is specified, burst will be ignored",
-        long = "burst-rate"
+        long = "burst-rate",
+        requires = "burst_duration",
+        conflicts_with = "query_per_second"
     )]
     burst_requests: Option<usize>,
 
@@ -126,7 +133,8 @@ Note: If qps is specified, burst will be ignored",
     #[arg(
         help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
         default_value = "4",
-        long
+        long,
+        requires = "rand_regex_url"
     )]
     max_repeat: u32,
     #[arg(
