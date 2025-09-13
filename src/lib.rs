@@ -240,12 +240,14 @@ Note: If qps is specified, burst will be ignored",
     cacert: Option<PathBuf>,
     #[arg(
         help = "(TLS) Use the specified client certificate file. --key must be also specified",
-        long
+        long,
+        requires = "key"
     )]
     cert: Option<PathBuf>,
     #[arg(
         help = "(TLS) Use the specified client key file. --cert must be also specified",
-        long
+        long,
+        requires = "cert"
     )]
     key: Option<PathBuf>,
     #[arg(help = "Accept invalid certs.", long = "insecure")]
@@ -612,7 +614,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let client_auth = match (opts.cert, opts.key) {
         (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
         (None, None) => None,
-        // TODO: Ensure it on clap
+        // Not possible because of clap requires
         _ => anyhow::bail!("Both --cert and --key must be specified"),
     };
 
