@@ -19,7 +19,7 @@ use result_data::ResultData;
 use std::{
     env,
     fs::File,
-    io::{BufRead, Read},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     pin::Pin,
     str::FromStr,
@@ -48,7 +48,7 @@ mod url_generator;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::request_generator::{Proxy, RequestGenerator};
+use crate::request_generator::{BodyGenerator, Proxy, RequestGenerator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -161,10 +161,12 @@ Note: If qps is specified, burst will be ignored",
     timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[arg(help = "HTTP request body.", short = 'd')]
+    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines"])]
     body_string: Option<String>,
-    #[arg(help = "HTTP request body from file.", short = 'D')]
+    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines"])]
     body_path: Option<std::path::PathBuf>,
+    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path"])]
+    body_path_lines: Option<std::path::PathBuf>,
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
     #[arg(
@@ -455,7 +457,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     // Process form data or regular body first
     let has_form_data = !opts.form.is_empty();
-    let (body, form_content_type): (Bytes, Option<String>) = if has_form_data {
+    let (body_generator, form_content_type): (BodyGenerator, Option<String>) = if has_form_data {
         // Handle form data (-F option)
         anyhow::ensure!(
             opts.body_string.is_none() && opts.body_path.is_none(),
@@ -474,19 +476,23 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         let form_body = form.body();
         let content_type = form.content_type();
 
-        (form_body.into(), Some(content_type))
+        (BodyGenerator::Static(form_body.into()), Some(content_type))
+    } else if let Some(body_string) = opts.body_string {
+        (BodyGenerator::Static(body_string.into()), None)
+    } else if let Some(body_path) = opts.body_path {
+        let mut buf = Vec::new();
+        std::fs::File::open(body_path)?.read_to_end(&mut buf)?;
+        (BodyGenerator::Static(buf.into()), None)
+    } else if let Some(body_path_lines) = opts.body_path_lines {
+        let lines = BufReader::new(std::fs::File::open(body_path_lines)?)
+            .lines()
+            .map_while(Result::ok)
+            .map(Bytes::from)
+            .collect::<Vec<_>>();
+
+        (BodyGenerator::Random(lines), None)
     } else {
-        // Handle regular body data (-d or -D option)
-        let body: Bytes = match (opts.body_string, opts.body_path) {
-            (Some(body), _) => body.into(),
-            (_, Some(path)) => {
-                let mut buf = Vec::new();
-                std::fs::File::open(path)?.read_to_end(&mut buf)?;
-                buf.into()
-            }
-            _ => Bytes::new(),
-        };
-        (body, None)
+        (BodyGenerator::Static(Bytes::new()), None)
     };
 
     // Set method to POST if form data is used and method is GET
@@ -623,7 +629,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             aws_config,
             method,
             headers,
-            body,
+            body_generator,
             http_proxy: if opts.proxy.is_some() && url.scheme() == "http" {
                 Some(Proxy {
                     headers: proxy_headers.clone(),
