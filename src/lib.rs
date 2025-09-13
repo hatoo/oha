@@ -161,12 +161,19 @@ Note: If qps is specified, burst will be ignored",
     timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines"])]
+    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines", "form"])]
     body_string: Option<String>,
-    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines"])]
+    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines", "form"])]
     body_path: Option<std::path::PathBuf>,
-    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path"])]
+    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path", "form"])]
     body_path_lines: Option<std::path::PathBuf>,
+    #[arg(
+        help = "Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'",
+        short = 'F',
+        long = "form",
+        conflicts_with_all = ["body_string", "body_path", "body_path_lines"]
+    )]
+    form: Vec<String>,
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
     #[arg(
@@ -174,12 +181,6 @@ Note: If qps is specified, burst will be ignored",
         short = 'a'
     )]
     basic_auth: Option<String>,
-    #[arg(
-        help = "Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'",
-        short = 'F',
-        long = "form"
-    )]
-    form: Vec<String>,
     #[arg(help = "AWS session token", long = "aws-session")]
     aws_session: Option<String>,
     #[arg(
@@ -458,12 +459,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     // Process form data or regular body first
     let has_form_data = !opts.form.is_empty();
     let (body_generator, form_content_type): (BodyGenerator, Option<String>) = if has_form_data {
-        // Handle form data (-F option)
-        anyhow::ensure!(
-            opts.body_string.is_none() && opts.body_path.is_none(),
-            "Cannot use -F with -d or -D options"
-        );
-
         let mut form = curl_compat::Form::new();
 
         for form_str in opts.form {
