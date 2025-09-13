@@ -111,7 +111,7 @@ Options:
   -p <N_HTTP2_PARALLEL>
           Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total. [default: 1]
   -z <DURATION>
-          Duration of application to send requests. If duration is specified, n is ignored.
+          Duration of application to send requests.
           On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as "aborted due to deadline"
           You can change this behavior with `-w` option.
           Currently, on HTTP/2, When the duration is reached, ongoing requests are waited. `-w` option is ignored.
@@ -154,12 +154,14 @@ Options:
           HTTP request body.
   -D <BODY_PATH>
           HTTP request body from file.
+  -Z <BODY_PATH_LINES>
+          HTTP request body from file line by line.
+  -F, --form <FORM>
+          Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'
   -T <CONTENT_TYPE>
           Content-Type.
   -a <BASIC_AUTH>
           Basic authentication (username:password), or AWS credentials (access_key:secret_key)
-  -F, --form <FORM>
-          Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'
       --aws-session <AWS_SESSION>
           AWS session token
       --aws-sigv4 <AWS_SIGV4>

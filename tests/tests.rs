@@ -29,7 +29,7 @@ mod common;
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
 
-async fn next_port() -> u16 {
+fn next_port() -> u16 {
     PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -40,7 +40,7 @@ async fn bind_port(port: u16) -> tokio::net::TcpListener {
 }
 
 async fn bind_port_and_increment() -> (tokio::net::TcpListener, u16) {
-    let port = next_port().await;
+    let port = next_port();
     let listener = bind_port(port).await;
     (listener, port)
 }
@@ -93,7 +93,7 @@ fn test_all_http_versions(#[case] http_version_param: &str) {}
 async fn get_req(path: &str, args: &[&str]) -> Request<Bytes> {
     let (tx, rx) = kanal::unbounded();
 
-    let port = next_port().await;
+    let port = next_port();
 
     let work_type = http_work_type(args);
     let listener = bind_port(port).await;
@@ -248,7 +248,7 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
         }),
     );
 
-    let port = next_port().await;
+    let port = next_port();
     let listener = bind_port_ipv6(port).await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
@@ -740,7 +740,7 @@ async fn test_ipv6() {
         }),
     );
 
-    let port = next_port().await;
+    let port = next_port();
     let listener = bind_port_ipv6(port).await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
@@ -1185,4 +1185,25 @@ async fn test_mtls() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn test_body_path_lines() {
+    let body = "0\n1\n2";
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.write_all(body.as_bytes()).unwrap();
+
+    let tmp_path = tmp.path().to_str().unwrap();
+
+    let mut counts = [0; 3];
+    for _ in 0..32 {
+        let req = get_req("/", ["-Z", tmp_path, "-m", "POST"].as_slice()).await;
+
+        let req_body = req.into_body();
+        let line = std::str::from_utf8(&req_body).unwrap();
+        counts[line.parse::<usize>().unwrap()] += 1;
+    }
+
+    // test failure rate should be very low
+    assert!(counts.iter().all(|&c| c > 0));
 }

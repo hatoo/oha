@@ -19,7 +19,7 @@ use result_data::ResultData;
 use std::{
     env,
     fs::File,
-    io::{BufRead, Read},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     pin::Pin,
     str::FromStr,
@@ -48,7 +48,7 @@ mod url_generator;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::request_generator::{Proxy, RequestGenerator};
+use crate::request_generator::{BodyGenerator, Proxy, RequestGenerator};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -63,7 +63,8 @@ pub struct Opts {
     #[arg(
         help = "Number of requests to run.",
         short = 'n',
-        default_value = "200"
+        default_value = "200",
+        conflicts_with = "duration"
     )]
     n_requests: usize,
     #[arg(
@@ -79,33 +80,39 @@ pub struct Opts {
     )]
     n_http2_parallel: usize,
     #[arg(
-        help = "Duration of application to send requests. If duration is specified, n is ignored.
+        help = "Duration of application to send requests.
 On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
 You can change this behavior with `-w` option.
 Currently, on HTTP/2, When the duration is reached, ongoing requests are waited. `-w` option is ignored.
 Examples: -z 10s -z 3m.",
-        short = 'z'
+        short = 'z',
+        conflicts_with = "n_requests"
     )]
     duration: Option<Duration>,
     #[arg(
         help = "When the duration is reached, ongoing requests are waited",
         short,
         long,
-        default_value = "false"
+        default_value = "false",
+        requires = "duration"
     )]
     wait_ongoing_requests_after_deadline: bool,
-    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q')]
+    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"])]
     query_per_second: Option<f64>,
     #[arg(
         help = "Introduce delay between a predefined number of requests.
 Note: If qps is specified, burst will be ignored",
-        long = "burst-delay"
+        long = "burst-delay",
+        requires = "burst_requests",
+        conflicts_with = "query_per_second"
     )]
     burst_duration: Option<Duration>,
     #[arg(
         help = "Rates of requests for burst. Default is 1
 Note: If qps is specified, burst will be ignored",
-        long = "burst-rate"
+        long = "burst-rate",
+        requires = "burst_duration",
+        conflicts_with = "query_per_second"
     )]
     burst_requests: Option<usize>,
 
@@ -126,7 +133,8 @@ Note: If qps is specified, burst will be ignored",
     #[arg(
         help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
         default_value = "4",
-        long
+        long,
+        requires = "rand_regex_url"
     )]
     max_repeat: u32,
     #[arg(
@@ -161,10 +169,19 @@ Note: If qps is specified, burst will be ignored",
     timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
-    #[arg(help = "HTTP request body.", short = 'd')]
+    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines", "form"])]
     body_string: Option<String>,
-    #[arg(help = "HTTP request body from file.", short = 'D')]
+    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines", "form"])]
     body_path: Option<std::path::PathBuf>,
+    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path", "form"])]
+    body_path_lines: Option<std::path::PathBuf>,
+    #[arg(
+        help = "Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'",
+        short = 'F',
+        long = "form",
+        conflicts_with_all = ["body_string", "body_path", "body_path_lines"]
+    )]
+    form: Vec<String>,
     #[arg(help = "Content-Type.", short = 'T')]
     content_type: Option<String>,
     #[arg(
@@ -172,12 +189,6 @@ Note: If qps is specified, burst will be ignored",
         short = 'a'
     )]
     basic_auth: Option<String>,
-    #[arg(
-        help = "Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'",
-        short = 'F',
-        long = "form"
-    )]
-    form: Vec<String>,
     #[arg(help = "AWS session token", long = "aws-session")]
     aws_session: Option<String>,
     #[arg(
@@ -237,12 +248,14 @@ Note: If qps is specified, burst will be ignored",
     cacert: Option<PathBuf>,
     #[arg(
         help = "(TLS) Use the specified client certificate file. --key must be also specified",
-        long
+        long,
+        requires = "key"
     )]
     cert: Option<PathBuf>,
     #[arg(
         help = "(TLS) Use the specified client key file. --cert must be also specified",
-        long
+        long,
+        requires = "cert"
     )]
     key: Option<PathBuf>,
     #[arg(help = "Accept invalid certs.", long = "insecure")]
@@ -455,13 +468,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     // Process form data or regular body first
     let has_form_data = !opts.form.is_empty();
-    let (body, form_content_type): (Bytes, Option<String>) = if has_form_data {
-        // Handle form data (-F option)
-        anyhow::ensure!(
-            opts.body_string.is_none() && opts.body_path.is_none(),
-            "Cannot use -F with -d or -D options"
-        );
-
+    let (body_generator, form_content_type): (BodyGenerator, Option<String>) = if has_form_data {
         let mut form = curl_compat::Form::new();
 
         for form_str in opts.form {
@@ -474,19 +481,23 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         let form_body = form.body();
         let content_type = form.content_type();
 
-        (form_body.into(), Some(content_type))
+        (BodyGenerator::Static(form_body.into()), Some(content_type))
+    } else if let Some(body_string) = opts.body_string {
+        (BodyGenerator::Static(body_string.into()), None)
+    } else if let Some(body_path) = opts.body_path {
+        let mut buf = Vec::new();
+        std::fs::File::open(body_path)?.read_to_end(&mut buf)?;
+        (BodyGenerator::Static(buf.into()), None)
+    } else if let Some(body_path_lines) = opts.body_path_lines {
+        let lines = BufReader::new(std::fs::File::open(body_path_lines)?)
+            .lines()
+            .map_while(Result::ok)
+            .map(Bytes::from)
+            .collect::<Vec<_>>();
+
+        (BodyGenerator::Random(lines), None)
     } else {
-        // Handle regular body data (-d or -D option)
-        let body: Bytes = match (opts.body_string, opts.body_path) {
-            (Some(body), _) => body.into(),
-            (_, Some(path)) => {
-                let mut buf = Vec::new();
-                std::fs::File::open(path)?.read_to_end(&mut buf)?;
-                buf.into()
-            }
-            _ => Bytes::new(),
-        };
-        (body, None)
+        (BodyGenerator::Static(Bytes::new()), None)
     };
 
     // Set method to POST if form data is used and method is GET
@@ -611,7 +622,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let client_auth = match (opts.cert, opts.key) {
         (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
         (None, None) => None,
-        // TODO: Ensure it on clap
+        // Not possible because of clap requires
         _ => anyhow::bail!("Both --cert and --key must be specified"),
     };
 
@@ -623,7 +634,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             aws_config,
             method,
             headers,
-            body,
+            body_generator,
             http_proxy: if opts.proxy.is_some() && url.scheme() == "http" {
                 Some(Proxy {
                     headers: proxy_headers.clone(),

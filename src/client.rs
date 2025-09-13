@@ -211,6 +211,8 @@ pub struct Client {
 #[cfg(test)]
 impl Default for Client {
     fn default() -> Self {
+        use crate::request_generator::BodyGenerator;
+
         Self {
             request_generator: RequestGenerator {
                 url_generator: crate::url_generator::UrlGenerator::new_static(
@@ -220,7 +222,7 @@ impl Default for Client {
                 method: http::Method::GET,
                 version: http::Version::HTTP_11,
                 headers: http::header::HeaderMap::new(),
-                body: Bytes::new(),
+                body_generator: BodyGenerator::Static(Bytes::new()),
                 aws_config: None,
             },
             url: "http://example.com".parse().unwrap(),

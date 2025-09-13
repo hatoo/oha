@@ -3,6 +3,7 @@ use http_body_util::Full;
 use hyper::http;
 use hyper::{HeaderMap, Method, Version};
 use rand::Rng;
+use rand::seq::IndexedRandom;
 use thiserror::Error;
 
 use crate::aws_auth::{self, AwsSignatureConfig};
@@ -13,6 +14,11 @@ pub struct Proxy {
     pub version: Version,
 }
 
+pub enum BodyGenerator {
+    Static(Bytes),
+    Random(Vec<Bytes>),
+}
+
 pub struct RequestGenerator {
     pub url_generator: url_generator::UrlGenerator,
     // Only if http with proxy
@@ -20,7 +26,7 @@ pub struct RequestGenerator {
     pub method: Method,
     pub version: Version,
     pub headers: HeaderMap,
-    pub body: Bytes,
+    pub body_generator: BodyGenerator,
     pub aws_config: Option<AwsSignatureConfig>,
 }
 
@@ -40,11 +46,19 @@ impl RequestGenerator {
         self.version <= Version::HTTP_11
     }
 
+    fn generate_body<R: Rng>(&self, rng: &mut R) -> Bytes {
+        match &self.body_generator {
+            BodyGenerator::Static(b) => b.clone(),
+            BodyGenerator::Random(choices) => choices.choose(rng).cloned().unwrap_or_default(),
+        }
+    }
+
     pub fn generate<R: Rng>(
         &self,
         rng: &mut R,
     ) -> Result<hyper::Request<Full<Bytes>>, RequestGenerationError> {
         let url = self.url_generator.generate(rng)?;
+        let body = self.generate_body(rng);
 
         let mut builder = hyper::Request::builder()
             .uri(if !self.is_http1() || self.http_proxy.is_some() {
@@ -64,7 +78,7 @@ impl RequestGenerator {
 
         // Apply AWS SigV4 if configured
         if let Some(aws_config) = &self.aws_config {
-            aws_config.sign_request(self.method.as_str(), &mut headers, &url, &self.body)?;
+            aws_config.sign_request(self.method.as_str(), &mut headers, &url, &body)?;
         }
 
         if let Some(proxy) = &self.http_proxy {
@@ -75,7 +89,7 @@ impl RequestGenerator {
 
         *builder.headers_mut().unwrap() = headers;
 
-        let req = builder.body(Full::new(self.body.clone()))?;
+        let req = builder.body(Full::new(body))?;
         Ok(req)
     }
 }
