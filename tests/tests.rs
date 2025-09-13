@@ -1186,3 +1186,24 @@ async fn test_mtls() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn test_body_path_lines() {
+    let body = "0\n1\n2";
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    tmp.write_all(body.as_bytes()).unwrap();
+
+    let tmp_path = tmp.path().to_str().unwrap();
+
+    let mut counts = [0; 3];
+    for _ in 0..32 {
+        let req = get_req("/", ["-Z", tmp_path, "-m", "POST"].as_slice()).await;
+
+        let req_body = req.into_body();
+        let line = std::str::from_utf8(&req_body).unwrap();
+        counts[line.parse::<usize>().unwrap()] += 1;
+    }
+
+    // test failure rate should be very low
+    assert!(counts.iter().all(|&c| c > 0));
+}
