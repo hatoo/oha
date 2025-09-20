@@ -18,12 +18,12 @@ pub struct AwsSignatureConfig {
 
 #[derive(Error, Debug)]
 pub enum AwsSignatureError {
-    #[error("URL must contain a host")]
-    NoHost,
-    #[error("Invalid host header name")]
-    InvalidHost,
-    #[error("Invalid authorization header name")]
-    InvalidAuthorization,
+    #[error("URL must contain a host {0}")]
+    NoHost(Url),
+    #[error("Invalid host header name {0}")]
+    InvalidHost(String),
+    #[error("Invalid authorization header name {0}")]
+    InvalidAuthorization(String),
 }
 
 // Initialize unsignable headers as a static constant
@@ -55,10 +55,13 @@ impl AwsSignatureConfig {
             .unwrap();
 
         if !headers.contains_key(header::HOST) {
-            let host = url.host_str().ok_or(AwsSignatureError::NoHost)?;
+            let host = url
+                .host_str()
+                .ok_or_else(|| AwsSignatureError::NoHost(url.clone()))?;
             headers.insert(
                 header::HOST,
-                host.parse().map_err(|_| AwsSignatureError::InvalidHost)?,
+                host.parse()
+                    .map_err(|_| AwsSignatureError::InvalidHost(host.to_string()))?,
             );
         }
         headers.insert("x-amz-date", header_amz_date);
@@ -103,7 +106,7 @@ impl AwsSignatureConfig {
             header::AUTHORIZATION,
             signature
                 .parse()
-                .map_err(|_| AwsSignatureError::InvalidAuthorization)?,
+                .map_err(|_| AwsSignatureError::InvalidAuthorization(signature.to_string()))?,
         );
 
         Ok(())
