@@ -30,6 +30,7 @@ use url::Url;
 use url_generator::UrlGenerator;
 
 mod aws_auth;
+mod cli;
 mod client;
 #[cfg(feature = "http3")]
 mod client_h3;
@@ -44,7 +45,6 @@ mod result_data;
 mod timescale;
 mod tls_config;
 mod url_generator;
-mod cli;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
