@@ -30,6 +30,7 @@ use url::Url;
 use url_generator::UrlGenerator;
 
 mod aws_auth;
+mod cli;
 mod client;
 #[cfg(feature = "http3")]
 mod client_h3;
@@ -61,10 +62,11 @@ pub struct Opts {
     #[arg(help = "Target URL or file with multiple URLs.")]
     url: String,
     #[arg(
-        help = "Number of requests to run.",
+        help = "Number of requests to run. Accepts plain numbers or suffixes: k = 1,000, m = 1,000,000 (e.g. 10k, 1m).", 
         short = 'n',
         default_value = "200",
-        conflicts_with = "duration"
+        conflicts_with = "duration",
+        value_parser = cli::parse_n_requests
     )]
     n_requests: usize,
     #[arg(
