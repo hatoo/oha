@@ -104,7 +104,7 @@ predicates = "3.1.0"
 # https://github.com/sfackler/rust-native-tls/issues/225
 rcgen = { version = "0.14.3", features = ["aws_lc_rs"] }
 regex = "1.10.5"
-tempfile = "3.10.1"
+tempfile = "3.23.0"
 rustls = "0.23.18"
 rstest = "0.26.0"
 rstest_reuse = "0.7.0"
