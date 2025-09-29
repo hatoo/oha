@@ -169,6 +169,11 @@ Note: If qps is specified, burst will be ignored",
     proxy_headers: Vec<String>,
     #[arg(help = "Timeout for each request. Default to infinite.", short = 't')]
     timeout: Option<humantime::Duration>,
+    #[arg(
+        help = "Timeout for establishing a new connection. Default to 5s.",
+        long = "connect-timeout"
+    )]
+    connect_timeout: Option<humantime::Duration>,
     #[arg(help = "HTTP Accept Header.", short = 'A')]
     accept_header: Option<String>,
     #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines", "form"])]
@@ -655,6 +660,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             connect_to: opts.connect_to,
         },
         timeout: opts.timeout.map(|d| d.into()),
+        connect_timeout: opts.connect_timeout.map(|d| d.into()),
         redirect_limit: opts.redirect,
         disable_keepalive: opts.disable_keepalive,
         proxy_url: opts.proxy,
