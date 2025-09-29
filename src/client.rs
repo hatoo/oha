@@ -235,6 +235,7 @@ impl Default for Client {
                 connect_to: Vec::new(),
             },
             timeout: None,
+            connect_timeout: Some(std::time::Duration::from_secs(5)),
             redirect_limit: 0,
             disable_keepalive: false,
             proxy_url: None,
@@ -453,7 +454,9 @@ impl Client {
         rng: &mut R,
         http_version: http::Version,
     ) -> Result<(Instant, Stream), ClientError> {
-        let timeout_duration = self.connect_timeout.unwrap_or(std::time::Duration::from_secs(5));
+        let timeout_duration = self
+            .connect_timeout
+            .unwrap_or(std::time::Duration::from_secs(5));
 
         #[cfg(feature = "http3")]
         if http_version == http::Version::HTTP_3 {
