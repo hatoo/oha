@@ -195,6 +195,7 @@ pub struct Client {
     pub proxy_headers: http::header::HeaderMap,
     pub dns: Dns,
     pub timeout: Option<std::time::Duration>,
+    pub connect_timeout: Option<std::time::Duration>,
     pub redirect_limit: usize,
     pub disable_keepalive: bool,
     pub proxy_url: Option<Url>,
@@ -234,6 +235,7 @@ impl Default for Client {
                 connect_to: Vec::new(),
             },
             timeout: None,
+            connect_timeout: Some(std::time::Duration::from_secs(5)),
             redirect_limit: 0,
             disable_keepalive: false,
             proxy_url: None,
@@ -452,8 +454,9 @@ impl Client {
         rng: &mut R,
         http_version: http::Version,
     ) -> Result<(Instant, Stream), ClientError> {
-        // TODO: Allow the connect timeout to be configured
-        let timeout_duration = tokio::time::Duration::from_secs(5);
+        let timeout_duration = self
+            .connect_timeout
+            .unwrap_or(std::time::Duration::from_secs(5));
 
         #[cfg(feature = "http3")]
         if http_version == http::Version::HTTP_3 {
