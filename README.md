@@ -105,7 +105,7 @@ Arguments:
 
 Options:
   -n <N_REQUESTS>
-          Number of requests to run. [default: 200]
+          Number of requests to run. Accepts plain numbers or suffixes: k = 1,000, m = 1,000,000 (e.g. 10k, 1m). [default: 200]
   -c <N_CONNECTIONS>
           Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`. [default: 50]
   -p <N_HTTP2_PARALLEL>
@@ -148,6 +148,8 @@ Options:
           Custom Proxy HTTP header. Examples: --proxy-header "foo: bar"
   -t <TIMEOUT>
           Timeout for each request. Default to infinite.
+      --connect-timeout <CONNECT_TIMEOUT>
+          Timeout for establishing a new connection. Default to 5s.
   -A <ACCEPT_HEADER>
           HTTP Accept Header.
   -d <BODY_STRING>
