@@ -31,6 +31,14 @@ use crate::client_h3::send_debug_request_http3;
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<Bytes>>;
 
+fn format_host_port(host: &str, port: u16) -> String {
+    if host.contains(':') && !(host.starts_with('[') && host.ends_with(']')) {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
     pub dns_lookup: std::time::Instant,
@@ -81,6 +89,20 @@ pub struct Dns {
 }
 
 impl Dns {
+    fn select_connect_to<'a, R: Rng>(
+        &'a self,
+        host: &str,
+        port: u16,
+        rng: &mut R,
+    ) -> Option<&'a ConnectToEntry> {
+        self.connect_to
+            .iter()
+            .filter(|entry| entry.requested_port == port && entry.requested_host == host)
+            .collect::<Vec<_>>()
+            .choose(rng)
+            .copied()
+    }
+
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
     async fn lookup<R: Rng>(
         &self,
@@ -94,13 +116,7 @@ impl Dns {
 
         // Try to find an override (passed via `--connect-to`) that applies to this (host, port),
         // choosing one randomly if several match.
-        let (host, port) = if let Some(entry) = self
-            .connect_to
-            .iter()
-            .filter(|entry| entry.requested_port == port && entry.requested_host == host)
-            .collect::<Vec<_>>()
-            .choose(rng)
-        {
+        let (host, port) = if let Some(entry) = self.select_connect_to(host, port, rng) {
             (entry.target_host.as_str(), entry.target_port)
         } else {
             (host, port)
@@ -445,6 +461,34 @@ impl Client {
         Ok((req, snapshot))
     }
 
+    fn apply_http_proxy_connect_to<R: Rng>(
+        &self,
+        request: &mut Request<Full<Bytes>>,
+        rng: &mut R,
+    ) -> Result<(), ClientError> {
+        if self.proxy_url.is_none() || request.uri().scheme_str() != Some("http") {
+            return Ok(());
+        }
+
+        if let Some(authority) = request.uri().authority() {
+            let requested_host = authority.host();
+            let requested_port = authority.port_u16().unwrap_or(80);
+            if let Some(entry) = self
+                .dns
+                .select_connect_to(requested_host, requested_port, rng)
+            {
+                let new_authority: http::uri::Authority =
+                    format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                let mut parts = request.uri().clone().into_parts();
+                parts.authority = Some(new_authority);
+                let new_uri = http::Uri::from_parts(parts)?;
+                *request.uri_mut() = new_uri;
+            }
+        }
+
+        Ok(())
+    }
+
     /**
      * Returns a stream of the underlying transport. NOT a HTTP client
      */
@@ -589,16 +633,24 @@ impl Client {
             };
             let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
             if url.scheme() == "https" {
+                let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
+                let requested_port = url
+                    .port_or_known_default()
+                    .ok_or(ClientError::PortNotFound)?;
+                let (connect_host, connect_port) = if let Some(entry) =
+                    self.dns
+                        .select_connect_to(requested_host, requested_port, rng)
+                {
+                    (entry.target_host.as_str(), entry.target_port)
+                } else {
+                    (requested_host, requested_port)
+                };
+                let connect_authority = format_host_port(connect_host, connect_port);
                 // Do CONNECT request to proxy
                 let req = {
-                    let mut builder =
-                        http::Request::builder()
-                            .method(Method::CONNECT)
-                            .uri(format!(
-                                "{}:{}",
-                                url.host_str().unwrap(),
-                                url.port_or_known_default().unwrap()
-                            ));
+                    let mut builder = http::Request::builder()
+                        .method(Method::CONNECT)
+                        .uri(connect_authority);
                     *builder
                         .headers_mut()
                         .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
@@ -634,7 +686,8 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (request, rng) = self.generate_request(&mut client_state.rng)?;
+            let (mut request, rng) = self.generate_request(&mut client_state.rng)?;
+            self.apply_http_proxy_connect_to(&mut request, &mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
@@ -743,15 +796,23 @@ impl Client {
             };
             let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
             if url.scheme() == "https" {
+                let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
+                let requested_port = url
+                    .port_or_known_default()
+                    .ok_or(ClientError::PortNotFound)?;
+                let (connect_host, connect_port) = if let Some(entry) =
+                    self.dns
+                        .select_connect_to(requested_host, requested_port, rng)
+                {
+                    (entry.target_host.as_str(), entry.target_port)
+                } else {
+                    (requested_host, requested_port)
+                };
+                let connect_authority = format_host_port(connect_host, connect_port);
                 let req = {
-                    let mut builder =
-                        http::Request::builder()
-                            .method(Method::CONNECT)
-                            .uri(format!(
-                                "{}:{}",
-                                url.host_str().unwrap(),
-                                url.port_or_known_default().unwrap()
-                            ));
+                    let mut builder = http::Request::builder()
+                        .method(Method::CONNECT)
+                        .uri(connect_authority);
                     *builder
                         .headers_mut()
                         .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
@@ -797,7 +858,8 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (request, rng) = self.generate_request(&mut client_state.rng)?;
+            let (mut request, rng) = self.generate_request(&mut client_state.rng)?;
+            self.apply_http_proxy_connect_to(&mut request, &mut client_state.rng)?;
             let start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
@@ -895,6 +957,7 @@ impl Client {
         } else {
             url[url::Position::BeforePath..].parse()?
         };
+        self.apply_http_proxy_connect_to(&mut request, rng)?;
         let res = send_request.send_request(request).await?;
         let (parts, mut stream) = res.into_parts();
         let mut status = parts.status;
@@ -997,7 +1060,8 @@ pub(crate) fn set_start_latency_correction<E>(
 
 pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
     let mut rng = Pcg64Si::from_os_rng();
-    let (request, _) = client.generate_request(&mut rng)?;
+    let (mut request, _) = client.generate_request(&mut rng)?;
+    client.apply_http_proxy_connect_to(&mut request, &mut rng)?;
 
     writeln!(w, "{request:#?}")?;
 
