@@ -1,4 +1,6 @@
 use bytes::Bytes;
+#[cfg(test)]
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -230,6 +232,15 @@ impl Default for Client {
     fn default() -> Self {
         use crate::request_generator::BodyGenerator;
 
+        let (resolver_config, resolver_opts) = crate::system_resolv_conf()
+            .unwrap_or_else(|_| (ResolverConfig::default(), ResolverOpts::default()));
+        let resolver = hickory_resolver::Resolver::builder_with_config(
+            resolver_config,
+            hickory_resolver::name_server::TokioConnectionProvider::default(),
+        )
+        .with_options(resolver_opts)
+        .build();
+
         Self {
             request_generator: RequestGenerator {
                 url_generator: crate::url_generator::UrlGenerator::new_static(
@@ -247,7 +258,7 @@ impl Default for Client {
             proxy_http_version: http::Version::HTTP_11,
             proxy_headers: http::header::HeaderMap::new(),
             dns: Dns {
-                resolver: hickory_resolver::Resolver::builder_tokio().unwrap().build(),
+                resolver,
                 connect_to: Vec::new(),
             },
             timeout: None,

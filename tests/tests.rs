@@ -6,7 +6,7 @@ use std::{
     io::Write,
     net::{Ipv6Addr, SocketAddr},
     str::FromStr,
-    sync::{Arc, atomic::AtomicU16},
+    sync::{Arc, OnceLock, atomic::AtomicU16},
 };
 
 use assert_cmd::Command;
@@ -31,6 +31,15 @@ static PORT: AtomicU16 = AtomicU16::new(5111);
 
 fn next_port() -> u16 {
     PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+fn install_crypto_provider() {
+    static INSTALL: OnceLock<()> = OnceLock::new();
+    INSTALL.get_or_init(|| {
+        let _ = rustls::crypto::CryptoProvider::install_default(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        );
+    });
 }
 
 async fn bind_port(port: u16) -> tokio::net::TcpListener {
@@ -980,6 +989,7 @@ where
         .await
         .unwrap();
 
+    install_crypto_provider();
     let issuer = make_root_issuer();
     let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
 
@@ -1040,6 +1050,7 @@ where
         .await
         .unwrap();
 
+    install_crypto_provider();
     let issuer = make_root_issuer();
     let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
 
