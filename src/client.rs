@@ -468,36 +468,25 @@ impl Client {
         rng: &mut R,
     ) -> Result<(Request<Full<Bytes>>, R), ClientError> {
         let snapshot = *rng;
-        let req = self.request_generator.generate(rng)?;
-        Ok((req, snapshot))
-    }
-
-    fn apply_http_proxy_connect_to<R: Rng>(
-        &self,
-        request: &mut Request<Full<Bytes>>,
-        rng: &mut R,
-    ) -> Result<(), ClientError> {
-        if self.proxy_url.is_none() || request.uri().scheme_str() != Some("http") {
-            return Ok(());
-        }
-
-        if let Some(authority) = request.uri().authority() {
-            let requested_host = authority.host();
-            let requested_port = authority.port_u16().unwrap_or(80);
-            if let Some(entry) = self
-                .dns
-                .select_connect_to(requested_host, requested_port, rng)
-            {
-                let new_authority: http::uri::Authority =
-                    format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
-                let mut parts = request.uri().clone().into_parts();
-                parts.authority = Some(new_authority);
-                let new_uri = http::Uri::from_parts(parts)?;
-                *request.uri_mut() = new_uri;
+        let mut req = self.request_generator.generate(rng)?;
+        if self.proxy_url.is_some() && req.uri().scheme_str() == Some("http") {
+            if let Some(authority) = req.uri().authority() {
+                let requested_host = authority.host();
+                let requested_port = authority.port_u16().unwrap_or(80);
+                if let Some(entry) =
+                    self.dns
+                        .select_connect_to(requested_host, requested_port, rng)
+                {
+                    let new_authority: http::uri::Authority =
+                        format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                    let mut parts = req.uri().clone().into_parts();
+                    parts.authority = Some(new_authority);
+                    let new_uri = http::Uri::from_parts(parts)?;
+                    *req.uri_mut() = new_uri;
+                }
             }
         }
-
-        Ok(())
+        Ok((req, snapshot))
     }
 
     /**
@@ -697,8 +686,7 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (mut request, rng) = self.generate_request(&mut client_state.rng)?;
-            self.apply_http_proxy_connect_to(&mut request, &mut client_state.rng)?;
+            let (request, rng) = self.generate_request(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
@@ -869,8 +857,7 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (mut request, rng) = self.generate_request(&mut client_state.rng)?;
-            self.apply_http_proxy_connect_to(&mut request, &mut client_state.rng)?;
+            let (request, rng) = self.generate_request(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
@@ -968,7 +955,23 @@ impl Client {
         } else {
             url[url::Position::BeforePath..].parse()?
         };
-        self.apply_http_proxy_connect_to(&mut request, rng)?;
+        if self.proxy_url.is_some() && request.uri().scheme_str() == Some("http") {
+            if let Some(authority) = request.uri().authority() {
+                let requested_host = authority.host();
+                let requested_port = authority.port_u16().unwrap_or(80);
+                if let Some(entry) = self
+                    .dns
+                    .select_connect_to(requested_host, requested_port, rng)
+                {
+                    let new_authority: http::uri::Authority =
+                        format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                    let mut parts = request.uri().clone().into_parts();
+                    parts.authority = Some(new_authority);
+                    let new_uri = http::Uri::from_parts(parts)?;
+                    *request.uri_mut() = new_uri;
+                }
+            }
+        }
         let res = send_request.send_request(request).await?;
         let (parts, mut stream) = res.into_parts();
         let mut status = parts.status;
@@ -1071,8 +1074,7 @@ pub(crate) fn set_start_latency_correction<E>(
 
 pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
     let mut rng = Pcg64Si::from_os_rng();
-    let (mut request, _) = client.generate_request(&mut rng)?;
-    client.apply_http_proxy_connect_to(&mut request, &mut rng)?;
+    let (request, _) = client.generate_request(&mut rng)?;
 
     writeln!(w, "{request:#?}")?;
 
