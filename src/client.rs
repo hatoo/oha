@@ -473,9 +473,9 @@ impl Client {
             if let Some(authority) = req.uri().authority() {
                 let requested_host = authority.host();
                 let requested_port = authority.port_u16().unwrap_or(80);
-                if let Some(entry) =
-                    self.dns
-                        .select_connect_to(requested_host, requested_port, rng)
+                if let Some(entry) = self
+                    .dns
+                    .select_connect_to(requested_host, requested_port, rng)
                 {
                     let new_authority: http::uri::Authority =
                         format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
