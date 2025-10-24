@@ -6,7 +6,7 @@ use std::{
     io::Write,
     net::{Ipv6Addr, SocketAddr},
     str::FromStr,
-    sync::{Arc, atomic::AtomicU16},
+    sync::{Arc, OnceLock, atomic::AtomicU16},
 };
 
 use assert_cmd::Command;
@@ -31,6 +31,15 @@ static PORT: AtomicU16 = AtomicU16::new(5111);
 
 fn next_port() -> u16 {
     PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+fn install_crypto_provider() {
+    static INSTALL: OnceLock<()> = OnceLock::new();
+    INSTALL.get_or_init(|| {
+        let _ = rustls::crypto::CryptoProvider::install_default(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        );
+    });
 }
 
 async fn bind_port(port: u16) -> tokio::net::TcpListener {
@@ -729,6 +738,115 @@ async fn test_connect_to_redirect() {
 }
 
 #[tokio::test]
+async fn test_connect_to_http_proxy_override() {
+    let (tx, rx) = kanal::unbounded();
+    let proxy_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", proxy_port))
+        .await
+        .unwrap();
+
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let tx = tx.clone();
+
+        hyper::server::conn::http1::Builder::new()
+            .preserve_header_case(true)
+            .title_case_headers(true)
+            .serve_connection(
+                TokioIo::new(stream),
+                service_fn(move |req: Request<Incoming>| {
+                    let tx = tx.clone();
+                    async move {
+                        let authority = req
+                            .uri()
+                            .authority()
+                            .map(|a| a.to_string())
+                            .expect("proxy received origin-form request");
+                        let host = req
+                            .headers()
+                            .get("host")
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        tx.send((authority, host)).unwrap();
+                        Ok::<_, Infallible>(Response::new("proxy".to_string()))
+                    }
+                }),
+            )
+            .await
+            .unwrap();
+    });
+
+    let override_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(["-n", "1", "--no-tui"])
+            .arg("-x")
+            .arg(format!("http://127.0.0.1:{proxy_port}"))
+            .arg("--connect-to")
+            .arg(format!("example.test:80:127.0.0.1:{override_port}"))
+            .arg("http://example.test/")
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    let (authority, host) = rx.try_recv().unwrap().unwrap();
+    assert_eq!(authority, format!("127.0.0.1:{override_port}"));
+    assert_eq!(host, "example.test");
+}
+
+#[tokio::test]
+async fn test_connect_to_https_proxy_connect_override() {
+    let (connect_tx, connect_rx) = kanal::unbounded();
+    let (host_tx, host_rx) = kanal::unbounded();
+
+    let service = service_fn(move |req: Request<Incoming>| {
+        let host_tx = host_tx.clone();
+        async move {
+            let host = req
+                .headers()
+                .get("host")
+                .and_then(|h| h.to_str().ok())
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            host_tx.send(host).unwrap();
+            Ok::<_, Infallible>(Response::new("Hello World".to_string()))
+        }
+    });
+
+    let (proxy_port, proxy_serve) =
+        bind_proxy_with_recorder(service, false, connect_tx.clone()).await;
+
+    tokio::spawn(proxy_serve);
+
+    let override_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    tokio::task::spawn_blocking(move || {
+        Command::cargo_bin("oha")
+            .unwrap()
+            .args(["-n", "1", "--no-tui", "--insecure"])
+            .arg("-x")
+            .arg(format!("http://127.0.0.1:{proxy_port}"))
+            .args(["--proxy-header", "proxy-authorization: test"])
+            .arg("--connect-to")
+            .arg(format!("example.test:443:127.0.0.1:{override_port}"))
+            .arg("https://example.test/")
+            .assert()
+            .success();
+    })
+    .await
+    .unwrap();
+
+    let connect_target = connect_rx.try_recv().unwrap().unwrap();
+    assert_eq!(connect_target, format!("127.0.0.1:{override_port}"));
+    let host_header = host_rx.try_recv().unwrap().unwrap();
+    assert_eq!(host_header, "example.test");
+}
+
+#[tokio::test]
 async fn test_ipv6() {
     let (tx, rx) = kanal::unbounded();
 
@@ -871,6 +989,7 @@ where
         .await
         .unwrap();
 
+    install_crypto_provider();
     let issuer = make_root_issuer();
     let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
 
@@ -882,6 +1001,72 @@ where
 
         let outer = service_fn(move |req| {
             // Test --proxy-header option
+            assert_eq!(
+                req.headers()
+                    .get("proxy-authorization")
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "test"
+            );
+
+            MitmProxy::wrap_service(proxy.clone(), service.clone()).call(req)
+        });
+
+        tokio::spawn(async move {
+            if http2 {
+                let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(stream), outer)
+                    .await;
+            } else {
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .preserve_header_case(true)
+                    .title_case_headers(true)
+                    .serve_connection(TokioIo::new(stream), outer)
+                    .with_upgrades()
+                    .await;
+            }
+        });
+    };
+
+    (port, serve)
+}
+
+async fn bind_proxy_with_recorder<S>(
+    service: S,
+    http2: bool,
+    recorder: kanal::Sender<String>,
+) -> (u16, impl Future<Output = ()>)
+where
+    S: HttpService<Incoming> + Clone + Send + 'static,
+    S::Error: Into<Box<dyn StdError + Send + Sync>>,
+    S::ResBody: Send + Sync + 'static,
+    <S::ResBody as Body>::Data: Send,
+    <S::ResBody as Body>::Error: Into<Box<dyn StdError + Send + Sync>>,
+    S::Future: Send,
+{
+    let port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tcp_listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .unwrap();
+
+    install_crypto_provider();
+    let issuer = make_root_issuer();
+    let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
+
+    let serve = async move {
+        let (stream, _) = tcp_listener.accept().await.unwrap();
+
+        let proxy = proxy.clone();
+        let service = service.clone();
+        let recorder = recorder.clone();
+
+        let outer = service_fn(move |req| {
+            let recorder = recorder.clone();
+            if req.method() == hyper::Method::CONNECT {
+                recorder.send(req.uri().to_string()).unwrap();
+            }
+
             assert_eq!(
                 req.headers()
                     .get("proxy-authorization")

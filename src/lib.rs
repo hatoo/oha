@@ -948,19 +948,36 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
+pub(crate) fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
     // check if we are running in termux https://github.com/termux/termux-app
     #[cfg(unix)]
     if env::var("TERMUX_VERSION").is_ok() {
         let prefix = env::var("PREFIX")?;
         let path = format!("{prefix}/etc/resolv.conf");
-        let conf_data = std::fs::read(&path).context(format!("DNS: failed to load {path}"))?;
-        return hickory_resolver::system_conf::parse_resolv_conf(conf_data)
-            .context(format!("DNS: failed to parse {path}"));
+        return match std::fs::read(&path) {
+            Ok(conf_data) => hickory_resolver::system_conf::parse_resolv_conf(conf_data)
+                .context(format!("DNS: failed to parse {path}")),
+            Err(err) => {
+                fallback_resolver_config(anyhow::anyhow!("DNS: failed to load {path}: {err}"))
+            }
+        };
     }
 
-    hickory_resolver::system_conf::read_system_conf()
-        .context("DNS: failed to load /etc/resolv.conf")
+    match hickory_resolver::system_conf::read_system_conf() {
+        Ok(conf) => Ok(conf),
+        Err(err) => fallback_resolver_config(anyhow::anyhow!(
+            "DNS: failed to load /etc/resolv.conf: {err}"
+        )),
+    }
+}
+
+fn fallback_resolver_config(err: anyhow::Error) -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
+    // Notify the user that we had to fall back to a default resolver configuration.
+    eprintln!("{err}");
+
+    let config = ResolverConfig::default();
+    let opts = ResolverOpts::default();
+    Ok((config, opts))
 }
 
 enum WorkMode {

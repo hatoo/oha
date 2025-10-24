@@ -1,4 +1,6 @@
 use bytes::Bytes;
+#[cfg(test)]
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -30,6 +32,14 @@ use crate::client_h3::send_debug_request_http3;
 
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<Bytes>>;
+
+fn format_host_port(host: &str, port: u16) -> String {
+    if host.contains(':') && !(host.starts_with('[') && host.ends_with(']')) {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
@@ -81,6 +91,20 @@ pub struct Dns {
 }
 
 impl Dns {
+    fn select_connect_to<'a, R: Rng>(
+        &'a self,
+        host: &str,
+        port: u16,
+        rng: &mut R,
+    ) -> Option<&'a ConnectToEntry> {
+        self.connect_to
+            .iter()
+            .filter(|entry| entry.requested_port == port && entry.requested_host == host)
+            .collect::<Vec<_>>()
+            .choose(rng)
+            .copied()
+    }
+
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
     async fn lookup<R: Rng>(
         &self,
@@ -94,13 +118,7 @@ impl Dns {
 
         // Try to find an override (passed via `--connect-to`) that applies to this (host, port),
         // choosing one randomly if several match.
-        let (host, port) = if let Some(entry) = self
-            .connect_to
-            .iter()
-            .filter(|entry| entry.requested_port == port && entry.requested_host == host)
-            .collect::<Vec<_>>()
-            .choose(rng)
-        {
+        let (host, port) = if let Some(entry) = self.select_connect_to(host, port, rng) {
             (entry.target_host.as_str(), entry.target_port)
         } else {
             (host, port)
@@ -214,6 +232,15 @@ impl Default for Client {
     fn default() -> Self {
         use crate::request_generator::BodyGenerator;
 
+        let (resolver_config, resolver_opts) = crate::system_resolv_conf()
+            .unwrap_or_else(|_| (ResolverConfig::default(), ResolverOpts::default()));
+        let resolver = hickory_resolver::Resolver::builder_with_config(
+            resolver_config,
+            hickory_resolver::name_server::TokioConnectionProvider::default(),
+        )
+        .with_options(resolver_opts)
+        .build();
+
         Self {
             request_generator: RequestGenerator {
                 url_generator: crate::url_generator::UrlGenerator::new_static(
@@ -231,7 +258,7 @@ impl Default for Client {
             proxy_http_version: http::Version::HTTP_11,
             proxy_headers: http::header::HeaderMap::new(),
             dns: Dns {
-                resolver: hickory_resolver::Resolver::builder_tokio().unwrap().build(),
+                resolver,
                 connect_to: Vec::new(),
             },
             timeout: None,
@@ -441,7 +468,24 @@ impl Client {
         rng: &mut R,
     ) -> Result<(Request<Full<Bytes>>, R), ClientError> {
         let snapshot = *rng;
-        let req = self.request_generator.generate(rng)?;
+        let mut req = self.request_generator.generate(rng)?;
+        if self.proxy_url.is_some() && req.uri().scheme_str() == Some("http") {
+            if let Some(authority) = req.uri().authority() {
+                let requested_host = authority.host();
+                let requested_port = authority.port_u16().unwrap_or(80);
+                if let Some(entry) = self
+                    .dns
+                    .select_connect_to(requested_host, requested_port, rng)
+                {
+                    let new_authority: http::uri::Authority =
+                        format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                    let mut parts = req.uri().clone().into_parts();
+                    parts.authority = Some(new_authority);
+                    let new_uri = http::Uri::from_parts(parts)?;
+                    *req.uri_mut() = new_uri;
+                }
+            }
+        }
         Ok((req, snapshot))
     }
 
@@ -589,16 +633,24 @@ impl Client {
             };
             let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
             if url.scheme() == "https" {
+                let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
+                let requested_port = url
+                    .port_or_known_default()
+                    .ok_or(ClientError::PortNotFound)?;
+                let (connect_host, connect_port) = if let Some(entry) =
+                    self.dns
+                        .select_connect_to(requested_host, requested_port, rng)
+                {
+                    (entry.target_host.as_str(), entry.target_port)
+                } else {
+                    (requested_host, requested_port)
+                };
+                let connect_authority = format_host_port(connect_host, connect_port);
                 // Do CONNECT request to proxy
                 let req = {
-                    let mut builder =
-                        http::Request::builder()
-                            .method(Method::CONNECT)
-                            .uri(format!(
-                                "{}:{}",
-                                url.host_str().unwrap(),
-                                url.port_or_known_default().unwrap()
-                            ));
+                    let mut builder = http::Request::builder()
+                        .method(Method::CONNECT)
+                        .uri(connect_authority);
                     *builder
                         .headers_mut()
                         .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
@@ -743,15 +795,23 @@ impl Client {
             };
             let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
             if url.scheme() == "https" {
+                let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
+                let requested_port = url
+                    .port_or_known_default()
+                    .ok_or(ClientError::PortNotFound)?;
+                let (connect_host, connect_port) = if let Some(entry) =
+                    self.dns
+                        .select_connect_to(requested_host, requested_port, rng)
+                {
+                    (entry.target_host.as_str(), entry.target_port)
+                } else {
+                    (requested_host, requested_port)
+                };
+                let connect_authority = format_host_port(connect_host, connect_port);
                 let req = {
-                    let mut builder =
-                        http::Request::builder()
-                            .method(Method::CONNECT)
-                            .uri(format!(
-                                "{}:{}",
-                                url.host_str().unwrap(),
-                                url.port_or_known_default().unwrap()
-                            ));
+                    let mut builder = http::Request::builder()
+                        .method(Method::CONNECT)
+                        .uri(connect_authority);
                     *builder
                         .headers_mut()
                         .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
@@ -895,6 +955,23 @@ impl Client {
         } else {
             url[url::Position::BeforePath..].parse()?
         };
+        if self.proxy_url.is_some() && request.uri().scheme_str() == Some("http") {
+            if let Some(authority) = request.uri().authority() {
+                let requested_host = authority.host();
+                let requested_port = authority.port_u16().unwrap_or(80);
+                if let Some(entry) = self
+                    .dns
+                    .select_connect_to(requested_host, requested_port, rng)
+                {
+                    let new_authority: http::uri::Authority =
+                        format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                    let mut parts = request.uri().clone().into_parts();
+                    parts.authority = Some(new_authority);
+                    let new_uri = http::Uri::from_parts(parts)?;
+                    *request.uri_mut() = new_uri;
+                }
+            }
+        }
         let res = send_request.send_request(request).await?;
         let (parts, mut stream) = res.into_parts();
         let mut status = parts.status;
