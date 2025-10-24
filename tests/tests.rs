@@ -6,7 +6,7 @@ use std::{
     io::Write,
     net::{Ipv6Addr, SocketAddr},
     str::FromStr,
-    sync::{Arc, OnceLock, atomic::AtomicU16},,
+    sync::{Arc, OnceLock, atomic::AtomicU16},
 };
 
 use assert_cmd::Command;
