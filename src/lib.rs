@@ -7,10 +7,7 @@ use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use humantime::Duration;
 use hyper::{
     HeaderMap,
-    http::{
-        self,
-        header::{HeaderName, HeaderValue},
-    },
+    http::{self, header::HeaderName, header::HeaderValue},
 };
 use printer::{PrintConfig, PrintMode};
 use rand_regex::Regex;
@@ -22,7 +19,6 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     pin::Pin,
-    str::FromStr,
     sync::Arc,
 };
 use timescale::TimeScale;
@@ -49,7 +45,10 @@ mod url_generator;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
-use crate::request_generator::{BodyGenerator, Proxy, RequestGenerator};
+use crate::{
+    cli::{ConnectToEntry, parse_header},
+    request_generator::{BodyGenerator, Proxy, RequestGenerator},
+};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -160,8 +159,8 @@ Note: If qps is specified, burst will be ignored",
         default_value = "GET"
     )]
     method: http::Method,
-    #[arg(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H')]
-    headers: Vec<String>,
+    #[arg(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H', value_parser = parse_header)]
+    headers: Vec<(HeaderName, HeaderValue)>,
     #[arg(
         help = "Custom Proxy HTTP header. Examples: --proxy-header \"foo: bar\"",
         long = "proxy-header"
@@ -289,7 +288,7 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         long = "vsock-addr",
         group = "socket-type"
     )]
-    vsock_addr: Option<VsockAddr>,
+    vsock_addr: Option<cli::VsockAddr>,
     #[arg(
         help = "Include a response status code successful or not successful breakdown for the time histogram and distribution statistics",
         long = "stats-success-breakdown"
@@ -319,69 +318,6 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         short = 'u'
     )]
     time_unit: Option<TimeScale>,
-}
-
-/// An entry specified by `connect-to` to override DNS resolution and default
-/// port numbers. For example, `example.org:80:localhost:5000` will connect to
-/// `localhost:5000` whenever `http://example.org` is requested.
-#[derive(Clone, Debug)]
-pub struct ConnectToEntry {
-    pub requested_host: String,
-    pub requested_port: u16,
-    pub target_host: String,
-    pub target_port: u16,
-}
-
-impl FromStr for ConnectToEntry {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let expected_syntax: &str = "syntax for --connect-to is host:port:target_host:target_port";
-
-        let (s, target_port) = s.rsplit_once(':').ok_or(expected_syntax)?;
-        let (s, target_host) = if s.ends_with(']') {
-            // ipv6
-            let i = s.rfind(":[").ok_or(expected_syntax)?;
-            (&s[..i], &s[i + 1..])
-        } else {
-            s.rsplit_once(':').ok_or(expected_syntax)?
-        };
-        let (requested_host, requested_port) = s.rsplit_once(':').ok_or(expected_syntax)?;
-
-        Ok(ConnectToEntry {
-            requested_host: requested_host.into(),
-            requested_port: requested_port.parse().map_err(|err| {
-                format!("requested port must be an u16, but got {requested_port}: {err}")
-            })?,
-            target_host: target_host.into(),
-            target_port: target_port.parse().map_err(|err| {
-                format!("target port must be an u16, but got {target_port}: {err}")
-            })?,
-        })
-    }
-}
-
-/// A wrapper around a [`tokio_vsock::VsockAddr`] that provides a parser for clap
-#[derive(Debug, Clone)]
-#[repr(transparent)]
-#[cfg(feature = "vsock")]
-struct VsockAddr(tokio_vsock::VsockAddr);
-
-#[cfg(feature = "vsock")]
-impl FromStr for VsockAddr {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (cid, port) = s
-            .split_once(':')
-            .ok_or("syntax for --vsock-addr is cid:port")?;
-        Ok(Self(tokio_vsock::VsockAddr::new(
-            cid.parse()
-                .map_err(|err| format!("cid must be a u32, but got {cid}: {err}"))?,
-            port.parse()
-                .map_err(|err| format!("port must be a u32, but got {port}: {err}"))?,
-        )))
-    }
 }
 
 pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
@@ -593,12 +529,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             headers.insert(http::header::CONNECTION, HeaderValue::from_static("close"));
         }
 
-        for (k, v) in opts
-            .headers
-            .into_iter()
-            .map(|s| parse_header(s.as_str()))
-            .collect::<anyhow::Result<Vec<_>>>()?
-        {
+        for (k, v) in opts.headers.into_iter() {
             headers.insert(k, v);
         }
 
@@ -1040,12 +971,4 @@ impl Opts {
             }
         }
     }
-}
-
-fn parse_header(s: &str) -> Result<(HeaderName, HeaderValue), anyhow::Error> {
-    let header = s.splitn(2, ':').collect::<Vec<_>>();
-    anyhow::ensure!(header.len() == 2, anyhow::anyhow!("Parse header"));
-    let name = HeaderName::from_str(header[0])?;
-    let value = HeaderValue::from_str(header[1].trim_start_matches(' '))?;
-    Ok::<(HeaderName, HeaderValue), anyhow::Error>((name, value))
 }
