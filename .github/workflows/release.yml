@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: $BUILD_CMD build --profile release-ci --target ${{ matrix.target }} --locked --no-default-features --features rustls ${{ matrix.additional_args }}
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.release_name }}
           path: target/${{ matrix.target }}/release-ci/${{ matrix.artifact_name }}
