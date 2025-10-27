@@ -64,25 +64,15 @@ impl FromStr for ConnectToEntry {
     }
 }
 
-/// A wrapper around a [`tokio_vsock::VsockAddr`] that provides a parser for clap
-#[derive(Debug, Clone)]
-#[repr(transparent)]
 #[cfg(feature = "vsock")]
-pub struct VsockAddr(pub tokio_vsock::VsockAddr);
-
-#[cfg(feature = "vsock")]
-impl FromStr for VsockAddr {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (cid, port) = s
-            .split_once(':')
-            .ok_or("syntax for --vsock-addr is cid:port")?;
-        Ok(Self(tokio_vsock::VsockAddr::new(
-            cid.parse()
-                .map_err(|err| format!("cid must be a u32, but got {cid}: {err}"))?,
-            port.parse()
-                .map_err(|err| format!("port must be a u32, but got {port}: {err}"))?,
-        )))
-    }
+pub fn parse_vsock_addr(s: &str) -> Result<tokio_vsock::VsockAddr, String> {
+    let (cid, port) = s
+        .split_once(':')
+        .ok_or("syntax for --vsock-addr is cid:port")?;
+    Ok(tokio_vsock::VsockAddr::new(
+        cid.parse()
+            .map_err(|err| format!("cid must be a u32, but got {cid}: {err}"))?,
+        port.parse()
+            .map_err(|err| format!("port must be a u32, but got {port}: {err}"))?,
+    ))
 }
