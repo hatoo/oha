@@ -163,9 +163,10 @@ Note: If qps is specified, burst will be ignored",
     headers: Vec<(HeaderName, HeaderValue)>,
     #[arg(
         help = "Custom Proxy HTTP header. Examples: --proxy-header \"foo: bar\"",
-        long = "proxy-header"
+        long = "proxy-header",
+        value_parser = parse_header
     )]
-    proxy_headers: Vec<String>,
+    proxy_headers: Vec<(HeaderName, HeaderValue)>,
     #[arg(help = "Timeout for each request. Default to infinite.", short = 't')]
     timeout: Option<humantime::Duration>,
     #[arg(
@@ -286,9 +287,10 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
     #[arg(
         help = "Connect to a VSOCK socket using 'cid:port' instead of the domain in the URL. Only for non-HTTPS URLs.",
         long = "vsock-addr",
+        value_parser = cli::parse_vsock_addr,
         group = "socket-type"
     )]
-    vsock_addr: Option<cli::VsockAddr>,
+    vsock_addr: Option<tokio_vsock::VsockAddr>,
     #[arg(
         help = "Include a response status code successful or not successful breakdown for the time histogram and distribution statistics",
         long = "stats-success-breakdown"
@@ -536,12 +538,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         headers
     };
 
-    let proxy_headers = {
-        opts.proxy_headers
-            .into_iter()
-            .map(|s| parse_header(s.as_str()))
-            .collect::<anyhow::Result<HeaderMap<_>>>()?
-    };
+    let proxy_headers = opts.proxy_headers.into_iter().collect::<HeaderMap<_>>();
 
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
         (false, false) => Default::default(),
@@ -599,7 +596,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         #[cfg(unix)]
         unix_socket: opts.unix_socket,
         #[cfg(feature = "vsock")]
-        vsock_addr: opts.vsock_addr.map(|v| v.0),
+        vsock_addr: opts.vsock_addr,
         #[cfg(feature = "rustls")]
         rustls_configs: tls_config::RuslsConfigs::new(
             opts.insecure,
