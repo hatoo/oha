@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use average::{Estimate, Max, Mean, Min, concatenate};
 use hyper::StatusCode;

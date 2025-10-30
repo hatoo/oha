@@ -11,7 +11,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering::Relaxed},
     },
-    time::Instant,
 };
 use thiserror::Error;
 use tokio::{

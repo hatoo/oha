@@ -4,11 +4,7 @@ use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
 use hyper::http::{self, StatusCode};
 use ratatui::crossterm;
-use std::{
-    collections::BTreeMap,
-    io::Write,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, io::Write, time::Duration};
 
 #[derive(Clone, Copy)]
 struct StyleScheme {
