@@ -646,6 +646,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
     let start = std::time::Instant::now();
+    let start_minstant = minstant::Instant::now();
 
     let data_collect_future: Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>> =
         match work_mode {
@@ -727,7 +728,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                                 for res in buf {
                                     all.push(res);
                                 }
-                                let _ = printer::print_result(print_config, start, &all, start.elapsed());
+                                let _ = printer::print_result(print_config, start_minstant, &all, start_minstant.elapsed());
                                 std::process::exit(libc::EXIT_SUCCESS);
                             }
                             _ = token_ctrl_c.cancelled() => {
@@ -757,7 +758,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                                 .map(|d| monitor::EndLine::Duration(d.into()))
                                 .unwrap_or(monitor::EndLine::NumQuery(opts.n_requests)),
                             report_receiver: result_rx,
-                            start,
+                            start: start_minstant,
                             fps: opts.fps,
                             disable_color: opts.disable_color,
                             time_unit: opts.time_unit,
@@ -866,11 +867,11 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let duration = start.elapsed();
     let (res, print_config) = data_collect_future.await;
 
-    printer::print_result(print_config, start, &res, duration)?;
+    printer::print_result(print_config, start_minstant, &res, duration)?;
 
     if let Some(db_url) = opts.db_url {
         eprintln!("Storing results to {db_url}");
-        db::store(&client, &db_url, start, res.success(), run)?;
+        db::store(&client, &db_url, start_minstant, res.success(), run)?;
     }
 
     Ok(())

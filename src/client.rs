@@ -43,8 +43,8 @@ fn format_host_port(host: &str, port: u16) -> String {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
-    pub dns_lookup: std::time::Instant,
-    pub dialup: std::time::Instant,
+    pub dns_lookup: minstant::Instant,
+    pub dialup: minstant::Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -52,16 +52,16 @@ pub struct ConnectionTime {
 pub struct RequestResult {
     pub rng: Pcg64Si,
     // When the query should started
-    pub start_latency_correction: Option<std::time::Instant>,
+    pub start_latency_correction: Option<minstant::Instant>,
     /// When the query started
-    pub start: std::time::Instant,
+    pub start: minstant::Instant,
     /// DNS + dialup
     /// None when reuse connection
     pub connection_time: Option<ConnectionTime>,
     /// First body byte received
-    pub first_byte: Option<std::time::Instant>,
+    pub first_byte: Option<minstant::Instant>,
     /// When the query ends
-    pub end: std::time::Instant,
+    pub end: minstant::Instant,
     /// HTTP status
     pub status: http::StatusCode,
     /// Length of body
@@ -497,13 +497,13 @@ impl Client {
         url: &Url,
         rng: &mut R,
         http_version: http::Version,
-    ) -> Result<(Instant, Stream), ClientError> {
+    ) -> Result<(minstant::Instant, Stream), ClientError> {
         let timeout_duration = self.connect_timeout;
 
         #[cfg(feature = "http3")]
         if http_version == http::Version::HTTP_3 {
             let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = Instant::now();
+            let dns_lookup = minstant::Instant::now();
             let stream = tokio::time::timeout(timeout_duration, self.quic_client(addr, url)).await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, stream)),
@@ -513,7 +513,7 @@ impl Client {
         }
         if url.scheme() == "https" {
             let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = Instant::now();
+            let dns_lookup = minstant::Instant::now();
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
             let stream =
@@ -527,7 +527,7 @@ impl Client {
         }
         #[cfg(unix)]
         if let Some(socket_path) = &self.unix_socket {
-            let dns_lookup = Instant::now();
+            let dns_lookup = minstant::Instant::now();
             let stream = tokio::time::timeout(
                 timeout_duration,
                 tokio::net::UnixStream::connect(socket_path),
@@ -541,7 +541,7 @@ impl Client {
         }
         #[cfg(feature = "vsock")]
         if let Some(addr) = self.vsock_addr {
-            let dns_lookup = Instant::now();
+            let dns_lookup = minstant::Instant::now();
             let stream =
                 tokio::time::timeout(timeout_duration, tokio_vsock::VsockStream::connect(addr))
                     .await;
@@ -553,7 +553,7 @@ impl Client {
         }
         // HTTP
         let addr = self.dns.lookup(url, rng).await?;
-        let dns_lookup = Instant::now();
+        let dns_lookup = minstant::Instant::now();
         let stream =
             tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
         match stream {
@@ -624,7 +624,7 @@ impl Client {
         &self,
         url: &Url,
         rng: &mut R,
-    ) -> Result<(Instant, SendRequestHttp1), ClientError> {
+    ) -> Result<(minstant::Instant, SendRequestHttp1), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
             let http_proxy_version = if self.is_proxy_http2() {
                 http::Version::HTTP_2
@@ -687,8 +687,8 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let mut start = std::time::Instant::now();
-            let mut first_byte: Option<std::time::Instant> = None;
+            let mut start = minstant::Instant::now();
+            let mut first_byte: Option<minstant::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
 
             let mut send_request = if let Some(send_request) = client_state.send_request.take() {
@@ -696,7 +696,7 @@ impl Client {
             } else {
                 let (dns_lookup, send_request) =
                     self.client_http1(&self.url, &mut client_state.rng).await?;
-                let dialup = std::time::Instant::now();
+                let dialup = minstant::Instant::now();
 
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
                 send_request
@@ -704,11 +704,11 @@ impl Client {
             while send_request.ready().await.is_err() {
                 // This gets hit when the connection for HTTP/1.1 faults
                 // This re-connects
-                start = std::time::Instant::now();
+                start = minstant::Instant::now();
                 let (dns_lookup, send_request_) =
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 send_request = send_request_;
-                let dialup = std::time::Instant::now();
+                let dialup = minstant::Instant::now();
                 connection_time = Some(ConnectionTime { dns_lookup, dialup });
             }
             match send_request.send_request(request).await {
@@ -719,7 +719,7 @@ impl Client {
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
                         if first_byte.is_none() {
-                            first_byte = Some(std::time::Instant::now())
+                            first_byte = Some(minstant::Instant::now())
                         }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
@@ -742,7 +742,7 @@ impl Client {
                         }
                     }
 
-                    let end = std::time::Instant::now();
+                    let end = minstant::Instant::now();
 
                     let result = RequestResult {
                         rng,
@@ -836,18 +836,18 @@ impl Client {
                         .handshake(TokioIo::new(stream))
                         .await?;
                 tokio::spawn(conn);
-                let dialup = std::time::Instant::now();
+                let dialup = minstant::Instant::now();
 
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
             } else {
                 let send_request = stream.handshake_http2().await?;
-                let dialup = std::time::Instant::now();
+                let dialup = minstant::Instant::now();
                 Ok((ConnectionTime { dns_lookup, dialup }, send_request))
             }
         } else {
             let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
             let send_request = stream.handshake_http2().await?;
-            let dialup = std::time::Instant::now();
+            let dialup = minstant::Instant::now();
             Ok((ConnectionTime { dns_lookup, dialup }, send_request))
         }
     }
@@ -858,8 +858,8 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let start = std::time::Instant::now();
-            let mut first_byte: Option<std::time::Instant> = None;
+            let start = minstant::Instant::now();
+            let mut first_byte: Option<minstant::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
 
             match client_state.send_request.send_request(request).await {
@@ -870,12 +870,12 @@ impl Client {
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
                         if first_byte.is_none() {
-                            first_byte = Some(std::time::Instant::now())
+                            first_byte = Some(minstant::Instant::now())
                         }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
-                    let end = std::time::Instant::now();
+                    let end = minstant::Instant::now();
 
                     let result = RequestResult {
                         rng,
@@ -1041,7 +1041,7 @@ async fn work_http2_once(
     client_state: &mut ClientStateHttp2,
     report_tx: &kanal::Sender<Result<RequestResult, ClientError>>,
     connection_time: ConnectionTime,
-    start_latency_correction: Option<Instant>,
+    start_latency_correction: Option<minstant::Instant>,
 ) -> (bool, bool) {
     let mut res = client.work_http2(client_state).await;
     let is_cancel = is_cancel_error(&res);
@@ -1065,7 +1065,7 @@ pub(crate) fn set_connection_time<E>(
 
 pub(crate) fn set_start_latency_correction<E>(
     res: &mut Result<RequestResult, E>,
-    start_latency_correction: std::time::Instant,
+    start_latency_correction: minstant::Instant,
 ) {
     if let Ok(res) = res {
         res.start_latency_correction = Some(start_latency_correction);
@@ -1441,7 +1441,7 @@ pub async fn work_with_qps_latency_correction(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    let now = std::time::Instant::now();
+                    let now = minstant::Instant::now();
                     tx.send(now)?;
                 }
             }
@@ -1450,7 +1450,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
-                    let now = std::time::Instant::now();
+                    let now = minstant::Instant::now();
                     for _ in 0..rate {
                         tx.send(now)?;
                     }
@@ -1459,7 +1459,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle the remaining tasks
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
-                    let now = std::time::Instant::now();
+                    let now = minstant::Instant::now();
                     for _ in 0..n_tasks - n {
                         tx.send(now)?;
                     }
@@ -1993,11 +1993,12 @@ pub async fn work_until_with_qps_latency_correction(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
+                    // TODO: use minstant only
                     let now = std::time::Instant::now();
                     if now > dead_line {
                         break;
                     }
-                    let _ = tx.send(now);
+                    let _ = tx.send(minstant::Instant::now());
                 }
                 // tx gone
             });
@@ -2013,7 +2014,7 @@ pub async fn work_until_with_qps_latency_correction(
                     }
 
                     for _ in 0..rate {
-                        let _ = tx.send(now);
+                        let _ = tx.send(minstant::Instant::now());
                     }
                 }
                 // tx gone
