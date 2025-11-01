@@ -1,5 +1,13 @@
 # Unreleased
 
+# 1.11.0 (2025-11-01)
+
+- feat:support decimal when using n_requests,such as 2.6k or 0.001m #808 
+- connect-to now doing tcp connect instead of dns caching #807 
+- feat: make connect timeout configurable #805 
+- feat: support k/m suffixes for n-requests #800 
+- feat: Add option to read request body line-by-line from file. #729 #789
+
 # 1.10.0 (2025-09-06)
 
 - fix dns lookup on http2/http3 #771 
