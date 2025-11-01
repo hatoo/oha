@@ -11,6 +11,7 @@ use std::{
 
 use axum::{Router, extract::Path, response::Redirect, routing::get};
 use bytes::Bytes;
+use clap::Parser;
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
 use http_mitm_proxy::MitmProxy;
@@ -24,6 +25,16 @@ use rstest::rstest;
 use rstest_reuse::{self, *};
 #[cfg(feature = "http3")]
 mod common;
+
+async fn run<'a>(args: impl Iterator<Item = &'a str>) {
+    let opts = oha::Opts::parse_from(
+        ["oha", "--no-tui", "--output-format", "quiet"]
+            .into_iter()
+            .chain(args),
+    );
+
+    oha::run(opts).await.unwrap();
+}
 
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
@@ -155,25 +166,21 @@ async fn get_req(path: &str, args: &[&str]) -> Request<Bytes> {
         }
     });
 
-    let mut command = assert_cmd::cargo::cargo_bin_cmd!();
-    command.args(["-n", "1", "--no-tui"]).args(args);
+    let mut args = args.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+    args.push("-n".to_string());
+    args.push("1".to_string());
     match work_type {
         HttpWorkType::H1 | HttpWorkType::H2 => {
-            command.arg(format!("http://127.0.0.1:{port}{path}"));
+            args.push(format!("http://127.0.0.1:{port}{path}"));
         }
         #[cfg(feature = "http3")]
         HttpWorkType::H3 => {
-            command
-                .arg("--insecure")
-                .arg(format!("https://127.0.0.1:{port}{path}"));
+            args.push("--insecuire".to_string());
+            args.push(format!("https://127.0.0.1:{port}{path}"));
         }
     }
 
-    tokio::task::spawn_blocking(move || {
-        command.assert().success();
-    })
-    .await
-    .unwrap();
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap()
 }
@@ -425,7 +432,7 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
 }
 
 #[apply(test_all_http_versions)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_enable_compression_default(http_version_param: &str) {
     let req = get_req("/", &["--http-version", http_version_param]).await;
     let accept_encoding: Vec<&str> = req
@@ -442,7 +449,7 @@ async fn test_enable_compression_default(http_version_param: &str) {
 }
 
 #[apply(test_all_http_versions)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_custom_header(http_version_param: &str) {
     let req = get_req(
         "/",
@@ -452,7 +459,7 @@ async fn test_setting_custom_header(http_version_param: &str) {
     assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[apply(test_all_http_versions)]
 async fn test_setting_accept_header(http_version_param: &str) {
     let req = get_req(
@@ -480,7 +487,7 @@ async fn test_setting_accept_header(http_version_param: &str) {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[apply(test_all_http_versions)]
 async fn test_setting_body(http_version_param: &str) {
     let req = get_req(
@@ -494,7 +501,7 @@ async fn test_setting_body(http_version_param: &str) {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_content_type_header() {
     let req = get_req("/", &["-T", "text/html"]).await;
     assert_eq!(
@@ -520,7 +527,7 @@ async fn test_setting_content_type_header() {
 }
 
 #[apply(test_all_http_versions)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_basic_auth(http_version_param: &str) {
     let req = get_req(
         "/",
@@ -537,7 +544,7 @@ async fn test_setting_basic_auth(http_version_param: &str) {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_host() {
     let req = get_req("/", &["--host", "hatoo.io"]).await;
     assert_eq!(
@@ -555,7 +562,7 @@ async fn test_setting_host() {
     // Use --connect-to instead
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_method() {
     assert_eq!(get_req("/", &[]).await.method(), http::method::Method::GET);
     assert_eq!(
@@ -633,7 +640,7 @@ async fn test_setting_method() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query() {
     assert_eq!(
         get_req("/index?a=b&c=d", &[]).await.uri().to_string(),
@@ -652,7 +659,7 @@ async fn test_query() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query_rand_regex() {
     let req = get_req("/[a-z][0-9][a-z]", &["--rand-regex-url"]).await;
     let chars = req
@@ -681,7 +688,7 @@ async fn test_query_rand_regex() {
     assert!(chars[2].is_ascii_lowercase());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_redirect() {
     for n in 1..=5 {
         assert!(redirect(n, true, 10).await);
@@ -693,7 +700,7 @@ async fn test_redirect() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to() {
     assert_eq!(
         get_host_with_connect_to("invalid.example.org").await,
@@ -701,14 +708,14 @@ async fn test_connect_to() {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_randomness() {
     let (count1, count2) = distribution_on_two_matching_connect_to("invalid.example.org").await;
     assert!(count1 >= 10 && count2 >= 10); // should not be too flaky with 100 coin tosses
     assert!(count1 + count2 == 100);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_ipv6_target() {
     assert_eq!(
         get_host_with_connect_to_ipv6_target("invalid.example.org").await,
@@ -716,12 +723,12 @@ async fn test_connect_to_ipv6_target() {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_ipv6_requested() {
     assert_eq!(get_host_with_connect_to_ipv6_requested().await, "[::1]")
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_redirect() {
     assert_eq!(
         get_host_with_connect_to_redirect("invalid.example.org").await,
@@ -729,7 +736,7 @@ async fn test_connect_to_redirect() {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_http_proxy_override() {
     let (tx, rx) = kanal::unbounded();
     let proxy_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -790,7 +797,7 @@ async fn test_connect_to_http_proxy_override() {
     assert_eq!(host, "example.test");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_https_proxy_connect_override() {
     let (connect_tx, connect_rx) = kanal::unbounded();
     let (host_tx, host_rx) = kanal::unbounded();
@@ -836,7 +843,7 @@ async fn test_connect_to_https_proxy_connect_override() {
     assert_eq!(host_header, "example.test");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_ipv6() {
     let (tx, rx) = kanal::unbounded();
 
@@ -865,7 +872,7 @@ async fn test_ipv6() {
     rx.try_recv().unwrap().unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query_limit() {
     // burst 10 requests with delay of 2s and rate of 4
     let mut args = vec!["-n", "10", "--burst-delay", "2s", "--burst-rate", "4"];
@@ -874,13 +881,13 @@ async fn test_query_limit() {
     assert_eq!(test_request_count(args.as_slice()).await, 10);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query_limit_with_time_limit() {
     // 1.75 qps for 2sec = expect 4 requests at times 0, 0.571, 1.142, 1,714sec
     assert_eq!(test_request_count(&["-z", "2s", "-q", "1.75"]).await, 4);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_http_versions() {
     assert_eq!(get_req("/", &[]).await.version(), http::Version::HTTP_11);
     assert_eq!(
@@ -899,7 +906,7 @@ async fn test_http_versions() {
 }
 
 #[cfg(unix)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_unix_socket() {
     let (tx, rx) = kanal::unbounded();
 
@@ -1125,7 +1132,7 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
     oha::run(opts).await.unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
@@ -1146,7 +1153,7 @@ fn test_google() {
         .stdout(predicates::str::contains("[200] 1 responses"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_json_schema() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 
@@ -1213,7 +1220,7 @@ async fn test_json_schema() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_csv_output() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 
@@ -1330,7 +1337,7 @@ fn setup_mtls_server(
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_mtls() {
     let dir = tempfile::tempdir().unwrap();
     let (port, server) = setup_mtls_server(dir.path().to_path_buf());
@@ -1356,7 +1363,7 @@ async fn test_mtls() {
     .unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_body_path_lines() {
     let body = "0\n1\n2";
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
