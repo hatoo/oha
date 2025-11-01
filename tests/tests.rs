@@ -11,6 +11,7 @@ use std::{
 
 use axum::{Router, extract::Path, response::Redirect, routing::get};
 use bytes::Bytes;
+use clap::Parser;
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
 use http_mitm_proxy::MitmProxy;
@@ -24,6 +25,16 @@ use rstest::rstest;
 use rstest_reuse::{self, *};
 #[cfg(feature = "http3")]
 mod common;
+
+async fn run<'a>(args: impl Iterator<Item = &'a str>) {
+    let opts = oha::Opts::parse_from(
+        ["oha", "--no-tui", "--output-format", "quiet"]
+            .into_iter()
+            .chain(args),
+    );
+
+    oha::run(opts).await.unwrap();
+}
 
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
@@ -155,25 +166,21 @@ async fn get_req(path: &str, args: &[&str]) -> Request<Bytes> {
         }
     });
 
-    let mut command = assert_cmd::cargo::cargo_bin_cmd!();
-    command.args(["-n", "1", "--no-tui"]).args(args);
+    let mut args = args.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+    args.push("-n".to_string());
+    args.push("1".to_string());
     match work_type {
         HttpWorkType::H1 | HttpWorkType::H2 => {
-            command.arg(format!("http://127.0.0.1:{port}{path}"));
+            args.push(format!("http://127.0.0.1:{port}{path}"));
         }
         #[cfg(feature = "http3")]
         HttpWorkType::H3 => {
-            command
-                .arg("--insecure")
-                .arg(format!("https://127.0.0.1:{port}{path}"));
+            args.push("--insecure".to_string());
+            args.push(format!("https://127.0.0.1:{port}{path}"));
         }
     }
 
-    tokio::task::spawn_blocking(move || {
-        command.assert().success();
-    })
-    .await
-    .unwrap();
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap()
 }
@@ -199,16 +206,15 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
 
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui", "--redirect"])
-            .arg(limit.to_string())
-            .arg(format!("http://127.0.0.1:{port}/0"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        "--redirect".to_string(),
+        limit.to_string(),
+        format!("http://127.0.0.1:{port}/0"),
+    ];
+
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().is_some()
 }
@@ -228,17 +234,14 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
     let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui"])
-            .arg(format!("http://{host}/"))
-            .arg("--connect-to")
-            .arg(format!("{host}:80:localhost:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        format!("http://{host}/"),
+        "--connect-to".to_string(),
+        format!("{host}:80:localhost:{port}"),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap()
 }
@@ -258,17 +261,15 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
     let listener = bind_port_ipv6(port).await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui"])
-            .arg(format!("http://{host}/"))
-            .arg("--connect-to")
-            .arg(format!("{host}:80:[::1]:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        format!("http://{host}/"),
+        "--connect-to".to_string(),
+        format!("{host}:80:[::1]:{port}"),
+    ];
+
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap()
 }
@@ -287,17 +288,14 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
     let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui"])
-            .arg("http://[::1]/")
-            .arg("--connect-to")
-            .arg(format!("[::1]:80:localhost:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        "http://[::1]/".to_string(),
+        "--connect-to".to_string(),
+        format!("[::1]:80:localhost:{port}"),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap()
 }
@@ -321,17 +319,14 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui"])
-            .arg(format!("http://{host}/source"))
-            .arg("--connect-to")
-            .arg(format!("{host}:80:localhost:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        format!("http://{host}/source"),
+        "--connect-to".to_string(),
+        format!("{host}:80:localhost:{port}"),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap()
 }
@@ -350,17 +345,9 @@ async fn test_request_count(args: &[&str]) -> usize {
     let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["--no-tui"])
-            .args(args)
-            .arg(format!("http://127.0.0.1:{port}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    args.push(format!("http://127.0.0.1:{port}"));
+    run(args.iter().map(|s| s.as_str())).await;
 
     let mut count = 0;
     while let Ok(Some(())) = rx.try_recv() {
@@ -396,19 +383,16 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
     let (listener2, port2) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener2, app2).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "100", "--no-tui"])
-            .arg(format!("http://{host}/"))
-            .arg("--connect-to")
-            .arg(format!("{host}:80:localhost:{port1}"))
-            .arg("--connect-to")
-            .arg(format!("{host}:80:localhost:{port2}"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "100".to_string(),
+        format!("http://{host}/"),
+        "--connect-to".to_string(),
+        format!("{host}:80:localhost:{port1}"),
+        "--connect-to".to_string(),
+        format!("{host}:80:localhost:{port2}"),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     let mut count1 = 0;
     let mut count2 = 0;
@@ -425,7 +409,7 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
 }
 
 #[apply(test_all_http_versions)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_enable_compression_default(http_version_param: &str) {
     let req = get_req("/", &["--http-version", http_version_param]).await;
     let accept_encoding: Vec<&str> = req
@@ -442,7 +426,7 @@ async fn test_enable_compression_default(http_version_param: &str) {
 }
 
 #[apply(test_all_http_versions)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_custom_header(http_version_param: &str) {
     let req = get_req(
         "/",
@@ -452,7 +436,7 @@ async fn test_setting_custom_header(http_version_param: &str) {
     assert_eq!(req.headers().get("foo").unwrap().to_str().unwrap(), "bar");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[apply(test_all_http_versions)]
 async fn test_setting_accept_header(http_version_param: &str) {
     let req = get_req(
@@ -480,7 +464,7 @@ async fn test_setting_accept_header(http_version_param: &str) {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[apply(test_all_http_versions)]
 async fn test_setting_body(http_version_param: &str) {
     let req = get_req(
@@ -494,7 +478,7 @@ async fn test_setting_body(http_version_param: &str) {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_content_type_header() {
     let req = get_req("/", &["-T", "text/html"]).await;
     assert_eq!(
@@ -520,7 +504,7 @@ async fn test_setting_content_type_header() {
 }
 
 #[apply(test_all_http_versions)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_basic_auth(http_version_param: &str) {
     let req = get_req(
         "/",
@@ -537,7 +521,7 @@ async fn test_setting_basic_auth(http_version_param: &str) {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_host() {
     let req = get_req("/", &["--host", "hatoo.io"]).await;
     assert_eq!(
@@ -555,7 +539,7 @@ async fn test_setting_host() {
     // Use --connect-to instead
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_setting_method() {
     assert_eq!(get_req("/", &[]).await.method(), http::method::Method::GET);
     assert_eq!(
@@ -633,7 +617,7 @@ async fn test_setting_method() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query() {
     assert_eq!(
         get_req("/index?a=b&c=d", &[]).await.uri().to_string(),
@@ -652,7 +636,7 @@ async fn test_query() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query_rand_regex() {
     let req = get_req("/[a-z][0-9][a-z]", &["--rand-regex-url"]).await;
     let chars = req
@@ -681,7 +665,7 @@ async fn test_query_rand_regex() {
     assert!(chars[2].is_ascii_lowercase());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_redirect() {
     for n in 1..=5 {
         assert!(redirect(n, true, 10).await);
@@ -693,7 +677,7 @@ async fn test_redirect() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to() {
     assert_eq!(
         get_host_with_connect_to("invalid.example.org").await,
@@ -701,14 +685,14 @@ async fn test_connect_to() {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_randomness() {
     let (count1, count2) = distribution_on_two_matching_connect_to("invalid.example.org").await;
-    assert!(count1 >= 10 && count2 >= 10); // should not be too flaky with 100 coin tosses
     assert!(count1 + count2 == 100);
+    assert!(count1 >= 10 && count2 >= 10); // should not be too flaky with 100 coin tosses
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_ipv6_target() {
     assert_eq!(
         get_host_with_connect_to_ipv6_target("invalid.example.org").await,
@@ -716,12 +700,12 @@ async fn test_connect_to_ipv6_target() {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_ipv6_requested() {
     assert_eq!(get_host_with_connect_to_ipv6_requested().await, "[::1]")
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_redirect() {
     assert_eq!(
         get_host_with_connect_to_redirect("invalid.example.org").await,
@@ -729,7 +713,7 @@ async fn test_connect_to_redirect() {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_http_proxy_override() {
     let (tx, rx) = kanal::unbounded();
     let proxy_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -771,26 +755,23 @@ async fn test_connect_to_http_proxy_override() {
     });
 
     let override_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui"])
-            .arg("-x")
-            .arg(format!("http://127.0.0.1:{proxy_port}"))
-            .arg("--connect-to")
-            .arg(format!("example.test:80:127.0.0.1:{override_port}"))
-            .arg("http://example.test/")
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        "-x".to_string(),
+        format!("http://127.0.0.1:{proxy_port}"),
+        "--connect-to".to_string(),
+        format!("example.test:80:127.0.0.1:{override_port}"),
+        "http://example.test/".to_string(),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     let (authority, host) = rx.try_recv().unwrap().unwrap();
     assert_eq!(authority, format!("127.0.0.1:{override_port}"));
     assert_eq!(host, "example.test");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_https_proxy_connect_override() {
     let (connect_tx, connect_rx) = kanal::unbounded();
     let (host_tx, host_rx) = kanal::unbounded();
@@ -815,20 +796,19 @@ async fn test_connect_to_https_proxy_connect_override() {
     tokio::spawn(proxy_serve);
 
     let override_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui", "--insecure"])
-            .arg("-x")
-            .arg(format!("http://127.0.0.1:{proxy_port}"))
-            .args(["--proxy-header", "proxy-authorization: test"])
-            .arg("--connect-to")
-            .arg(format!("example.test:443:127.0.0.1:{override_port}"))
-            .arg("https://example.test/")
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = vec![
+        "-n".to_string(),
+        "1".to_string(),
+        "--insecure".to_string(),
+        "-x".to_string(),
+        format!("http://127.0.0.1:{proxy_port}"),
+        "--proxy-header".to_string(),
+        "proxy-authorization: test".to_string(),
+        "--connect-to".to_string(),
+        format!("example.test:443:127.0.0.1:{override_port}"),
+        "https://example.test/".to_string(),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     let connect_target = connect_rx.try_recv().unwrap().unwrap();
     assert_eq!(connect_target, format!("127.0.0.1:{override_port}"));
@@ -836,7 +816,7 @@ async fn test_connect_to_https_proxy_connect_override() {
     assert_eq!(host_header, "example.test");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_ipv6() {
     let (tx, rx) = kanal::unbounded();
 
@@ -852,20 +832,17 @@ async fn test_ipv6() {
     let listener = bind_port_ipv6(port).await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args(["-n", "1", "--no-tui"])
-            .arg(format!("http://[::1]:{port}/"))
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        format!("http://[::1]:{port}/"),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query_limit() {
     // burst 10 requests with delay of 2s and rate of 4
     let mut args = vec!["-n", "10", "--burst-delay", "2s", "--burst-rate", "4"];
@@ -874,13 +851,13 @@ async fn test_query_limit() {
     assert_eq!(test_request_count(args.as_slice()).await, 10);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query_limit_with_time_limit() {
     // 1.75 qps for 2sec = expect 4 requests at times 0, 0.571, 1.142, 1,714sec
     assert_eq!(test_request_count(&["-z", "2s", "-q", "1.75"]).await, 4);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_http_versions() {
     assert_eq!(get_req("/", &[]).await.version(), http::Version::HTTP_11);
     assert_eq!(
@@ -899,7 +876,7 @@ async fn test_http_versions() {
 }
 
 #[cfg(unix)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_unix_socket() {
     let (tx, rx) = kanal::unbounded();
 
@@ -925,21 +902,14 @@ async fn test_unix_socket() {
         .unwrap();
     });
 
-    tokio::task::spawn_blocking(move || {
-        assert_cmd::cargo::cargo_bin_cmd!()
-            .args([
-                "-n",
-                "1",
-                "--no-tui",
-                "--unix-socket",
-                path.to_str().unwrap(),
-                "http://unix-socket.invalid-tld/",
-            ])
-            .assert()
-            .success();
-    })
-    .await
-    .unwrap();
+    let args = [
+        "-n".to_string(),
+        "1".to_string(),
+        "--unix-socket".to_string(),
+        path.to_str().unwrap().to_string(),
+        "http://unix-socket.invalid-tld/".to_string(),
+    ];
+    run(args.iter().map(|s| s.as_str())).await;
 
     rx.try_recv().unwrap().unwrap();
 }
@@ -1102,9 +1072,18 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
 
     let scheme = if https { "https" } else { "http" };
     args.extend(
-        ["--no-tui", "--debug", "--insecure", "-x"]
-            .into_iter()
-            .map(|s| s.to_string()),
+        [
+            "--no-tui",
+            "-n",
+            "1",
+            "--no-tui",
+            "--output-format",
+            "quiet",
+            "--insecure",
+            "-x",
+        ]
+        .into_iter()
+        .map(|s| s.to_string()),
     );
     args.push(format!("http://127.0.0.1:{proxy_port}/"));
     args.extend(
@@ -1125,7 +1104,7 @@ async fn test_proxy_with_setting(https: bool, http2: bool, proxy_http2: bool) {
     oha::run(opts).await.unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_proxy() {
     for https in [false, true] {
         for http2 in [false, true] {
@@ -1136,17 +1115,26 @@ async fn test_proxy() {
     }
 }
 
-#[test]
-fn test_google() {
-    assert_cmd::cargo::cargo_bin_cmd!()
-        .args(["-n", "1", "--no-tui"])
-        .arg("https://www.google.com/")
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("[200] 1 responses"));
+#[tokio::test(flavor = "multi_thread")]
+async fn test_google() {
+    let temp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    let args = vec![
+        "oha".to_string(),
+        "--no-tui".to_string(),
+        "-n".to_string(),
+        "1".to_string(),
+        "https://www.google.com/".to_string(),
+        "--output".to_string(),
+        temp_path.to_str().unwrap().to_string(),
+    ];
+    let opts = oha::Opts::try_parse_from(args).unwrap();
+    oha::run(opts).await.unwrap();
+
+    let output = std::fs::read_to_string(&temp_path).unwrap();
+    assert!(output.contains("[200] 1 responses\n"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_json_schema() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 
@@ -1157,42 +1145,39 @@ async fn test_json_schema() {
     let schema_value: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
     let validator = jsonschema::validator_for(&schema_value).unwrap();
 
-    let output_json: String = String::from_utf8(
-        tokio::task::spawn_blocking(move || {
-            assert_cmd::cargo::cargo_bin_cmd!()
-                .args(["-n", "10", "--no-tui", "--output-format", "json"])
-                .arg(format!("http://127.0.0.1:{port}/"))
-                .assert()
-                .get_output()
-                .stdout
-                .clone()
-        })
-        .await
-        .unwrap(),
-    )
-    .unwrap();
+    let temp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    let args = vec![
+        "oha".to_string(),
+        "--no-tui".to_string(),
+        "-n".to_string(),
+        "10".to_string(),
+        "--output-format".to_string(),
+        "json".to_string(),
+        format!("http://127.0.0.1:{port}/"),
+        "--output".to_string(),
+        temp_path.to_str().unwrap().to_string(),
+    ];
+    let opts = oha::Opts::try_parse_from(args).unwrap();
+    oha::run(opts).await.unwrap();
 
-    let output_json_stats_success_breakdown: String = String::from_utf8(
-        tokio::task::spawn_blocking(move || {
-            assert_cmd::cargo::cargo_bin_cmd!()
-                .args([
-                    "-n",
-                    "10",
-                    "--no-tui",
-                    "--output-format",
-                    "json",
-                    "--stats-success-breakdown",
-                ])
-                .arg(format!("http://127.0.0.1:{port}/"))
-                .assert()
-                .get_output()
-                .stdout
-                .clone()
-        })
-        .await
-        .unwrap(),
-    )
-    .unwrap();
+    let output_json = std::fs::read_to_string(&temp_path).unwrap();
+
+    let temp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    let args = vec![
+        "oha".to_string(),
+        "--no-tui".to_string(),
+        "-n".to_string(),
+        "10".to_string(),
+        "--output-format".to_string(),
+        "json".to_string(),
+        "--stats-success-breakdown".to_string(),
+        format!("http://127.0.0.1:{port}/"),
+        "--output".to_string(),
+        temp_path.to_str().unwrap().to_string(),
+    ];
+    let opts = oha::Opts::try_parse_from(args).unwrap();
+    oha::run(opts).await.unwrap();
+    let output_json_stats_success_breakdown = std::fs::read_to_string(&temp_path).unwrap();
 
     let value: serde_json::Value = serde_json::from_str(&output_json).unwrap();
     let value_stats_success_breakdown: serde_json::Value =
@@ -1213,27 +1198,28 @@ async fn test_json_schema() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_csv_output() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 
     let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    let output_csv: String = String::from_utf8(
-        tokio::task::spawn_blocking(move || {
-            assert_cmd::cargo::cargo_bin_cmd!()
-                .args(["-n", "5", "--no-tui", "--output-format", "csv"])
-                .arg(format!("http://127.0.0.1:{port}/"))
-                .assert()
-                .get_output()
-                .stdout
-                .clone()
-        })
-        .await
-        .unwrap(),
-    )
-    .unwrap();
+    let temp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    let args = vec![
+        "oha".to_string(),
+        "--no-tui".to_string(),
+        "-n".to_string(),
+        "5".to_string(),
+        "--output-format".to_string(),
+        "csv".to_string(),
+        format!("http://127.0.0.1:{port}/"),
+        "--output".to_string(),
+        temp_path.to_str().unwrap().to_string(),
+    ];
+    let opts = oha::Opts::try_parse_from(args).unwrap();
+    oha::run(opts).await.unwrap();
+    let output_csv = std::fs::read_to_string(&temp_path).unwrap();
 
     // Validate that we get CSV output in following format,
     // header and one row for each request:
@@ -1330,33 +1316,29 @@ fn setup_mtls_server(
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_mtls() {
     let dir = tempfile::tempdir().unwrap();
     let (port, server) = setup_mtls_server(dir.path().to_path_buf());
 
     tokio::spawn(server);
 
-    let mut command = assert_cmd::cargo::cargo_bin_cmd!();
-    command
-        .args([
-            "--debug",
-            "--cacert",
-            dir.path().join("server.crt").to_str().unwrap(),
-            "--cert",
-            dir.path().join("client.crt").to_str().unwrap(),
-            "--key",
-            dir.path().join("client.key").to_str().unwrap(),
-        ])
-        .arg(format!("https://localhost:{port}/"));
-    tokio::task::spawn_blocking(move || {
-        command.assert().success();
-    })
-    .await
-    .unwrap();
+    let args = vec![
+        "-n".to_string(),
+        "1".to_string(),
+        "--cacert".to_string(),
+        dir.path().join("server.crt").to_string_lossy().to_string(),
+        "--cert".to_string(),
+        dir.path().join("client.crt").to_string_lossy().to_string(),
+        "--key".to_string(),
+        dir.path().join("client.key").to_string_lossy().to_string(),
+        format!("https://localhost:{port}/"),
+    ];
+
+    run(args.iter().map(|s| s.as_str())).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_body_path_lines() {
     let body = "0\n1\n2";
     let mut tmp = tempfile::NamedTempFile::new().unwrap();

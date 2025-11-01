@@ -91,7 +91,6 @@ tikv-jemallocator = "0.6"
 rlimit = "0.10.1"
 
 [dev-dependencies]
-assert_cmd = "2.0.14"
 axum = { version = "0.8.1", features = ["http2"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 bytes = "1.6"
