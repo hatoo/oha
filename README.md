@@ -149,7 +149,7 @@ Options:
   -t <TIMEOUT>
           Timeout for each request. Default to infinite.
       --connect-timeout <CONNECT_TIMEOUT>
-          Timeout for establishing a new connection. Default to 5s.
+          Timeout for establishing a new connection. Default to 5s. [default: 5s]
   -A <ACCEPT_HEADER>
           HTTP Accept Header.
   -d <BODY_STRING>
