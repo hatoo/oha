@@ -9,7 +9,6 @@ use std::{
     sync::{Arc, OnceLock, atomic::AtomicU16},
 };
 
-use assert_cmd::Command;
 use axum::{Router, extract::Path, response::Redirect, routing::get};
 use bytes::Bytes;
 use http::{HeaderMap, Request, Response};
@@ -156,7 +155,7 @@ async fn get_req(path: &str, args: &[&str]) -> Request<Bytes> {
         }
     });
 
-    let mut command = Command::cargo_bin("oha").unwrap();
+    let mut command = assert_cmd::cargo::cargo_bin_cmd!();
     command.args(["-n", "1", "--no-tui"]).args(args);
     match work_type {
         HttpWorkType::H1 | HttpWorkType::H2 => {
@@ -201,8 +200,7 @@ async fn redirect(n: usize, is_relative: bool, limit: usize) -> bool {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui", "--redirect"])
             .arg(limit.to_string())
             .arg(format!("http://127.0.0.1:{port}/0"))
@@ -231,8 +229,7 @@ async fn get_host_with_connect_to(host: &'static str) -> String {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui"])
             .arg(format!("http://{host}/"))
             .arg("--connect-to")
@@ -262,8 +259,7 @@ async fn get_host_with_connect_to_ipv6_target(host: &'static str) -> String {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui"])
             .arg(format!("http://{host}/"))
             .arg("--connect-to")
@@ -292,8 +288,7 @@ async fn get_host_with_connect_to_ipv6_requested() -> String {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui"])
             .arg("http://[::1]/")
             .arg("--connect-to")
@@ -327,8 +322,7 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui"])
             .arg(format!("http://{host}/source"))
             .arg("--connect-to")
@@ -358,8 +352,7 @@ async fn test_request_count(args: &[&str]) -> usize {
 
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["--no-tui"])
             .args(args)
             .arg(format!("http://127.0.0.1:{port}"))
@@ -404,8 +397,7 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
     tokio::spawn(async { axum::serve(listener2, app2).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "100", "--no-tui"])
             .arg(format!("http://{host}/"))
             .arg("--connect-to")
@@ -780,8 +772,7 @@ async fn test_connect_to_http_proxy_override() {
 
     let override_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui"])
             .arg("-x")
             .arg(format!("http://127.0.0.1:{proxy_port}"))
@@ -825,8 +816,7 @@ async fn test_connect_to_https_proxy_connect_override() {
 
     let override_port = PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui", "--insecure"])
             .arg("-x")
             .arg(format!("http://127.0.0.1:{proxy_port}"))
@@ -863,8 +853,7 @@ async fn test_ipv6() {
     tokio::spawn(async { axum::serve(listener, app).await });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args(["-n", "1", "--no-tui"])
             .arg(format!("http://[::1]:{port}/"))
             .assert()
@@ -937,8 +926,7 @@ async fn test_unix_socket() {
     });
 
     tokio::task::spawn_blocking(move || {
-        Command::cargo_bin("oha")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!()
             .args([
                 "-n",
                 "1",
@@ -1150,8 +1138,7 @@ async fn test_proxy() {
 
 #[test]
 fn test_google() {
-    Command::cargo_bin("oha")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!()
         .args(["-n", "1", "--no-tui"])
         .arg("https://www.google.com/")
         .assert()
@@ -1172,8 +1159,7 @@ async fn test_json_schema() {
 
     let output_json: String = String::from_utf8(
         tokio::task::spawn_blocking(move || {
-            Command::cargo_bin("oha")
-                .unwrap()
+            assert_cmd::cargo::cargo_bin_cmd!()
                 .args(["-n", "10", "--no-tui", "--output-format", "json"])
                 .arg(format!("http://127.0.0.1:{port}/"))
                 .assert()
@@ -1188,8 +1174,7 @@ async fn test_json_schema() {
 
     let output_json_stats_success_breakdown: String = String::from_utf8(
         tokio::task::spawn_blocking(move || {
-            Command::cargo_bin("oha")
-                .unwrap()
+            assert_cmd::cargo::cargo_bin_cmd!()
                 .args([
                     "-n",
                     "10",
@@ -1237,8 +1222,7 @@ async fn test_csv_output() {
 
     let output_csv: String = String::from_utf8(
         tokio::task::spawn_blocking(move || {
-            Command::cargo_bin("oha")
-                .unwrap()
+            assert_cmd::cargo::cargo_bin_cmd!()
                 .args(["-n", "5", "--no-tui", "--output-format", "csv"])
                 .arg(format!("http://127.0.0.1:{port}/"))
                 .assert()
@@ -1353,7 +1337,7 @@ async fn test_mtls() {
 
     tokio::spawn(server);
 
-    let mut command = Command::cargo_bin("oha").unwrap();
+    let mut command = assert_cmd::cargo::cargo_bin_cmd!();
     command
         .args([
             "--debug",
