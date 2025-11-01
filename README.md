@@ -85,6 +85,11 @@ bun run pgo.js
 
 And the binary will be available at `target/[target-triple]/pgo/oha`.
 
+**Note**: Please keep in mind that in order to run the aforementioned command,
+you need to have installed `cargo-pgo` cargo package.
+
+You can install it via `cargo install cargo-pgo`.
+
 # Platform
 
 - Linux - Tested on Ubuntu 18.04 gnome-terminal
