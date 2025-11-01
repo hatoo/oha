@@ -84,6 +84,7 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 num_cpus = "1.16.0"
 tokio-util = "0.7.13"
 minstant = "0.1.7"
+static_init = "1.0.4"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"

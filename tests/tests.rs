@@ -11,6 +11,7 @@ use std::{
 
 use axum::{Router, extract::Path, response::Redirect, routing::get};
 use bytes::Bytes;
+use clap::Parser;
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
 use http_mitm_proxy::MitmProxy;
@@ -24,6 +25,17 @@ use rstest::rstest;
 use rstest_reuse::{self, *};
 #[cfg(feature = "http3")]
 mod common;
+
+fn run<'a>(args: impl Iterator<Item = &'a str>) {
+    let opts = oha::Opts::parse_from(["oha", "--no-tui"].into_iter().chain(args));
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async { oha::run(opts).await })
+        .unwrap();
+}
 
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
@@ -350,7 +362,11 @@ async fn test_request_count(args: &[&str]) -> usize {
     let (listener, port) = bind_port_and_increment().await;
     tokio::spawn(async { axum::serve(listener, app).await });
 
-    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    // let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let url = format!("http://127.0.0.1:{port}");
+
+    run(args.iter().map(|s| *s).chain(std::iter::once(url.as_str())));
+    /*
     tokio::task::spawn_blocking(move || {
         assert_cmd::cargo::cargo_bin_cmd!()
             .args(["--no-tui"])
@@ -361,6 +377,7 @@ async fn test_request_count(args: &[&str]) -> usize {
     })
     .await
     .unwrap();
+    */
 
     let mut count = 0;
     while let Ok(Some(())) = rx.try_recv() {

@@ -38,6 +38,7 @@ mod pcg64si;
 mod printer;
 mod request_generator;
 mod result_data;
+mod small_instant;
 mod timescale;
 mod tls_config;
 mod url_generator;
@@ -646,7 +647,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
     let start = std::time::Instant::now();
-    let start_minstant = minstant::Instant::now();
+    let start_minstant = crate::small_instant::SmallInstant::now();
 
     let data_collect_future: Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>> =
         match work_mode {

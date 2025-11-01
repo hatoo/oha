@@ -106,7 +106,7 @@ impl ResultData {
 
     pub fn end_times_from_start(
         &self,
-        start: minstant::Instant,
+        start: crate::small_instant::SmallInstant,
     ) -> impl Iterator<Item = Duration> + '_ {
         self.success.iter().map(move |result| result.end - start)
     }
@@ -202,7 +202,7 @@ mod tests {
         first_byte: u64,
         size: usize,
     ) -> Result<RequestResult, ClientError> {
-        let now = minstant::Instant::now();
+        let now = crate::small_instant::SmallInstant::now();
         Ok(RequestResult {
             rng: SeedableRng::seed_from_u64(0),
             start_latency_correction: None,
