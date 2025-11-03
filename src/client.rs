@@ -43,8 +43,8 @@ fn format_host_port(host: &str, port: u16) -> String {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
-    pub dns_lookup: std::time::Instant,
-    pub dialup: std::time::Instant,
+    pub dns_lookup: std::time::Duration,
+    pub dialup: std::time::Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -698,7 +698,10 @@ impl Client {
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 let dialup = std::time::Instant::now();
 
-                connection_time = Some(ConnectionTime { dns_lookup, dialup });
+                connection_time = Some(ConnectionTime {
+                    dns_lookup: dns_lookup - start,
+                    dialup: dialup - start,
+                });
                 send_request
             };
             while send_request.ready().await.is_err() {
@@ -709,7 +712,10 @@ impl Client {
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 send_request = send_request_;
                 let dialup = std::time::Instant::now();
-                connection_time = Some(ConnectionTime { dns_lookup, dialup });
+                connection_time = Some(ConnectionTime {
+                    dns_lookup: dns_lookup - start,
+                    dialup: dialup - start,
+                });
             }
             match send_request.send_request(request).await {
                 Ok(res) => {
@@ -787,6 +793,7 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
+        let start = std::time::Instant::now();
         if let Some(proxy_url) = &self.proxy_url {
             let http_proxy_version = if self.is_proxy_http2() {
                 http::Version::HTTP_2
@@ -838,17 +845,35 @@ impl Client {
                 tokio::spawn(conn);
                 let dialup = std::time::Instant::now();
 
-                Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+                Ok((
+                    ConnectionTime {
+                        dns_lookup: dns_lookup - start,
+                        dialup: dialup - start,
+                    },
+                    send_request,
+                ))
             } else {
                 let send_request = stream.handshake_http2().await?;
                 let dialup = std::time::Instant::now();
-                Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+                Ok((
+                    ConnectionTime {
+                        dns_lookup: dns_lookup - start,
+                        dialup: dialup - start,
+                    },
+                    send_request,
+                ))
             }
         } else {
             let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
-            Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+            Ok((
+                ConnectionTime {
+                    dns_lookup: dns_lookup - start,
+                    dialup: dialup - start,
+                },
+                send_request,
+            ))
         }
     }
 
