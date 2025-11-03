@@ -123,20 +123,14 @@ impl ResultData {
     pub fn dns_dialup_stat(&self) -> MinMaxMean {
         self.success
             .iter()
-            .filter_map(|r| {
-                r.connection_time
-                    .map(|ct| (ct.dialup - r.start).as_secs_f64())
-            })
+            .filter_map(|r| r.connection_time.map(|ct| ct.dialup.as_secs_f64()))
             .collect()
     }
 
     pub fn dns_lookup_stat(&self) -> MinMaxMean {
         self.success
             .iter()
-            .filter_map(|r| {
-                r.connection_time
-                    .map(|ct| (ct.dns_lookup - r.start).as_secs_f64())
-            })
+            .filter_map(|r| r.connection_time.map(|ct| ct.dns_lookup.as_secs_f64()))
             .collect()
     }
 
@@ -207,12 +201,8 @@ mod tests {
             start_latency_correction: None,
             start: now,
             connection_time: Some(ConnectionTime {
-                dns_lookup: now
-                    .checked_add(Duration::from_millis(connection_time_dns_lookup))
-                    .unwrap(),
-                dialup: now
-                    .checked_add(Duration::from_millis(connection_time_dialup))
-                    .unwrap(),
+                dns_lookup: Duration::from_millis(connection_time_dns_lookup),
+                dialup: Duration::from_millis(connection_time_dialup),
             }),
             first_byte: Some(now.checked_add(Duration::from_millis(first_byte)).unwrap()),
             end: now

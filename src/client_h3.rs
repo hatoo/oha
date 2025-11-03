@@ -68,10 +68,17 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
+        let start = std::time::Instant::now();
         let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_3).await?;
         let send_request = stream.handshake_http3().await?;
         let dialup = std::time::Instant::now();
-        Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+        Ok((
+            ConnectionTime {
+                dns_lookup: dns_lookup - start,
+                dialup: dialup - start,
+            },
+            send_request,
+        ))
     }
 
     pub(crate) async fn quic_client(
