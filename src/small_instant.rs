@@ -1,4 +1,7 @@
-use std::{num::NonZeroU64, ops::Sub};
+use std::{
+    num::NonZeroU64,
+    ops::{Add, Sub},
+};
 
 #[static_init::dynamic]
 static START_INSTANT: std::time::Instant = std::time::Instant::now();
@@ -29,6 +32,18 @@ impl SmallInstant {
 impl Into<std::time::Instant> for SmallInstant {
     fn into(self) -> std::time::Instant {
         *START_INSTANT + std::time::Duration::from_nanos(self.nanos.get())
+    }
+}
+
+impl Add<std::time::Duration> for SmallInstant {
+    type Output = SmallInstant;
+
+    fn add(self, rhs: std::time::Duration) -> Self::Output {
+        let duration_nanos = self.nanos.get() + rhs.as_nanos() as u64;
+
+        SmallInstant {
+            nanos: NonZeroU64::new(duration_nanos).unwrap(),
+        }
     }
 }
 

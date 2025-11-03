@@ -23,6 +23,7 @@ use crate::{
     ConnectToEntry,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
+    small_instant,
     url_generator::UrlGeneratorError,
 };
 
@@ -1585,7 +1586,7 @@ pub async fn work_with_qps_latency_correction(
 pub async fn work_until(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
-    dead_line: std::time::Instant,
+    dead_line: small_instant::SmallInstant,
     n_connections: usize,
     n_http_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1695,7 +1696,7 @@ pub async fn work_until(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             s.close();
 
             for f in futures {
@@ -1724,7 +1725,7 @@ pub async fn work_until(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             is_end.store(true, Relaxed);
 
             if wait_ongoing_requests_after_deadline {
@@ -1751,8 +1752,8 @@ pub async fn work_until_with_qps(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: std::time::Instant,
-    dead_line: std::time::Instant,
+    start: small_instant::SmallInstant,
+    dead_line: small_instant::SmallInstant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1778,11 +1779,14 @@ pub async fn work_until_with_qps(
             let (tx, rx) = kanal::unbounded::<()>();
             tokio::spawn(async move {
                 for i in 0.. {
-                    if std::time::Instant::now() > dead_line {
+                    if small_instant::SmallInstant::now() > dead_line {
                         break;
                     }
                     tokio::time::sleep_until(
-                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                        Into::<std::time::Instant>::into(
+                            start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps),
+                        )
+                        .into(),
                     )
                     .await;
                     let _ = tx.send(());
@@ -1796,7 +1800,7 @@ pub async fn work_until_with_qps(
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
                 for _ in 0.. {
-                    if std::time::Instant::now() > dead_line {
+                    if small_instant::SmallInstant::now() > dead_line {
                         break;
                     }
 
@@ -1904,7 +1908,7 @@ pub async fn work_until_with_qps(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             s.close();
 
             for f in futures {
@@ -1934,7 +1938,7 @@ pub async fn work_until_with_qps(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             is_end.store(true, Relaxed);
 
             if wait_ongoing_requests_after_deadline {
@@ -1961,8 +1965,8 @@ pub async fn work_until_with_qps_latency_correction(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: std::time::Instant,
-    dead_line: std::time::Instant,
+    start: small_instant::SmallInstant,
+    dead_line: small_instant::SmallInstant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1989,15 +1993,17 @@ pub async fn work_until_with_qps_latency_correction(
             tokio::spawn(async move {
                 for i in 0.. {
                     tokio::time::sleep_until(
-                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                        Into::<std::time::Instant>::into(
+                            start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps),
+                        )
+                        .into(),
                     )
                     .await;
-                    // TODO: use minstant only
-                    let now = std::time::Instant::now();
+                    let now = small_instant::SmallInstant::now();
                     if now > dead_line {
                         break;
                     }
-                    let _ = tx.send(crate::small_instant::SmallInstant::now());
+                    let _ = tx.send(now);
                 }
                 // tx gone
             });
@@ -2007,13 +2013,13 @@ pub async fn work_until_with_qps_latency_correction(
                 // Handle via rate till deadline is reached
                 loop {
                     tokio::time::sleep(duration).await;
-                    let now = std::time::Instant::now();
+                    let now = small_instant::SmallInstant::now();
                     if now > dead_line {
                         break;
                     }
 
                     for _ in 0..rate {
-                        let _ = tx.send(crate::small_instant::SmallInstant::now());
+                        let _ = tx.send(now);
                     }
                 }
                 // tx gone
@@ -2113,7 +2119,7 @@ pub async fn work_until_with_qps_latency_correction(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             s.close();
 
             for f in futures {
@@ -2144,7 +2150,7 @@ pub async fn work_until_with_qps_latency_correction(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             is_end.store(true, Relaxed);
 
             if wait_ongoing_requests_after_deadline {
@@ -2181,6 +2187,7 @@ pub mod fast {
         },
         pcg64si::Pcg64Si,
         result_data::ResultData,
+        small_instant,
     };
 
     use super::Client;
@@ -2412,7 +2419,7 @@ pub mod fast {
     pub async fn work_until(
         client: Arc<Client>,
         report_tx: kanal::Sender<ResultData>,
-        dead_line: std::time::Instant,
+        dead_line: small_instant::SmallInstant,
         n_connections: usize,
         n_http_parallel: usize,
         wait_ongoing_requests_after_deadline: bool,
@@ -2617,7 +2624,7 @@ pub mod fast {
                 .collect::<Vec<_>>(),
         };
         tokio::select! {
-            _ = tokio::time::sleep_until(dead_line.into()) => {
+            _ = tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()) => {
             }
             _ = tokio::signal::ctrl_c() => {
             }
