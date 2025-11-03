@@ -72,10 +72,10 @@ mod test_db {
             status: hyper::StatusCode::OK,
             len_bytes: 100,
             start_latency_correction: None,
-            start: crate::small_instant::SmallInstant::now(),
+            start: start + std::time::Duration::from_millis(50),
             connection_time: None,
             first_byte: None,
-            end: crate::small_instant::SmallInstant::now(),
+            end: start + std::time::Duration::from_millis(150),
         };
         let test_vec = vec![test_val.clone(), test_val.clone()];
         let client = Client::default();

@@ -14,8 +14,9 @@ pub struct SmallInstant {
 
 impl SmallInstant {
     pub fn now() -> Self {
+        let start = *START_INSTANT;
         let now = std::time::Instant::now();
-        let nanos = now.duration_since(*START_INSTANT).as_nanos() as u64;
+        let nanos = now.duration_since(start).as_nanos() as u64;
 
         SmallInstant {
             nanos: NonZeroU64::new(nanos).unwrap(),
