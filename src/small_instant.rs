@@ -29,9 +29,9 @@ impl SmallInstant {
     }
 }
 
-impl Into<std::time::Instant> for SmallInstant {
-    fn into(self) -> std::time::Instant {
-        *START_INSTANT + std::time::Duration::from_nanos(self.nanos.get())
+impl From<SmallInstant> for std::time::Instant {
+    fn from(val: SmallInstant) -> Self {
+        *START_INSTANT + std::time::Duration::from_nanos(val.nanos.get())
     }
 }
 
