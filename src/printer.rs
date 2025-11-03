@@ -97,6 +97,7 @@ pub enum PrintMode {
     Text,
     Json,
     Csv,
+    Quiet,
 }
 
 pub struct PrintConfig {
@@ -130,6 +131,7 @@ pub fn print_result(
             config.stats_success_breakdown,
         )?,
         PrintMode::Csv => print_csv(&mut config.output, start, res)?,
+        PrintMode::Quiet => { /* Do nothing */ }
     }
     Ok(())
 }
