@@ -68,10 +68,17 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
+        let start = small_instant::SmallInstant::now();
         let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_3).await?;
         let send_request = stream.handshake_http3().await?;
-        let dialup = crate::small_instant::SmallInstant::now();
-        Ok((ConnectionTime { dns_lookup, dialup }, send_request))
+        let dialup = small_instant::SmallInstant::now();
+        Ok((
+            ConnectionTime {
+                dns_lookup: dns_lookup - start,
+                dialup: dialup - start,
+            },
+            send_request,
+        ))
     }
 
     pub(crate) async fn quic_client(
