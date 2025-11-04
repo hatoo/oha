@@ -577,7 +577,7 @@ impl Client {
 
         let stream = self.connect_tls(stream, url, http_version).await?;
 
-        Ok(Stream::Tls(stream))
+        Ok(Stream::Tls(Box::new(stream)))
     }
 
     #[cfg(all(feature = "native-tls", not(feature = "rustls")))]
@@ -606,7 +606,7 @@ impl Client {
         stream: S,
         url: &Url,
         http_version: http::Version,
-    ) -> Result<Box<tokio_rustls::client::TlsStream<S>>, ClientError>
+    ) -> Result<tokio_rustls::client::TlsStream<S>, ClientError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
@@ -617,7 +617,7 @@ impl Client {
         )?;
         let stream = connector.connect(domain.to_owned(), stream).await?;
 
-        Ok(Box::new(stream))
+        Ok(stream)
     }
 
     async fn client_http1<R: Rng>(
