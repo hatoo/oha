@@ -23,7 +23,6 @@ use crate::{
     ConnectToEntry,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
-    small_instant,
     url_generator::UrlGeneratorError,
 };
 
@@ -52,16 +51,16 @@ pub struct ConnectionTime {
 pub struct RequestResult {
     pub rng: Pcg64Si,
     // When the query should started
-    pub start_latency_correction: Option<crate::small_instant::SmallInstant>,
+    pub start_latency_correction: Option<crate::Instant>,
     /// When the query started
-    pub start: crate::small_instant::SmallInstant,
+    pub start: crate::Instant,
     /// DNS + dialup
     /// None when reuse connection
     pub connection_time: Option<ConnectionTime>,
     /// First body byte received
-    pub first_byte: Option<crate::small_instant::SmallInstant>,
+    pub first_byte: Option<crate::Instant>,
     /// When the query ends
-    pub end: crate::small_instant::SmallInstant,
+    pub end: crate::Instant,
     /// HTTP status
     pub status: http::StatusCode,
     /// Length of body
@@ -497,13 +496,13 @@ impl Client {
         url: &Url,
         rng: &mut R,
         http_version: http::Version,
-    ) -> Result<(crate::small_instant::SmallInstant, Stream), ClientError> {
+    ) -> Result<(crate::Instant, Stream), ClientError> {
         let timeout_duration = self.connect_timeout;
 
         #[cfg(feature = "http3")]
         if http_version == http::Version::HTTP_3 {
             let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = crate::small_instant::SmallInstant::now();
+            let dns_lookup = crate::Instant::now();
             let stream = tokio::time::timeout(timeout_duration, self.quic_client(addr, url)).await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, stream)),
@@ -513,7 +512,7 @@ impl Client {
         }
         if url.scheme() == "https" {
             let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = crate::small_instant::SmallInstant::now();
+            let dns_lookup = crate::Instant::now();
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
             let stream =
@@ -527,7 +526,7 @@ impl Client {
         }
         #[cfg(unix)]
         if let Some(socket_path) = &self.unix_socket {
-            let dns_lookup = crate::small_instant::SmallInstant::now();
+            let dns_lookup = crate::Instant::now();
             let stream = tokio::time::timeout(
                 timeout_duration,
                 tokio::net::UnixStream::connect(socket_path),
@@ -541,7 +540,7 @@ impl Client {
         }
         #[cfg(feature = "vsock")]
         if let Some(addr) = self.vsock_addr {
-            let dns_lookup = crate::small_instant::SmallInstant::now();
+            let dns_lookup = crate::Instant::now();
             let stream =
                 tokio::time::timeout(timeout_duration, tokio_vsock::VsockStream::connect(addr))
                     .await;
@@ -553,7 +552,7 @@ impl Client {
         }
         // HTTP
         let addr = self.dns.lookup(url, rng).await?;
-        let dns_lookup = crate::small_instant::SmallInstant::now();
+        let dns_lookup = crate::Instant::now();
         let stream =
             tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
         match stream {
@@ -624,7 +623,7 @@ impl Client {
         &self,
         url: &Url,
         rng: &mut R,
-    ) -> Result<(crate::small_instant::SmallInstant, SendRequestHttp1), ClientError> {
+    ) -> Result<(crate::Instant, SendRequestHttp1), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
             let http_proxy_version = if self.is_proxy_http2() {
                 http::Version::HTTP_2
@@ -687,8 +686,8 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let mut start = crate::small_instant::SmallInstant::now();
-            let mut first_byte: Option<crate::small_instant::SmallInstant> = None;
+            let mut start = crate::Instant::now();
+            let mut first_byte: Option<crate::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
 
             let mut send_request = if let Some(send_request) = client_state.send_request.take() {
@@ -696,7 +695,7 @@ impl Client {
             } else {
                 let (dns_lookup, send_request) =
                     self.client_http1(&self.url, &mut client_state.rng).await?;
-                let dialup = crate::small_instant::SmallInstant::now();
+                let dialup = crate::Instant::now();
 
                 connection_time = Some(ConnectionTime {
                     dns_lookup: dns_lookup - start,
@@ -707,11 +706,11 @@ impl Client {
             while send_request.ready().await.is_err() {
                 // This gets hit when the connection for HTTP/1.1 faults
                 // This re-connects
-                start = crate::small_instant::SmallInstant::now();
+                start = crate::Instant::now();
                 let (dns_lookup, send_request_) =
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 send_request = send_request_;
-                let dialup = small_instant::SmallInstant::now();
+                let dialup = crate::Instant::now();
                 connection_time = Some(ConnectionTime {
                     dns_lookup: dns_lookup - start,
                     dialup: dialup - start,
@@ -725,7 +724,7 @@ impl Client {
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
                         if first_byte.is_none() {
-                            first_byte = Some(crate::small_instant::SmallInstant::now())
+                            first_byte = Some(crate::Instant::now())
                         }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
@@ -748,7 +747,7 @@ impl Client {
                         }
                     }
 
-                    let end = crate::small_instant::SmallInstant::now();
+                    let end = crate::Instant::now();
 
                     let result = RequestResult {
                         rng,
@@ -793,7 +792,7 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-        let start = small_instant::SmallInstant::now();
+        let start = crate::Instant::now();
         if let Some(proxy_url) = &self.proxy_url {
             let http_proxy_version = if self.is_proxy_http2() {
                 http::Version::HTTP_2
@@ -843,7 +842,7 @@ impl Client {
                         .handshake(TokioIo::new(stream))
                         .await?;
                 tokio::spawn(conn);
-                let dialup = crate::small_instant::SmallInstant::now();
+                let dialup = crate::Instant::now();
 
                 Ok((
                     ConnectionTime {
@@ -854,7 +853,7 @@ impl Client {
                 ))
             } else {
                 let send_request = stream.handshake_http2().await?;
-                let dialup = small_instant::SmallInstant::now();
+                let dialup = crate::Instant::now();
                 Ok((
                     ConnectionTime {
                         dns_lookup: dns_lookup - start,
@@ -866,7 +865,7 @@ impl Client {
         } else {
             let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
             let send_request = stream.handshake_http2().await?;
-            let dialup = small_instant::SmallInstant::now();
+            let dialup = crate::Instant::now();
             Ok((
                 ConnectionTime {
                     dns_lookup: dns_lookup - start,
@@ -883,8 +882,8 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let start = crate::small_instant::SmallInstant::now();
-            let mut first_byte: Option<crate::small_instant::SmallInstant> = None;
+            let start = crate::Instant::now();
+            let mut first_byte: Option<crate::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
 
             match client_state.send_request.send_request(request).await {
@@ -895,12 +894,12 @@ impl Client {
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
                         if first_byte.is_none() {
-                            first_byte = Some(crate::small_instant::SmallInstant::now())
+                            first_byte = Some(crate::Instant::now())
                         }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
-                    let end = crate::small_instant::SmallInstant::now();
+                    let end = crate::Instant::now();
 
                     let result = RequestResult {
                         rng,
@@ -1066,7 +1065,7 @@ async fn work_http2_once(
     client_state: &mut ClientStateHttp2,
     report_tx: &kanal::Sender<Result<RequestResult, ClientError>>,
     connection_time: ConnectionTime,
-    start_latency_correction: Option<crate::small_instant::SmallInstant>,
+    start_latency_correction: Option<crate::Instant>,
 ) -> (bool, bool) {
     let mut res = client.work_http2(client_state).await;
     let is_cancel = is_cancel_error(&res);
@@ -1090,7 +1089,7 @@ pub(crate) fn set_connection_time<E>(
 
 pub(crate) fn set_start_latency_correction<E>(
     res: &mut Result<RequestResult, E>,
-    start_latency_correction: crate::small_instant::SmallInstant,
+    start_latency_correction: crate::Instant,
 ) {
     if let Ok(res) = res {
         res.start_latency_correction = Some(start_latency_correction);
@@ -1466,7 +1465,7 @@ pub async fn work_with_qps_latency_correction(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    let now = crate::small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     tx.send(now)?;
                 }
             }
@@ -1475,7 +1474,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
-                    let now = crate::small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     for _ in 0..rate {
                         tx.send(now)?;
                     }
@@ -1484,7 +1483,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle the remaining tasks
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
-                    let now = crate::small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     for _ in 0..n_tasks - n {
                         tx.send(now)?;
                     }
@@ -1611,7 +1610,7 @@ pub async fn work_with_qps_latency_correction(
 pub async fn work_until(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
-    dead_line: small_instant::SmallInstant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1777,8 +1776,8 @@ pub async fn work_until_with_qps(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: small_instant::SmallInstant,
-    dead_line: small_instant::SmallInstant,
+    start: crate::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1804,7 +1803,7 @@ pub async fn work_until_with_qps(
             let (tx, rx) = kanal::unbounded::<()>();
             tokio::spawn(async move {
                 for i in 0.. {
-                    if small_instant::SmallInstant::now() > dead_line {
+                    if crate::Instant::now() > dead_line {
                         break;
                     }
                     tokio::time::sleep_until(
@@ -1825,7 +1824,7 @@ pub async fn work_until_with_qps(
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
                 for _ in 0.. {
-                    if small_instant::SmallInstant::now() > dead_line {
+                    if crate::Instant::now() > dead_line {
                         break;
                     }
 
@@ -1990,8 +1989,8 @@ pub async fn work_until_with_qps_latency_correction(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: small_instant::SmallInstant,
-    dead_line: small_instant::SmallInstant,
+    start: crate::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -2024,7 +2023,7 @@ pub async fn work_until_with_qps_latency_correction(
                         .into(),
                     )
                     .await;
-                    let now = small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     if now > dead_line {
                         break;
                     }
@@ -2038,7 +2037,7 @@ pub async fn work_until_with_qps_latency_correction(
                 // Handle via rate till deadline is reached
                 loop {
                     tokio::time::sleep(duration).await;
-                    let now = small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     if now > dead_line {
                         break;
                     }
@@ -2212,7 +2211,6 @@ pub mod fast {
         },
         pcg64si::Pcg64Si,
         result_data::ResultData,
-        small_instant,
     };
 
     use super::Client;
@@ -2444,7 +2442,7 @@ pub mod fast {
     pub async fn work_until(
         client: Arc<Client>,
         report_tx: kanal::Sender<ResultData>,
-        dead_line: small_instant::SmallInstant,
+        dead_line: crate::Instant,
         n_connections: usize,
         n_http_parallel: usize,
         wait_ongoing_requests_after_deadline: bool,

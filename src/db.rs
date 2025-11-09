@@ -21,7 +21,7 @@ fn create_db(conn: &Connection) -> Result<usize, rusqlite::Error> {
 pub fn store(
     client: &Client,
     db_url: &str,
-    start: crate::small_instant::SmallInstant,
+    start: crate::Instant,
     request_records: &[RequestResult],
     run: u64,
 ) -> Result<usize, rusqlite::Error> {
@@ -66,7 +66,7 @@ mod test_db {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let start = crate::small_instant::SmallInstant::now();
+        let start = crate::Instant::now();
         let test_val = RequestResult {
             rng: SeedableRng::seed_from_u64(0),
             status: hyper::StatusCode::OK,

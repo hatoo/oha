@@ -44,7 +44,6 @@ use crate::client::{
 };
 use crate::pcg64si::Pcg64Si;
 use crate::result_data::ResultData;
-use crate::small_instant;
 use rand::SeedableRng;
 use rand::prelude::Rng;
 
@@ -68,10 +67,10 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
-        let start = small_instant::SmallInstant::now();
+        let start = crate::Instant::now();
         let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_3).await?;
         let send_request = stream.handshake_http3().await?;
-        let dialup = small_instant::SmallInstant::now();
+        let dialup = crate::Instant::now();
         Ok((
             ConnectionTime {
                 dns_lookup: dns_lookup - start,
@@ -120,9 +119,9 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let start = crate::small_instant::SmallInstant::now();
+            let start = crate::Instant::now();
             let connection_time: Option<ConnectionTime> = None;
-            let mut first_byte: Option<crate::small_instant::SmallInstant> = None;
+            let mut first_byte: Option<crate::Instant> = None;
 
             // if we implement http_body::Body on our H3 SendRequest, we can do some nice streaming stuff
             // with the response here. However as we don't really use the response we can get away
@@ -150,11 +149,11 @@ impl Client {
             let mut len_bytes = 0;
             while let Some(chunk) = stream.recv_data().await.map_err(Http3Error::from)? {
                 if first_byte.is_none() {
-                    first_byte = Some(crate::small_instant::SmallInstant::now())
+                    first_byte = Some(crate::Instant::now())
                 }
                 len_bytes += chunk.remaining();
             }
-            let end = crate::small_instant::SmallInstant::now();
+            let end = crate::Instant::now();
 
             let result = RequestResult {
                 rng,
@@ -242,10 +241,10 @@ pub(crate) async fn send_debug_request_http3(
 pub(crate) async fn parallel_work_http3(
     n_connections: usize,
     n_http_parallel: usize,
-    rx: AsyncReceiver<Option<crate::small_instant::SmallInstant>>,
+    rx: AsyncReceiver<Option<crate::Instant>>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     client: Arc<Client>,
-    deadline: Option<small_instant::SmallInstant>,
+    deadline: Option<crate::Instant>,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let s = Arc::new(tokio::sync::Semaphore::new(0));
     let has_deadline = deadline.is_some();
@@ -281,7 +280,7 @@ pub(crate) async fn parallel_work_http3(
  */
 async fn create_and_load_up_single_connection_http3(
     n_http_parallel: usize,
-    rx: AsyncReceiver<Option<crate::small_instant::SmallInstant>>,
+    rx: AsyncReceiver<Option<crate::Instant>>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     client: Arc<Client>,
     s: Arc<Semaphore>,
@@ -415,7 +414,7 @@ pub(crate) async fn work_http3_once(
     client_state: &mut ClientStateHttp3,
     report_tx: &kanal::Sender<Result<RequestResult, ClientError>>,
     connection_time: ConnectionTime,
-    start_latency_correction: Option<crate::small_instant::SmallInstant>,
+    start_latency_correction: Option<crate::Instant>,
 ) -> (bool, bool) {
     let mut res = client.work_http3(client_state).await;
     let is_cancel = is_cancel_error(&res);
@@ -572,7 +571,7 @@ pub async fn work(
     n_connections: usize,
     n_http2_parallel: usize,
 ) {
-    let (tx, rx) = kanal::unbounded::<Option<crate::small_instant::SmallInstant>>();
+    let (tx, rx) = kanal::unbounded::<Option<crate::Instant>>();
     let rx = rx.to_async();
 
     let n_tasks_emitter = async move {
@@ -599,7 +598,7 @@ pub async fn work_with_qps(
     n_connections: usize,
     n_http_parallel: usize,
 ) {
-    let (tx, rx) = kanal::unbounded::<Option<crate::small_instant::SmallInstant>>();
+    let (tx, rx) = kanal::unbounded::<Option<crate::Instant>>();
 
     let work_queue = async move {
         match query_limit {
@@ -666,7 +665,7 @@ pub async fn work_with_qps_latency_correction(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    let now = crate::small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     tx.send(Some(now))?;
                 }
             }
@@ -675,7 +674,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
-                    let now = crate::small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     for _ in 0..rate {
                         tx.send(Some(now))?;
                     }
@@ -684,7 +683,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle the remaining tasks
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
-                    let now = crate::small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     for _ in 0..n_tasks - n {
                         tx.send(Some(now))?;
                     }
@@ -709,12 +708,12 @@ pub async fn work_with_qps_latency_correction(
 pub async fn work_until(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
-    dead_line: small_instant::SmallInstant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http_parallel: usize,
     _wait_ongoing_requests_after_deadline: bool,
 ) {
-    let (tx, rx) = kanal::bounded_async::<Option<crate::small_instant::SmallInstant>>(5000);
+    let (tx, rx) = kanal::bounded_async::<Option<crate::Instant>>(5000);
     // This emitter is used for H3 to give it unlimited tokens to emit work.
     let cancel_token = tokio_util::sync::CancellationToken::new();
     let emitter_handle = endless_emitter(cancel_token.clone(), tx).await;
@@ -742,18 +741,18 @@ pub async fn work_until_with_qps(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: small_instant::SmallInstant,
-    dead_line: small_instant::SmallInstant,
+    start: crate::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     _wait_ongoing_requests_after_deadline: bool,
 ) {
     let rx = match query_limit {
         QueryLimit::Qps(qps) => {
-            let (tx, rx) = kanal::unbounded::<Option<crate::small_instant::SmallInstant>>();
+            let (tx, rx) = kanal::unbounded::<Option<crate::Instant>>();
             tokio::spawn(async move {
                 for i in 0.. {
-                    if small_instant::SmallInstant::now() > dead_line {
+                    if crate::Instant::now() > dead_line {
                         break;
                     }
                     tokio::time::sleep_until(
@@ -774,7 +773,7 @@ pub async fn work_until_with_qps(
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
                 for _ in 0.. {
-                    if small_instant::SmallInstant::now() > dead_line {
+                    if crate::Instant::now() > dead_line {
                         break;
                     }
 
@@ -809,8 +808,8 @@ pub async fn work_until_with_qps_latency_correction(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: small_instant::SmallInstant,
-    dead_line: small_instant::SmallInstant,
+    start: crate::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     _wait_ongoing_requests_after_deadline: bool,
@@ -827,7 +826,7 @@ pub async fn work_until_with_qps_latency_correction(
                         .into(),
                     )
                     .await;
-                    let now = small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     if now > dead_line {
                         break;
                     }
@@ -841,7 +840,7 @@ pub async fn work_until_with_qps_latency_correction(
                 // Handle via rate till deadline is reached
                 loop {
                     tokio::time::sleep(duration).await;
-                    let now = small_instant::SmallInstant::now();
+                    let now = crate::Instant::now();
                     if now > dead_line {
                         break;
                     }
@@ -873,7 +872,7 @@ pub async fn work_until_with_qps_latency_correction(
 #[cfg(feature = "http3")]
 async fn endless_emitter(
     cancellation_token: tokio_util::sync::CancellationToken,
-    tx: kanal::AsyncSender<Option<crate::small_instant::SmallInstant>>,
+    tx: kanal::AsyncSender<Option<crate::Instant>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -899,7 +898,6 @@ pub mod fast {
 
     use crate::{
         client::Client, client_h3::http3_connection_fast_work_until, result_data::ResultData,
-        small_instant,
     };
 
     /// Run n tasks by m workers
@@ -968,7 +966,7 @@ pub mod fast {
     pub async fn work_until(
         client: Arc<Client>,
         report_tx: kanal::Sender<ResultData>,
-        dead_line: small_instant::SmallInstant,
+        dead_line: crate::Instant,
         n_connections: usize,
         n_http_parallel: usize,
         wait_ongoing_requests_after_deadline: bool,
