@@ -43,6 +43,7 @@ fn next_port() -> u16 {
     PORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+#[ctor::ctor]
 fn install_crypto_provider() {
     static INSTALL: OnceLock<()> = OnceLock::new();
     INSTALL.get_or_init(|| {
@@ -947,7 +948,6 @@ where
         .await
         .unwrap();
 
-    install_crypto_provider();
     let issuer = make_root_issuer();
     let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
 
@@ -1008,7 +1008,6 @@ where
         .await
         .unwrap();
 
-    install_crypto_provider();
     let issuer = make_root_issuer();
     let proxy = Arc::new(http_mitm_proxy::MitmProxy::new(Some(issuer), None));
 
