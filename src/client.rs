@@ -11,7 +11,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering::Relaxed},
     },
-    time::Instant,
 };
 use thiserror::Error;
 use tokio::{
@@ -52,16 +51,16 @@ pub struct ConnectionTime {
 pub struct RequestResult {
     pub rng: Pcg64Si,
     // When the query should started
-    pub start_latency_correction: Option<std::time::Instant>,
+    pub start_latency_correction: Option<crate::Instant>,
     /// When the query started
-    pub start: std::time::Instant,
+    pub start: crate::Instant,
     /// DNS + dialup
     /// None when reuse connection
     pub connection_time: Option<ConnectionTime>,
     /// First body byte received
-    pub first_byte: Option<std::time::Instant>,
+    pub first_byte: Option<crate::Instant>,
     /// When the query ends
-    pub end: std::time::Instant,
+    pub end: crate::Instant,
     /// HTTP status
     pub status: http::StatusCode,
     /// Length of body
@@ -497,13 +496,13 @@ impl Client {
         url: &Url,
         rng: &mut R,
         http_version: http::Version,
-    ) -> Result<(Instant, Stream), ClientError> {
+    ) -> Result<(crate::Instant, Stream), ClientError> {
         let timeout_duration = self.connect_timeout;
 
         #[cfg(feature = "http3")]
         if http_version == http::Version::HTTP_3 {
             let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = Instant::now();
+            let dns_lookup = crate::Instant::now();
             let stream = tokio::time::timeout(timeout_duration, self.quic_client(addr, url)).await;
             return match stream {
                 Ok(Ok(stream)) => Ok((dns_lookup, stream)),
@@ -513,7 +512,7 @@ impl Client {
         }
         if url.scheme() == "https" {
             let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = Instant::now();
+            let dns_lookup = crate::Instant::now();
             // If we do not put a timeout here then the connections attempts will
             // linger long past the configured timeout
             let stream =
@@ -527,7 +526,7 @@ impl Client {
         }
         #[cfg(unix)]
         if let Some(socket_path) = &self.unix_socket {
-            let dns_lookup = Instant::now();
+            let dns_lookup = crate::Instant::now();
             let stream = tokio::time::timeout(
                 timeout_duration,
                 tokio::net::UnixStream::connect(socket_path),
@@ -541,7 +540,7 @@ impl Client {
         }
         #[cfg(feature = "vsock")]
         if let Some(addr) = self.vsock_addr {
-            let dns_lookup = Instant::now();
+            let dns_lookup = crate::Instant::now();
             let stream =
                 tokio::time::timeout(timeout_duration, tokio_vsock::VsockStream::connect(addr))
                     .await;
@@ -553,7 +552,7 @@ impl Client {
         }
         // HTTP
         let addr = self.dns.lookup(url, rng).await?;
-        let dns_lookup = Instant::now();
+        let dns_lookup = crate::Instant::now();
         let stream =
             tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(addr)).await;
         match stream {
@@ -624,7 +623,7 @@ impl Client {
         &self,
         url: &Url,
         rng: &mut R,
-    ) -> Result<(Instant, SendRequestHttp1), ClientError> {
+    ) -> Result<(crate::Instant, SendRequestHttp1), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
             let http_proxy_version = if self.is_proxy_http2() {
                 http::Version::HTTP_2
@@ -687,8 +686,8 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let mut start = std::time::Instant::now();
-            let mut first_byte: Option<std::time::Instant> = None;
+            let mut start = crate::Instant::now();
+            let mut first_byte: Option<crate::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
 
             let mut send_request = if let Some(send_request) = client_state.send_request.take() {
@@ -696,7 +695,7 @@ impl Client {
             } else {
                 let (dns_lookup, send_request) =
                     self.client_http1(&self.url, &mut client_state.rng).await?;
-                let dialup = std::time::Instant::now();
+                let dialup = crate::Instant::now();
 
                 connection_time = Some(ConnectionTime {
                     dns_lookup: dns_lookup - start,
@@ -707,11 +706,11 @@ impl Client {
             while send_request.ready().await.is_err() {
                 // This gets hit when the connection for HTTP/1.1 faults
                 // This re-connects
-                start = std::time::Instant::now();
+                start = crate::Instant::now();
                 let (dns_lookup, send_request_) =
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 send_request = send_request_;
-                let dialup = std::time::Instant::now();
+                let dialup = crate::Instant::now();
                 connection_time = Some(ConnectionTime {
                     dns_lookup: dns_lookup - start,
                     dialup: dialup - start,
@@ -725,7 +724,7 @@ impl Client {
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
                         if first_byte.is_none() {
-                            first_byte = Some(std::time::Instant::now())
+                            first_byte = Some(crate::Instant::now())
                         }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
@@ -748,7 +747,7 @@ impl Client {
                         }
                     }
 
-                    let end = std::time::Instant::now();
+                    let end = crate::Instant::now();
 
                     let result = RequestResult {
                         rng,
@@ -793,7 +792,7 @@ impl Client {
         url: &Url,
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-        let start = std::time::Instant::now();
+        let start = crate::Instant::now();
         if let Some(proxy_url) = &self.proxy_url {
             let http_proxy_version = if self.is_proxy_http2() {
                 http::Version::HTTP_2
@@ -843,7 +842,7 @@ impl Client {
                         .handshake(TokioIo::new(stream))
                         .await?;
                 tokio::spawn(conn);
-                let dialup = std::time::Instant::now();
+                let dialup = crate::Instant::now();
 
                 Ok((
                     ConnectionTime {
@@ -854,7 +853,7 @@ impl Client {
                 ))
             } else {
                 let send_request = stream.handshake_http2().await?;
-                let dialup = std::time::Instant::now();
+                let dialup = crate::Instant::now();
                 Ok((
                     ConnectionTime {
                         dns_lookup: dns_lookup - start,
@@ -866,7 +865,7 @@ impl Client {
         } else {
             let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
             let send_request = stream.handshake_http2().await?;
-            let dialup = std::time::Instant::now();
+            let dialup = crate::Instant::now();
             Ok((
                 ConnectionTime {
                     dns_lookup: dns_lookup - start,
@@ -883,8 +882,8 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (request, rng) = self.generate_request(&mut client_state.rng)?;
-            let start = std::time::Instant::now();
-            let mut first_byte: Option<std::time::Instant> = None;
+            let start = crate::Instant::now();
+            let mut first_byte: Option<crate::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
 
             match client_state.send_request.send_request(request).await {
@@ -895,12 +894,12 @@ impl Client {
                     let mut len_bytes = 0;
                     while let Some(chunk) = stream.frame().await {
                         if first_byte.is_none() {
-                            first_byte = Some(std::time::Instant::now())
+                            first_byte = Some(crate::Instant::now())
                         }
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
-                    let end = std::time::Instant::now();
+                    let end = crate::Instant::now();
 
                     let result = RequestResult {
                         rng,
@@ -1066,7 +1065,7 @@ async fn work_http2_once(
     client_state: &mut ClientStateHttp2,
     report_tx: &kanal::Sender<Result<RequestResult, ClientError>>,
     connection_time: ConnectionTime,
-    start_latency_correction: Option<Instant>,
+    start_latency_correction: Option<crate::Instant>,
 ) -> (bool, bool) {
     let mut res = client.work_http2(client_state).await;
     let is_cancel = is_cancel_error(&res);
@@ -1090,7 +1089,7 @@ pub(crate) fn set_connection_time<E>(
 
 pub(crate) fn set_start_latency_correction<E>(
     res: &mut Result<RequestResult, E>,
-    start_latency_correction: std::time::Instant,
+    start_latency_correction: crate::Instant,
 ) {
     if let Ok(res) = res {
         res.start_latency_correction = Some(start_latency_correction);
@@ -1466,7 +1465,7 @@ pub async fn work_with_qps_latency_correction(
                         (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
                     )
                     .await;
-                    let now = std::time::Instant::now();
+                    let now = crate::Instant::now();
                     tx.send(now)?;
                 }
             }
@@ -1475,7 +1474,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle via rate till n_tasks out of bound
                 while n + rate < n_tasks {
                     tokio::time::sleep(duration).await;
-                    let now = std::time::Instant::now();
+                    let now = crate::Instant::now();
                     for _ in 0..rate {
                         tx.send(now)?;
                     }
@@ -1484,7 +1483,7 @@ pub async fn work_with_qps_latency_correction(
                 // Handle the remaining tasks
                 if n_tasks > n {
                     tokio::time::sleep(duration).await;
-                    let now = std::time::Instant::now();
+                    let now = crate::Instant::now();
                     for _ in 0..n_tasks - n {
                         tx.send(now)?;
                     }
@@ -1611,7 +1610,7 @@ pub async fn work_with_qps_latency_correction(
 pub async fn work_until(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
-    dead_line: std::time::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1721,7 +1720,7 @@ pub async fn work_until(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             s.close();
 
             for f in futures {
@@ -1750,7 +1749,7 @@ pub async fn work_until(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             is_end.store(true, Relaxed);
 
             if wait_ongoing_requests_after_deadline {
@@ -1777,8 +1776,8 @@ pub async fn work_until_with_qps(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: std::time::Instant,
-    dead_line: std::time::Instant,
+    start: crate::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -1804,11 +1803,14 @@ pub async fn work_until_with_qps(
             let (tx, rx) = kanal::unbounded::<()>();
             tokio::spawn(async move {
                 for i in 0.. {
-                    if std::time::Instant::now() > dead_line {
+                    if crate::Instant::now() > dead_line {
                         break;
                     }
                     tokio::time::sleep_until(
-                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                        Into::<std::time::Instant>::into(
+                            start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps),
+                        )
+                        .into(),
                     )
                     .await;
                     let _ = tx.send(());
@@ -1822,7 +1824,7 @@ pub async fn work_until_with_qps(
             tokio::spawn(async move {
                 // Handle via rate till deadline is reached
                 for _ in 0.. {
-                    if std::time::Instant::now() > dead_line {
+                    if crate::Instant::now() > dead_line {
                         break;
                     }
 
@@ -1930,7 +1932,7 @@ pub async fn work_until_with_qps(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             s.close();
 
             for f in futures {
@@ -1960,7 +1962,7 @@ pub async fn work_until_with_qps(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             is_end.store(true, Relaxed);
 
             if wait_ongoing_requests_after_deadline {
@@ -1987,8 +1989,8 @@ pub async fn work_until_with_qps_latency_correction(
     client: Arc<Client>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     query_limit: QueryLimit,
-    start: std::time::Instant,
-    dead_line: std::time::Instant,
+    start: crate::Instant,
+    dead_line: crate::Instant,
     n_connections: usize,
     n_http2_parallel: usize,
     wait_ongoing_requests_after_deadline: bool,
@@ -2015,10 +2017,13 @@ pub async fn work_until_with_qps_latency_correction(
             tokio::spawn(async move {
                 for i in 0.. {
                     tokio::time::sleep_until(
-                        (start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps)).into(),
+                        Into::<std::time::Instant>::into(
+                            start + std::time::Duration::from_secs_f64(i as f64 * 1f64 / qps),
+                        )
+                        .into(),
                     )
                     .await;
-                    let now = std::time::Instant::now();
+                    let now = crate::Instant::now();
                     if now > dead_line {
                         break;
                     }
@@ -2032,7 +2037,7 @@ pub async fn work_until_with_qps_latency_correction(
                 // Handle via rate till deadline is reached
                 loop {
                     tokio::time::sleep(duration).await;
-                    let now = std::time::Instant::now();
+                    let now = crate::Instant::now();
                     if now > dead_line {
                         break;
                     }
@@ -2138,7 +2143,7 @@ pub async fn work_until_with_qps_latency_correction(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             s.close();
 
             for f in futures {
@@ -2169,7 +2174,7 @@ pub async fn work_until_with_qps_latency_correction(
                 })
                 .collect::<Vec<_>>();
 
-            tokio::time::sleep_until(dead_line.into()).await;
+            tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()).await;
             is_end.store(true, Relaxed);
 
             if wait_ongoing_requests_after_deadline {
@@ -2437,7 +2442,7 @@ pub mod fast {
     pub async fn work_until(
         client: Arc<Client>,
         report_tx: kanal::Sender<ResultData>,
-        dead_line: std::time::Instant,
+        dead_line: crate::Instant,
         n_connections: usize,
         n_http_parallel: usize,
         wait_ongoing_requests_after_deadline: bool,
@@ -2642,7 +2647,7 @@ pub mod fast {
                 .collect::<Vec<_>>(),
         };
         tokio::select! {
-            _ = tokio::time::sleep_until(dead_line.into()) => {
+            _ = tokio::time::sleep_until(Into::<std::time::Instant>::into(dead_line).into()) => {
             }
             _ = tokio::signal::ctrl_c() => {
             }

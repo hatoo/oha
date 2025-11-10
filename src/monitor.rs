@@ -53,7 +53,7 @@ pub struct Monitor {
     /// All workers sends each result to this channel
     pub report_receiver: kanal::Receiver<Result<RequestResult, ClientError>>,
     // When started
-    pub start: std::time::Instant,
+    pub start: crate::Instant,
     // Frame per second of TUI
     pub fps: usize,
     pub disable_color: bool,
@@ -114,7 +114,7 @@ impl Monitor {
                 break;
             }
 
-            let now = std::time::Instant::now();
+            let now = crate::Instant::now();
             let progress = match &self.end_line {
                 EndLine::Duration(d) => {
                     ((now - self.start).as_secs_f64() / d.as_secs_f64()).clamp(0.0, 1.0)

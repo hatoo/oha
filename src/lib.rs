@@ -38,6 +38,8 @@ mod pcg64si;
 mod printer;
 mod request_generator;
 mod result_data;
+#[cfg(feature = "small_instant")]
+mod small_instant;
 mod timescale;
 mod tls_config;
 mod url_generator;
@@ -49,6 +51,11 @@ use crate::{
     cli::{ConnectToEntry, parse_header},
     request_generator::{BodyGenerator, Proxy, RequestGenerator},
 };
+
+#[cfg(feature = "small_instant")]
+pub type Instant = small_instant::SmallInstant;
+#[cfg(not(feature = "small_instant"))]
+pub type Instant = std::time::Instant;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -645,7 +652,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let run = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-    let start = std::time::Instant::now();
+    let start = crate::Instant::now();
 
     let data_collect_future: Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>> =
         match work_mode {

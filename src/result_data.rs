@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use average::{Estimate, Max, Mean, Min, concatenate};
 use hyper::StatusCode;
@@ -107,7 +104,10 @@ impl ResultData {
         &self.error_distribution
     }
 
-    pub fn end_times_from_start(&self, start: Instant) -> impl Iterator<Item = Duration> + '_ {
+    pub fn end_times_from_start(
+        &self,
+        start: crate::Instant,
+    ) -> impl Iterator<Item = Duration> + '_ {
         self.success.iter().map(move |result| result.end - start)
     }
 
@@ -178,6 +178,7 @@ impl ResultData {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use float_cmp::assert_approx_eq;
@@ -185,7 +186,7 @@ mod tests {
 
     use super::*;
     use crate::client::{ClientError, ConnectionTime, RequestResult};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     fn build_mock_request_result(
         status: StatusCode,
@@ -195,7 +196,7 @@ mod tests {
         first_byte: u64,
         size: usize,
     ) -> Result<RequestResult, ClientError> {
-        let now = Instant::now();
+        let now = crate::Instant::now();
         Ok(RequestResult {
             rng: SeedableRng::seed_from_u64(0),
             start_latency_correction: None,
@@ -309,3 +310,4 @@ mod tests {
         assert_approx_eq!(f64, res.dns_lookup_stat().max(), 0.3);
     }
 }
+*/

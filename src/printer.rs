@@ -4,11 +4,7 @@ use byte_unit::Byte;
 use crossterm::style::{StyledContent, Stylize};
 use hyper::http::{self, StatusCode};
 use ratatui::crossterm;
-use std::{
-    collections::BTreeMap,
-    io::Write,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, io::Write, time::Duration};
 
 #[derive(Clone, Copy)]
 struct StyleScheme {
@@ -114,7 +110,7 @@ pub struct PrintConfig {
 
 pub fn print_result(
     mut config: PrintConfig,
-    start: Instant,
+    start: crate::Instant,
     res: &ResultData,
     total_duration: Duration,
 ) -> anyhow::Result<()> {
@@ -143,7 +139,7 @@ pub fn print_result(
 /// Print all summary as JSON
 fn print_json<W: Write>(
     w: &mut W,
-    start: Instant,
+    start: crate::Instant,
     res: &ResultData,
     total_duration: Duration,
     stats_success_breakdown: bool,
@@ -380,7 +376,7 @@ fn print_json<W: Write>(
     )
 }
 
-fn print_csv<W: Write>(w: &mut W, start: Instant, res: &ResultData) -> std::io::Result<()> {
+fn print_csv<W: Write>(w: &mut W, start: crate::Instant, res: &ResultData) -> std::io::Result<()> {
     // csv header
     writeln!(
         w,
