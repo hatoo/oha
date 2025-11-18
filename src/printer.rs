@@ -395,9 +395,7 @@ fn print_csv<W: Write>(w: &mut W, start: Instant, res: &ResultData) -> std::io::
             Some(connection_time) => (connection_time.dns_lookup(), connection_time.dialup()),
             None => (std::time::Duration::ZERO, std::time::Duration::ZERO),
         };
-        let first_byte = request
-            .first_byte()
-            .unwrap_or_else(|| std::time::Duration::ZERO);
+        let first_byte = request.first_byte().unwrap_or(std::time::Duration::ZERO);
         writeln!(
             w,
             "{},{},{},{},{},{},{}",
