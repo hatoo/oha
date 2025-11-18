@@ -200,11 +200,11 @@ mod tests {
             rng: SeedableRng::seed_from_u64(0),
             start: now,
             connection_time: Some(ConnectionTime {
-                dns_lookup: NonZeroU64::new(connection_time_dns_lookup * 1000_000).unwrap(),
-                dialup: NonZeroU64::new(connection_time_dialup * 1000_000).unwrap(),
+                dns_lookup: NonZeroU64::new(connection_time_dns_lookup * 1_000_000).unwrap(),
+                dialup: NonZeroU64::new(connection_time_dialup * 1_000_000).unwrap(),
             }),
-            first_byte: Some(NonZeroU64::new(first_byte * 1000_000).unwrap()),
-            duration: request_time * 1000_000,
+            first_byte: Some(NonZeroU64::new(first_byte * 1_000_000).unwrap()),
+            duration: request_time * 1_000_000,
             status,
             len_bytes: size,
         })
