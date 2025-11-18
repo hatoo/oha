@@ -108,7 +108,7 @@ impl ResultData {
     }
 
     pub fn end_times_from_start(&self, start: Instant) -> impl Iterator<Item = Duration> + '_ {
-        self.success.iter().map(move |result| result.end - start)
+        self.success.iter().map(move |result| result.end() - start)
     }
 
     pub fn status_code_distribution(&self) -> BTreeMap<StatusCode, usize> {
@@ -123,14 +123,14 @@ impl ResultData {
     pub fn dns_dialup_stat(&self) -> MinMaxMean {
         self.success
             .iter()
-            .filter_map(|r| r.connection_time.map(|ct| ct.dialup.as_secs_f64()))
+            .filter_map(|r| r.connection_time.map(|ct| ct.dialup().as_secs_f64()))
             .collect()
     }
 
     pub fn dns_lookup_stat(&self) -> MinMaxMean {
         self.success
             .iter()
-            .filter_map(|r| r.connection_time.map(|ct| ct.dns_lookup.as_secs_f64()))
+            .filter_map(|r| r.connection_time.map(|ct| ct.dns_lookup().as_secs_f64()))
             .collect()
     }
 
@@ -185,7 +185,7 @@ mod tests {
 
     use super::*;
     use crate::client::{ClientError, ConnectionTime, RequestResult};
-    use std::time::{Duration, Instant};
+    use std::{num::NonZeroU64, time::Instant};
 
     fn build_mock_request_result(
         status: StatusCode,
@@ -198,16 +198,13 @@ mod tests {
         let now = Instant::now();
         Ok(RequestResult {
             rng: SeedableRng::seed_from_u64(0),
-            start_latency_correction: None,
             start: now,
             connection_time: Some(ConnectionTime {
-                dns_lookup: Duration::from_millis(connection_time_dns_lookup),
-                dialup: Duration::from_millis(connection_time_dialup),
+                dns_lookup: NonZeroU64::new(connection_time_dns_lookup * 1000_000).unwrap(),
+                dialup: NonZeroU64::new(connection_time_dialup * 1000_000).unwrap(),
             }),
-            first_byte: Some(now.checked_add(Duration::from_millis(first_byte)).unwrap()),
-            end: now
-                .checked_add(Duration::from_millis(request_time))
-                .unwrap(),
+            first_byte: Some(NonZeroU64::new(first_byte * 1000_000).unwrap()),
+            duration: request_time * 1000_000,
             status,
             len_bytes: size,
         })

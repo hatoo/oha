@@ -392,13 +392,12 @@ fn print_csv<W: Write>(w: &mut W, start: Instant, res: &ResultData) -> std::io::
 
     for request in success_requests {
         let dns_and_dialup = match request.connection_time {
-            Some(connection_time) => (connection_time.dns_lookup, connection_time.dialup),
+            Some(connection_time) => (connection_time.dns_lookup(), connection_time.dialup()),
             None => (std::time::Duration::ZERO, std::time::Duration::ZERO),
         };
-        let first_byte = match request.first_byte {
-            Some(first_byte) => first_byte - request.start,
-            None => std::time::Duration::ZERO,
-        };
+        let first_byte = request
+            .first_byte()
+            .unwrap_or_else(|| std::time::Duration::ZERO);
         writeln!(
             w,
             "{},{},{},{},{},{},{}",

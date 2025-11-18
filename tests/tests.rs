@@ -1240,8 +1240,9 @@ async fn test_csv_output() {
         let current_start = f64::from_str(parts[0]).unwrap();
         assert!(current_start >= latest_start);
         latest_start = current_start;
+        // This value could be zero if connections are reused, so we use >=
         assert!(f64::from_str(parts[1]).unwrap() >= 0f64);
-        assert!(f64::from_str(parts[2]).unwrap() > 0f64);
+        assert!(f64::from_str(parts[2]).unwrap() >= 0f64);
         assert!(f64::from_str(parts[3]).unwrap() > 0f64);
         assert!(f64::from_str(parts[4]).unwrap() > 0f64);
         assert_eq!(usize::from_str(parts[5]).unwrap(), 11);

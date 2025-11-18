@@ -137,7 +137,7 @@ impl Monitor {
             let mut bar_num_req = vec![0u64; count];
             let short_bin = (now - self.start).as_secs_f64() % bin;
             for r in all.success().iter().rev() {
-                let past = (now - r.end).as_secs_f64();
+                let past = (now - r.end()).as_secs_f64();
                 let i = if past <= short_bin {
                     0
                 } else {
@@ -224,7 +224,7 @@ impl Monitor {
                 let last_1_timescale = {
                     let success = all.success();
                     let index = match success.binary_search_by(|probe| {
-                        (now - probe.end)
+                        (now - probe.end())
                             .as_secs_f64()
                             .partial_cmp(&timescale.as_secs_f64())
                             // Should be fine
