@@ -74,14 +74,7 @@ impl Client {
         let send_request = stream.handshake_http3().await?;
         let dialup = std::time::Instant::now();
         Ok((
-            ConnectionTime {
-                dns_lookup: ((dns_lookup - start).as_nanos().max(1) as u64)
-                    .try_into()
-                    .unwrap(),
-                dialup: ((dialup - start).as_nanos().max(1) as u64)
-                    .try_into()
-                    .unwrap(),
-            },
+            ConnectionTime::new(dns_lookup - start, dialup - start),
             send_request,
         ))
     }

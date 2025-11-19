@@ -45,9 +45,18 @@ fn format_host_port(host: &str, port: u16) -> String {
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
     /// nanoseconds
-    pub dns_lookup: NonZeroU64,
+    dns_lookup: NonZeroU64,
     /// nanoseconds
-    pub dialup: NonZeroU64,
+    dialup: NonZeroU64,
+}
+
+impl ConnectionTime {
+    pub fn new(dns_lookup: std::time::Duration, dialup: std::time::Duration) -> Self {
+        Self {
+            dns_lookup: NonZeroU64::new((dns_lookup.as_nanos() as u64).max(1)).unwrap(),
+            dialup: NonZeroU64::new((dialup.as_nanos() as u64).max(1)).unwrap(),
+        }
+    }
 }
 
 impl ConnectionTime {
@@ -719,14 +728,7 @@ impl Client {
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 let dialup = std::time::Instant::now();
 
-                connection_time = Some(ConnectionTime {
-                    dns_lookup: ((dns_lookup - start).as_nanos().max(1) as u64)
-                        .try_into()
-                        .unwrap(),
-                    dialup: ((dialup - start).as_nanos().max(1) as u64)
-                        .try_into()
-                        .unwrap(),
-                });
+                connection_time = Some(ConnectionTime::new(dns_lookup - start, dialup - start));
                 send_request
             };
             while send_request.ready().await.is_err() {
@@ -737,14 +739,7 @@ impl Client {
                     self.client_http1(&self.url, &mut client_state.rng).await?;
                 send_request = send_request_;
                 let dialup = std::time::Instant::now();
-                connection_time = Some(ConnectionTime {
-                    dns_lookup: ((dns_lookup - start).as_nanos().max(1) as u64)
-                        .try_into()
-                        .unwrap(),
-                    dialup: ((dialup - start).as_nanos().max(1) as u64)
-                        .try_into()
-                        .unwrap(),
-                });
+                connection_time = Some(ConnectionTime::new(dns_lookup - start, dialup - start));
             }
             match send_request.send_request(request).await {
                 Ok(res) => {
@@ -876,28 +871,14 @@ impl Client {
                 let dialup = std::time::Instant::now();
 
                 Ok((
-                    ConnectionTime {
-                        dns_lookup: ((dns_lookup - start).as_nanos().max(1) as u64)
-                            .try_into()
-                            .unwrap(),
-                        dialup: ((dialup - start).as_nanos().max(1) as u64)
-                            .try_into()
-                            .unwrap(),
-                    },
+                    ConnectionTime::new(dns_lookup - start, dialup - start),
                     send_request,
                 ))
             } else {
                 let send_request = stream.handshake_http2().await?;
                 let dialup = std::time::Instant::now();
                 Ok((
-                    ConnectionTime {
-                        dns_lookup: ((dns_lookup - start).as_nanos().max(1) as u64)
-                            .try_into()
-                            .unwrap(),
-                        dialup: ((dialup - start).as_nanos().max(1) as u64)
-                            .try_into()
-                            .unwrap(),
-                    },
+                    ConnectionTime::new(dns_lookup - start, dialup - start),
                     send_request,
                 ))
             }
@@ -906,14 +887,7 @@ impl Client {
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
             Ok((
-                ConnectionTime {
-                    dns_lookup: ((dns_lookup - start).as_nanos().max(1) as u64)
-                        .try_into()
-                        .unwrap(),
-                    dialup: ((dialup - start).as_nanos().max(1) as u64)
-                        .try_into()
-                        .unwrap(),
-                },
+                ConnectionTime::new(dns_lookup - start, dialup - start),
                 send_request,
             ))
         }

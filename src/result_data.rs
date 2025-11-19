@@ -199,10 +199,10 @@ mod tests {
         Ok(RequestResult {
             rng: SeedableRng::seed_from_u64(0),
             start: now,
-            connection_time: Some(ConnectionTime {
-                dns_lookup: NonZeroU64::new(connection_time_dns_lookup * 1_000_000).unwrap(),
-                dialup: NonZeroU64::new(connection_time_dialup * 1_000_000).unwrap(),
-            }),
+            connection_time: Some(ConnectionTime::new(
+                std::time::Duration::from_millis(connection_time_dns_lookup),
+                std::time::Duration::from_millis(connection_time_dialup),
+            )),
             first_byte: Some(NonZeroU64::new(first_byte * 1_000_000).unwrap()),
             duration: request_time * 1_000_000,
             status,
