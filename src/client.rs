@@ -81,7 +81,7 @@ pub struct RequestResult {
     pub connection_time: Option<ConnectionTime>,
     /// First body byte received
     pub first_byte: Option<NonZeroU64>,
-    /// When the query ends
+    /// Total duration in nanoseconds
     pub duration: u64,
     /// HTTP status
     pub status: http::StatusCode,
