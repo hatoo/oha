@@ -83,6 +83,7 @@ tokio-vsock = { version = "0.7.2", optional = true }
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 num_cpus = "1.16.0"
 tokio-util = "0.7.13"
+clap-cargo = "0.15.2"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
