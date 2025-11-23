@@ -57,11 +57,12 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 #[command(arg_required_else_help(true))]
+#[command(styles = clap_cargo::style::CLAP_STYLING)]
 pub struct Opts {
     #[arg(help = "Target URL or file with multiple URLs.")]
     url: String,
     #[arg(
-        help = "Number of requests to run. Accepts plain numbers or suffixes: k = 1,000, m = 1,000,000 (e.g. 10k, 1m).", 
+        help = "Number of requests to run. Accepts plain numbers or suffixes: k = 1,000, m = 1,000,000 (e.g. 10k, 1m).",
         short = 'n',
         default_value = "200",
         conflicts_with = "duration",
