@@ -275,8 +275,13 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         long = "connect-to"
     )]
     connect_to: Vec<ConnectToEntry>,
-    #[arg(help = "Disable the color scheme.", long = "disable-color")]
-    disable_color: bool,
+    #[arg(
+        help = "Disable the color scheme.",
+        alias = "disable-color",
+        long = "no-color",
+        env = "NO_COLOR"
+    )]
+    no_color: bool,
     #[cfg(unix)]
     #[arg(
         help = "Connect to a unix socket instead of the domain in the URL. Only for non-HTTPS URLs.",
@@ -625,8 +630,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let print_config = {
         let mode = opts.output_format.unwrap_or_default();
 
-        let disable_style =
-            opts.disable_color || !std::io::stdout().is_tty() || opts.output.is_some();
+        let disable_style = opts.no_color || !std::io::stdout().is_tty() || opts.output.is_some();
 
         let output: Box<dyn std::io::Write + Send + 'static> = if let Some(output) = opts.output {
             Box::new(File::create(output)?)
@@ -760,7 +764,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                             report_receiver: result_rx,
                             start,
                             fps: opts.fps,
-                            disable_color: opts.disable_color,
+                            disable_color: opts.no_color,
                             time_unit: opts.time_unit,
                         }
                         .monitor(),
