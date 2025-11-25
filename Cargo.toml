@@ -34,7 +34,7 @@ http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn-proto", "dep:quinn", "dep:http"]
 anyhow = "1.0.86"
 average = "0.16.0"
 byte-unit = "5.1.4"
-clap = { version = "4.5.9", features = ["derive"] }
+clap = { version = "4.5.9", features = ["derive", "env"] }
 float-ord = "0.3.2"
 kanal = "0.1.1"
 humantime = "2.1.0"
