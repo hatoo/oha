@@ -582,7 +582,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                 None
             },
         },
-        http_version,
         proxy_http_version,
         proxy_headers,
         dns: client::Dns {

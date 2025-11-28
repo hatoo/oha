@@ -208,7 +208,6 @@ pub enum ClientError {
 
 pub struct Client {
     pub request_generator: RequestGenerator,
-    pub http_version: http::Version,
     pub proxy_http_version: http::Version,
     pub proxy_headers: http::header::HeaderMap,
     pub dns: Dns,
@@ -254,7 +253,6 @@ impl Default for Client {
                 body_generator: BodyGenerator::Static(Bytes::new()),
                 aws_config: None,
             },
-            http_version: http::Version::HTTP_11,
             proxy_http_version: http::Version::HTTP_11,
             proxy_headers: http::header::HeaderMap::new(),
             dns: Dns {
@@ -411,7 +409,7 @@ impl Stream {
 impl Client {
     #[inline]
     fn is_http2(&self) -> bool {
-        self.http_version == http::Version::HTTP_2
+        self.request_generator.version == http::Version::HTTP_2
     }
 
     #[inline]
@@ -667,7 +665,7 @@ impl Client {
                 };
                 let stream = hyper::upgrade::on(res).await?;
                 let stream = self
-                    .connect_tls(TokioIo::new(stream), url, self.http_version)
+                    .connect_tls(TokioIo::new(stream), url, self.request_generator.version)
                     .await?;
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
@@ -867,7 +865,9 @@ impl Client {
                 ))
             }
         } else {
-            let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
+            let (dns_lookup, stream) = self
+                .client(url, rng, self.request_generator.version)
+                .await?;
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
             Ok((
