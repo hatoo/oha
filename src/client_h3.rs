@@ -119,7 +119,7 @@ impl Client {
         client_state: &mut ClientStateHttp3,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (request, rng) = self.generate_request(&mut client_state.rng)?;
+            let (_url, request, rng) = self.generate_request(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let connection_time: Option<ConnectionTime> = None;
             let mut first_byte: Option<std::time::Instant> = None;
@@ -374,8 +374,9 @@ pub(crate) async fn setup_http3<R: Rng>(
     client: &Client,
     rng: &mut R,
 ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
+    let url = client.request_generator.url_generator.generate(rng)?;
     // Whatever rng state, all urls should have the same authority
-    let (connection_time, send_request) = client.connect_http3(&client.url, rng).await?;
+    let (connection_time, send_request) = client.connect_http3(&url, rng).await?;
 
     Ok((connection_time, send_request))
 }
