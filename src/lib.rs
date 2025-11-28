@@ -497,11 +497,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
         if let Some(h) = opts.host {
             headers.insert(http::header::HOST, HeaderValue::from_bytes(h.as_bytes())?);
-        } else if http_version < http::Version::HTTP_2 {
-            headers.insert(
-                http::header::HOST,
-                http::header::HeaderValue::from_str(url.authority())?,
-            );
         }
 
         if let Some(auth) = opts.basic_auth {
@@ -572,6 +567,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let client = Arc::new(client::Client {
         request_generator: RequestGenerator {
             url_generator,
+            https: url.scheme() == "https",
             version: http_version,
             aws_config,
             method,
@@ -586,8 +582,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                 None
             },
         },
-        url,
-        http_version,
         proxy_http_version,
         proxy_headers,
         dns: client::Dns {

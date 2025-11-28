@@ -6,6 +6,7 @@ use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::prelude::*;
 use std::{
+    borrow::Cow,
     io::Write,
     sync::{
         Arc,
@@ -207,8 +208,6 @@ pub enum ClientError {
 
 pub struct Client {
     pub request_generator: RequestGenerator,
-    pub url: Url,
-    pub http_version: http::Version,
     pub proxy_http_version: http::Version,
     pub proxy_headers: http::header::HeaderMap,
     pub dns: Dns,
@@ -246,6 +245,7 @@ impl Default for Client {
                 url_generator: crate::url_generator::UrlGenerator::new_static(
                     "http://example.com".parse().unwrap(),
                 ),
+                https: false,
                 http_proxy: None,
                 method: http::Method::GET,
                 version: http::Version::HTTP_11,
@@ -253,8 +253,6 @@ impl Default for Client {
                 body_generator: BodyGenerator::Static(Bytes::new()),
                 aws_config: None,
             },
-            url: "http://example.com".parse().unwrap(),
-            http_version: http::Version::HTTP_11,
             proxy_http_version: http::Version::HTTP_11,
             proxy_headers: http::header::HeaderMap::new(),
             dns: Dns {
@@ -411,7 +409,7 @@ impl Stream {
 impl Client {
     #[inline]
     fn is_http2(&self) -> bool {
-        self.http_version == http::Version::HTTP_2
+        self.request_generator.version == http::Version::HTTP_2
     }
 
     #[inline]
@@ -421,7 +419,7 @@ impl Client {
 
     fn is_work_http2(&self) -> bool {
         if self.proxy_url.is_some() {
-            if self.url.scheme() == "https" {
+            if self.request_generator.https {
                 self.is_http2()
             } else {
                 self.is_proxy_http2()
@@ -433,7 +431,7 @@ impl Client {
 
     fn work_type(&self) -> HttpWorkType {
         #[cfg(feature = "http3")]
-        if self.http_version == http::Version::HTTP_3 {
+        if self.request_generator.version == http::Version::HTTP_3 {
             return HttpWorkType::H3;
         }
         if self.is_work_http2() {
@@ -458,17 +456,19 @@ impl Client {
         }
 
         let mut rng = StdRng::from_os_rng();
+        let url = self.request_generator.url_generator.generate(&mut rng)?;
         // It automatically caches the result
-        self.dns.lookup(&self.url, &mut rng).await?;
+        self.dns.lookup(&url, &mut rng).await?;
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn generate_request<R: Rng + Copy>(
         &self,
         rng: &mut R,
-    ) -> Result<(Request<Full<Bytes>>, R), ClientError> {
+    ) -> Result<(Cow<'_, Url>, Request<Full<Bytes>>, R), ClientError> {
         let snapshot = *rng;
-        let mut req = self.request_generator.generate(rng)?;
+        let (url, mut req) = self.request_generator.generate(rng)?;
         if self.proxy_url.is_some() && req.uri().scheme_str() == Some("http") {
             if let Some(authority) = req.uri().authority() {
                 let requested_host = authority.host();
@@ -486,7 +486,7 @@ impl Client {
                 }
             }
         }
-        Ok((req, snapshot))
+        Ok((url, req, snapshot))
     }
 
     /**
@@ -665,7 +665,7 @@ impl Client {
                 };
                 let stream = hyper::upgrade::on(res).await?;
                 let stream = self
-                    .connect_tls(TokioIo::new(stream), url, self.http_version)
+                    .connect_tls(TokioIo::new(stream), url, self.request_generator.version)
                     .await?;
                 let (send_request, conn) =
                     hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
@@ -686,7 +686,7 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (request, rng) = self.generate_request(&mut client_state.rng)?;
+            let (url, request, rng) = self.generate_request(&mut client_state.rng)?;
             let mut start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let mut connection_time: Option<ConnectionTime> = None;
@@ -695,7 +695,7 @@ impl Client {
                 send_request
             } else {
                 let (dns_lookup, send_request) =
-                    self.client_http1(&self.url, &mut client_state.rng).await?;
+                    self.client_http1(&url, &mut client_state.rng).await?;
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime {
@@ -709,7 +709,7 @@ impl Client {
                 // This re-connects
                 start = std::time::Instant::now();
                 let (dns_lookup, send_request_) =
-                    self.client_http1(&self.url, &mut client_state.rng).await?;
+                    self.client_http1(&url, &mut client_state.rng).await?;
                 send_request = send_request_;
                 let dialup = std::time::Instant::now();
                 connection_time = Some(ConnectionTime {
@@ -734,6 +734,7 @@ impl Client {
                         if let Some(location) = parts.headers.get("Location") {
                             let (send_request_redirect, new_status, len) = self
                                 .redirect(
+                                    url,
                                     rng,
                                     send_request,
                                     location,
@@ -864,7 +865,9 @@ impl Client {
                 ))
             }
         } else {
-            let (dns_lookup, stream) = self.client(url, rng, self.http_version).await?;
+            let (dns_lookup, stream) = self
+                .client(url, rng, self.request_generator.version)
+                .await?;
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
             Ok((
@@ -882,7 +885,7 @@ impl Client {
         client_state: &mut ClientStateHttp2,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (request, rng) = self.generate_request(&mut client_state.rng)?;
+            let (_url, request, rng) = self.generate_request(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let mut first_byte: Option<std::time::Instant> = None;
             let connection_time: Option<ConnectionTime> = None;
@@ -936,6 +939,7 @@ impl Client {
     #[allow(clippy::type_complexity)]
     async fn redirect<R: Rng + Send + Copy>(
         &self,
+        base_url: Cow<'_, Url>,
         seed: R,
         send_request: SendRequestHttp1,
         location: &http::header::HeaderValue,
@@ -948,13 +952,13 @@ impl Client {
         let url = match Url::parse(location.to_str()?) {
             Ok(url) => url,
             Err(ParseError::RelativeUrlWithoutBase) => Url::options()
-                .base_url(Some(&self.url))
+                .base_url(Some(&base_url))
                 .parse(location.to_str()?)?,
             Err(err) => Err(err)?,
         };
 
         let (mut send_request, send_request_base) =
-            if self.url.authority() == url.authority() && !self.disable_keepalive {
+            if base_url.authority() == url.authority() && !self.disable_keepalive {
                 // reuse connection
                 (send_request, None)
             } else {
@@ -967,8 +971,8 @@ impl Client {
             send_request = stream;
         }
 
-        let mut request = self.generate_request(&mut seed.clone())?.0;
-        if url.authority() != self.url.authority() {
+        let mut request = self.generate_request(&mut seed.clone())?.1;
+        if url.authority() != base_url.authority() {
             request.headers_mut().insert(
                 http::header::HOST,
                 http::HeaderValue::from_str(url.authority())?,
@@ -1008,7 +1012,8 @@ impl Client {
 
         if let Some(location) = parts.headers.get("Location") {
             let (send_request_redirect, new_status, len) =
-                Box::pin(self.redirect(seed, send_request, location, limit - 1, rng)).await?;
+                Box::pin(self.redirect(base_url, seed, send_request, location, limit - 1, rng))
+                    .await?;
             send_request = send_request_redirect;
             status = new_status;
             len_bytes = len;
@@ -1056,7 +1061,8 @@ async fn setup_http2<R: Rng>(
     client: &Client,
     rng: &mut R,
 ) -> Result<(ConnectionTime, SendRequestHttp2), ClientError> {
-    let (connection_time, send_request) = client.connect_http2(&client.url, rng).await?;
+    let url = client.request_generator.url_generator.generate(rng)?;
+    let (connection_time, send_request) = client.connect_http2(&url, rng).await?;
 
     Ok((connection_time, send_request))
 }
@@ -1099,20 +1105,19 @@ pub(crate) fn set_start_latency_correction<E>(
 
 pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), ClientError> {
     let mut rng = Pcg64Si::from_os_rng();
-    let (request, _) = client.generate_request(&mut rng)?;
+    let (url, request, _) = client.generate_request(&mut rng)?;
 
     writeln!(w, "{request:#?}")?;
 
     let response = match client.work_type() {
         #[cfg(feature = "http3")]
         HttpWorkType::H3 => {
-            let (_, (h3_connection, client_state)) =
-                client.connect_http3(&client.url, &mut rng).await?;
+            let (_, (h3_connection, client_state)) = client.connect_http3(&url, &mut rng).await?;
 
             send_debug_request_http3(h3_connection, client_state, request).await?
         }
         HttpWorkType::H2 => {
-            let (_, mut client_state) = client.connect_http2(&client.url, &mut rng).await?;
+            let (_, mut client_state) = client.connect_http2(&url, &mut rng).await?;
             let response = client_state.send_request(request).await?;
             let (parts, body) = response.into_parts();
             let body = body.collect().await.unwrap().to_bytes();
@@ -1120,8 +1125,7 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
             http::Response::from_parts(parts, body)
         }
         HttpWorkType::H1 => {
-            let (_dns_lookup, mut send_request) =
-                client.client_http1(&client.url, &mut rng).await?;
+            let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
 
             let response = send_request.send_request(request).await?;
             let (parts, body) = response.into_parts();

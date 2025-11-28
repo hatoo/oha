@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::http;
@@ -5,6 +7,7 @@ use hyper::{HeaderMap, Method, Version};
 use rand::Rng;
 use rand::seq::IndexedRandom;
 use thiserror::Error;
+use url::Url;
 
 use crate::aws_auth::{self, AwsSignatureConfig};
 use crate::url_generator;
@@ -21,6 +24,7 @@ pub enum BodyGenerator {
 
 pub struct RequestGenerator {
     pub url_generator: url_generator::UrlGenerator,
+    pub https: bool,
     // Only if http with proxy
     pub http_proxy: Option<Proxy>,
     pub method: Method,
@@ -56,7 +60,7 @@ impl RequestGenerator {
     pub fn generate<R: Rng>(
         &self,
         rng: &mut R,
-    ) -> Result<hyper::Request<Full<Bytes>>, RequestGenerationError> {
+    ) -> Result<(Cow<'_, Url>, hyper::Request<Full<Bytes>>), RequestGenerationError> {
         let url = self.url_generator.generate(rng)?;
         let body = self.generate_body(rng);
 
@@ -87,9 +91,15 @@ impl RequestGenerator {
             }
         }
 
+        if self.version < Version::HTTP_2 {
+            headers
+                .entry(http::header::HOST)
+                .or_insert_with(|| http::header::HeaderValue::from_str(url.authority()).unwrap());
+        }
+
         *builder.headers_mut().unwrap() = headers;
 
         let req = builder.body(Full::new(body))?;
-        Ok(req)
+        Ok((url, req))
     }
 }
