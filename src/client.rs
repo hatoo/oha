@@ -464,10 +464,11 @@ impl Client {
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn generate_request<R: Rng + Copy>(
         &self,
         rng: &mut R,
-    ) -> Result<(Cow<Url>, Request<Full<Bytes>>, R), ClientError> {
+    ) -> Result<(Cow<'_, Url>, Request<Full<Bytes>>, R), ClientError> {
         let snapshot = *rng;
         let (url, mut req) = self.request_generator.generate(rng)?;
         if self.proxy_url.is_some() && req.uri().scheme_str() == Some("http") {

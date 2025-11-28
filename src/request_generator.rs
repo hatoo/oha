@@ -60,7 +60,7 @@ impl RequestGenerator {
     pub fn generate<R: Rng>(
         &self,
         rng: &mut R,
-    ) -> Result<(Cow<Url>, hyper::Request<Full<Bytes>>), RequestGenerationError> {
+    ) -> Result<(Cow<'_, Url>, hyper::Request<Full<Bytes>>), RequestGenerationError> {
         let url = self.url_generator.generate(rng)?;
         let body = self.generate_body(rng);
 
