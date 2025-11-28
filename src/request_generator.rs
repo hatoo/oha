@@ -87,6 +87,12 @@ impl RequestGenerator {
             }
         }
 
+        if self.version < Version::HTTP_2 {
+            headers
+                .entry(http::header::HOST)
+                .or_insert_with(|| http::header::HeaderValue::from_str(url.authority()).unwrap());
+        }
+
         *builder.headers_mut().unwrap() = headers;
 
         let req = builder.body(Full::new(body))?;

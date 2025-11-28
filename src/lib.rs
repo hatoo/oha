@@ -497,11 +497,6 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
         if let Some(h) = opts.host {
             headers.insert(http::header::HOST, HeaderValue::from_bytes(h.as_bytes())?);
-        } else if http_version < http::Version::HTTP_2 {
-            headers.insert(
-                http::header::HOST,
-                http::header::HeaderValue::from_str(url.authority())?,
-            );
         }
 
         if let Some(auth) = opts.basic_auth {
