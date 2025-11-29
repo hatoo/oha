@@ -1,5 +1,12 @@
 # Unreleased
 
+# 1.12.0 (2025-11-29)
+
+- Fix dns and connection time stats #816
+- Add colors to --help/-h #822 
+- rename --disable-color to --no-color #824 
+- fixed --urls-from-file reuses host with path from different url #825
+
 # 1.11.0 (2025-11-01)
 
 - feat:support decimal when using n_requests,such as 2.6k or 0.001m #808 
