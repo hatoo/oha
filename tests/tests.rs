@@ -385,6 +385,7 @@ async fn distribution_on_two_matching_connect_to(host: &'static str) -> (i32, i3
     tokio::spawn(async { axum::serve(listener2, app2).await });
 
     let args = [
+        "--disable-keepalive".to_string(),
         "-n".to_string(),
         "100".to_string(),
         format!("http://{host}/"),
