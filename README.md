@@ -63,6 +63,12 @@ x env use oha
 
 ## Containerized
 
+### Official Docker image
+
+[ghcr.io/hatoo/oha](https://github.com/hatoo/oha/pkgs/container/oha)
+
+### Build image locally
+
 You can also build and create a container image including oha
 
 ```sh
