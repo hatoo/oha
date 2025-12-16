@@ -1,5 +1,9 @@
 # Unreleased
 
+# 1.12.1 (2025-11-29)
+
+- feat: add official docker img with better caching #830 
+
 # 1.12.0 (2025-11-29)
 
 - Fix dns and connection time stats #816
