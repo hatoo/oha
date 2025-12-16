@@ -14,7 +14,7 @@ name = "oha"
 readme = "README.md"
 repository = "https://github.com/hatoo/oha"
 version = "1.12.1"
-rust-version = "1.85"
+rust-version = "1.86"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -93,7 +93,7 @@ rlimit = "0.10.1"
 
 [dev-dependencies]
 axum = { version = "0.8.1", features = ["http2"] }
-axum-server = { version = "0.7.1", features = ["tls-rustls"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
 http-mitm-proxy = { version = "0.16.0", default-features = false }
