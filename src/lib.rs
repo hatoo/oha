@@ -542,7 +542,17 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let proxy_headers = opts.proxy_headers.into_iter().collect::<HeaderMap<_>>();
 
     let ip_strategy = match (opts.ipv4, opts.ipv6) {
-        (false, false) => Default::default(),
+        (false, false) => {
+            if cfg!(target_os = "macos") && (url.host_str() == Some("localhost")) {
+                // #784
+                // On macOS, localhost resolves to ::1 first, So web servers that bind to localhost tend to listen ipv6 only.
+                // So prefer ipv6 on macos for localhost.
+
+                hickory_resolver::config::LookupIpStrategy::Ipv6thenIpv4
+            } else {
+                Default::default()
+            }
+        }
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
         (false, true) => hickory_resolver::config::LookupIpStrategy::Ipv6Only,
         (true, true) => hickory_resolver::config::LookupIpStrategy::Ipv4AndIpv6,
