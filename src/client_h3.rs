@@ -87,7 +87,11 @@ impl Client {
         url: &Url,
     ) -> Result<Stream, ClientError> {
         let endpoint_config = h3_quinn::quinn::EndpointConfig::default();
-        let local_socket = UdpSocket::bind("0.0.0.0:0").expect("couldn't bind to address");
+        let local_socket = if addr.0.is_ipv6() {
+            UdpSocket::bind("[::]:0").expect("couldn't bind to address")
+        } else {
+            UdpSocket::bind("0.0.0.0:0").expect("couldn't bind to address")
+        };
         // If we can set the right build flags, we can use `h3_quinn::quinn::Endpoint::client` instead
         let mut client_endpoint = h3_quinn::quinn::Endpoint::new(
             endpoint_config,
@@ -106,11 +110,14 @@ impl Client {
 
         let remote_socket_address = SocketAddr::new(addr.0, addr.1);
         let server_name = url.host_str().ok_or(ClientError::HostNotFound)?;
+        dbg!(&remote_socket_address);
+        dbg!(&server_name);
         let conn = client_endpoint
             .connect(remote_socket_address, server_name)
             .map_err(Http3Error::from)?
             .await
             .map_err(Http3Error::from)?;
+        dbg!("here");
         Ok(Stream::Quic(conn))
     }
 
