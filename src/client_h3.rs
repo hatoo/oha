@@ -110,14 +110,11 @@ impl Client {
 
         let remote_socket_address = SocketAddr::new(addr.0, addr.1);
         let server_name = url.host_str().ok_or(ClientError::HostNotFound)?;
-        dbg!(&remote_socket_address);
-        dbg!(&server_name);
         let conn = client_endpoint
             .connect(remote_socket_address, server_name)
             .map_err(Http3Error::from)?
             .await
             .map_err(Http3Error::from)?;
-        dbg!("here");
         Ok(Stream::Quic(conn))
     }
 
