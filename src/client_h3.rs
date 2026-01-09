@@ -325,6 +325,7 @@ async fn create_and_load_up_single_connection_http3(
                         })
                     })
                     .collect::<Vec<_>>();
+                drop(send_request);
 
                 // collect all the requests we have spawned, and end the process if/when the semaphore says
                 let mut connection_gone = false;
