@@ -209,7 +209,7 @@ pub(crate) async fn send_debug_request_http3(
     // Prepare a channel to stop the driver thread
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     // Run the driver
-    let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx).await;
+    let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx);
 
     let (head, mut req_body) = request.into_parts();
     let request = http::request::Request::from_parts(head, ());
@@ -234,7 +234,7 @@ pub(crate) async fn send_debug_request_http3(
     }
     let body = body_bytes.freeze();
     let (parts, _) = response.into_parts();
-    let _ = shutdown_tx.send(0);
+    let _ = shutdown_tx.send(());
     let _ = http3_driver.await.unwrap();
     Ok(http::Response::from_parts(parts, body))
 }
@@ -296,7 +296,7 @@ async fn create_and_load_up_single_connection_http3(
         match setup_http3(&client, &mut rng).await {
             Ok((connection_time, (h3_connection, send_request))) => {
                 let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-                let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx).await;
+                let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx);
                 let futures = (0..n_http_parallel)
                     .map(|_| {
                         let report_tx = report_tx.clone();
@@ -352,7 +352,7 @@ async fn create_and_load_up_single_connection_http3(
                 }
                 if connection_gone {
                     // Try and politely shut down the HTTP3 connection
-                    let _ = shutdown_tx.send(0);
+                    let _ = shutdown_tx.send(());
                     let _ = http3_driver.await;
                     return;
                 }
@@ -386,9 +386,9 @@ pub(crate) async fn setup_http3<R: Rng>(
     Ok((connection_time, send_request))
 }
 
-pub(crate) async fn spawn_http3_driver(
+pub(crate) fn spawn_http3_driver(
     mut h3_connection: h3::client::Connection<h3_quinn::Connection, Bytes>,
-    shutdown_rx: tokio::sync::oneshot::Receiver<usize>,
+    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> tokio::task::JoinHandle<std::result::Result<(), Http3Error>> {
     tokio::spawn(async move {
         tokio::select! {
@@ -475,7 +475,7 @@ pub(crate) fn http3_connection_fast_work_until(
                 match setup_http3(&client, &mut rng).await {
                     Ok((connection_time, (h3_connection, send_request))) => {
                         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-                        let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx).await;
+                        let http3_driver = spawn_http3_driver(h3_connection, shutdown_rx);
                         let futures = (0..n_http_parallel)
                             .map(|_| {
                                 let mut client_state = ClientStateHttp3::new(send_request.clone());
@@ -545,7 +545,7 @@ pub(crate) fn http3_connection_fast_work_until(
                         }
 
                         if connection_gone {
-                            let _ = shutdown_tx.send(0);
+                            let _ = shutdown_tx.send(());
                             let _ = http3_driver.await;
                             break;
                         }
