@@ -96,7 +96,7 @@ axum = { version = "0.8.1", features = ["http2"] }
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
-http-mitm-proxy = { version = "0.16.0", default-features = false }
+http-mitm-proxy = { version = "0.18.0", default-features = false }
 jsonschema = "0.37.0"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
