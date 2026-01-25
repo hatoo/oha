@@ -879,7 +879,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     if let Some(db_url) = opts.db_url {
         eprintln!("Storing results to {db_url}");
-        db::store(&client, &db_url, start, res.success(), run)?;
+        db::store(&client, &db_url, start, res.success(), run as i64)?;
     }
 
     Ok(())

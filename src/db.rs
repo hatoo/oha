@@ -23,7 +23,7 @@ pub fn store(
     db_url: &str,
     start: std::time::Instant,
     request_records: &[RequestResult],
-    run: u64,
+    run: i64,
 ) -> Result<usize, rusqlite::Error> {
     let mut conn = Connection::open(db_url)?;
     create_db(&conn)?;
@@ -43,8 +43,8 @@ pub fn store(
                 (request.end - start).as_secs_f64(),
                 request.duration().as_secs_f64(),
                 request.status.as_u16() as i64,
-                request.len_bytes,
-                run
+                request.len_bytes as i64,
+                run ,
             ),
         )?;
     }
@@ -65,7 +65,7 @@ mod test_db {
         let run = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs() as i64;
         let start = std::time::Instant::now();
         let test_val = RequestResult {
             rng: SeedableRng::seed_from_u64(0),
