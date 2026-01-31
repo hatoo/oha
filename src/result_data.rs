@@ -134,6 +134,13 @@ impl ResultData {
             .collect()
     }
 
+    pub fn first_byte_stat(&self) -> MinMaxMean {
+        self.success
+            .iter()
+            .filter_map(|r| r.first_byte.map(|fb| (fb - r.start).as_secs_f64()))
+            .collect()
+    }
+
     pub fn total_data(&self) -> usize {
         self.success.iter().map(|r| r.len_bytes).sum()
     }
@@ -151,6 +158,15 @@ impl ResultData {
             .success
             .iter()
             .map(|r| r.duration().as_secs_f64())
+            .collect::<Vec<_>>();
+        Statistics::new(&mut data)
+    }
+
+    pub fn first_byte_all_statistics(&self) -> Statistics {
+        let mut data = self
+            .success
+            .iter()
+            .filter_map(|r| r.first_byte.map(|fb| (fb - r.start).as_secs_f64()))
             .collect::<Vec<_>>();
         Statistics::new(&mut data)
     }

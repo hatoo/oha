@@ -107,6 +107,57 @@
         "p99.99"
       ]
     },
+    "firstByteHistogram": {
+      "description": "The histogram of first byte time in seconds. The key is the first byte time in seconds and the value is the number of requests",
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "firstBytePercentiles": {
+      "description": "The first byte percentiles in seconds",
+      "type": "object",
+      "properties": {
+        "p10": {
+          "type": "number"
+        },
+        "p25": {
+          "type": "number"
+        },
+        "p50": {
+          "type": "number"
+        },
+        "p75": {
+          "type": "number"
+        },
+        "p90": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        },
+        "p99": {
+          "type": "number"
+        },
+        "p99.9": {
+          "type": "number"
+        },
+        "p99.99": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "p10",
+        "p25",
+        "p50",
+        "p75",
+        "p90",
+        "p95",
+        "p99",
+        "p99.9",
+        "p99.99"
+      ]
+    },
     "responseTimeHistogramSuccessful": {
       "description": "Only present if `--stats-success-breakdown` argument is passed. The histogram of response time in seconds for successful requests. The key is the response time in seconds and the value is the number of requests",
       "type": "object",
@@ -323,11 +374,32 @@
             "fastest",
             "slowest"
           ]
+        },
+        "firstByte": {
+          "description": "The time to first byte in seconds",
+          "type": "object",
+          "properties": {
+            "average": {
+              "type": "number"
+            },
+            "fastest": {
+              "type": "number"
+            },
+            "slowest": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "average",
+            "fastest",
+            "slowest"
+          ]
         }
       },
       "required": [
         "DNSDialup",
-        "DNSLookup"
+        "DNSLookup",
+        "firstByte"
       ]
     },
     "statusCodeDistribution": {
@@ -354,6 +426,8 @@
     "summary",
     "responseTimeHistogram",
     "latencyPercentiles",
+    "firstByteHistogram",
+    "firstBytePercentiles",
     "rps",
     "details",
     "statusCodeDistribution",

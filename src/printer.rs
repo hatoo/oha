@@ -180,6 +180,8 @@ fn print_json<W: Write>(
         dns_dialup: Triple,
         #[serde(rename = "DNSLookup")]
         dns_lookup: Triple,
+        #[serde(rename = "firstByte")]
+        first_byte: Triple,
     }
 
     #[derive(Serialize)]
@@ -198,6 +200,10 @@ fn print_json<W: Write>(
         response_time_histogram: BTreeMap<String, usize>,
         #[serde(rename = "latencyPercentiles")]
         latency_percentiles: BTreeMap<String, f64>,
+        #[serde(rename = "firstByteHistogram")]
+        first_byte_histogram: BTreeMap<String, usize>,
+        #[serde(rename = "firstBytePercentiles")]
+        first_byte_percentiles: BTreeMap<String, f64>,
         #[serde(
             rename = "responseTimeHistogramSuccessful",
             skip_serializing_if = "Option::is_none"
@@ -250,6 +256,20 @@ fn print_json<W: Write>(
         .collect();
 
     let latency_percentiles = durations_statistics
+        .percentiles
+        .into_iter()
+        .map(|(p, v)| (format!("p{p}"), v))
+        .collect();
+
+    let first_byte_statistics = res.first_byte_all_statistics();
+
+    let first_byte_histogram = first_byte_statistics
+        .histogram
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+
+    let first_byte_percentiles = first_byte_statistics
         .percentiles
         .into_iter()
         .map(|(p, v)| (format!("p{p}"), v))
@@ -345,6 +365,7 @@ fn print_json<W: Write>(
 
     let dns_dialup_stat = res.dns_dialup_stat();
     let dns_lookup_stat = res.dns_lookup_stat();
+    let first_byte_stat = res.first_byte_stat();
 
     let details = Details {
         dns_dialup: Triple {
@@ -357,6 +378,11 @@ fn print_json<W: Write>(
             fastest: dns_lookup_stat.min(),
             slowest: dns_lookup_stat.max(),
         },
+        first_byte: Triple {
+            average: first_byte_stat.mean(),
+            fastest: first_byte_stat.min(),
+            slowest: first_byte_stat.max(),
+        },
     };
 
     serde_json::to_writer_pretty(
@@ -365,6 +391,8 @@ fn print_json<W: Write>(
             summary,
             response_time_histogram,
             latency_percentiles,
+            first_byte_histogram,
+            first_byte_percentiles,
             response_time_histogram_successful,
             latency_percentiles_successful,
             response_time_histogram_not_successful,
