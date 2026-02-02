@@ -72,7 +72,7 @@ quinn = { version = "0.11.7", optional = true, features = [
 
 base64 = "0.22.1"
 rand = "0.9.1"
-rand_core = "0.9.3"
+rand_core = "0.10.0"
 hickory-resolver = { version = "0.25.2", features = ["tokio"] }
 rand_regex = "0.18.0"
 regex-syntax = "0.8.5"
