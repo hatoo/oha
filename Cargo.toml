@@ -72,7 +72,6 @@ quinn = { version = "0.11.7", optional = true, features = [
 
 base64 = "0.22.1"
 rand = "0.9.1"
-rand_core = "0.9.3"
 hickory-resolver = { version = "0.25.2", features = ["tokio"] }
 rand_regex = "0.18.0"
 regex-syntax = "0.8.5"
@@ -89,7 +88,7 @@ clap-cargo = "0.18.3"
 tikv-jemallocator = "0.6"
 
 [target.'cfg(unix)'.dependencies]
-rlimit = "0.10.1"
+rlimit = "0.11.0"
 
 [dev-dependencies]
 axum = { version = "0.8.1", features = ["http2"] }
@@ -97,7 +96,7 @@ axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
 http-mitm-proxy = { version = "0.18.0", default-features = false }
-jsonschema = "0.40.0"
+jsonschema = "0.41.0"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
 # features = ["aws_lc_rs"] is a workaround for mac & native-tls
