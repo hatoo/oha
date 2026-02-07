@@ -1,5 +1,11 @@
 # Unreleased
 
+# 1.13.0 (2025-02-07)
+
+- Add first byte stats to JSON output#844
+- On http3, bind ipv6 for ipv6#839
+- Prefer ipv6 for localhost on macos#837
+
 # 1.12.1 (2025-11-29)
 
 - feat: add official docker img with better caching #830 
