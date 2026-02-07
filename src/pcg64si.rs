@@ -1,6 +1,5 @@
 // https://github.com/imneme/pcg-c
-use rand::{RngCore, SeedableRng};
-use rand_core::impls;
+use rand::{RngCore, SeedableRng, rand_core::impls::fill_bytes_via_next};
 
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
@@ -26,7 +25,7 @@ impl RngCore for Pcg64Si {
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-        impls::fill_bytes_via_next(self, dest)
+        fill_bytes_via_next(self, dest)
     }
 }
 
