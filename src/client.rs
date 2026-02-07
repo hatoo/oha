@@ -8,6 +8,7 @@ use rand::prelude::*;
 use std::{
     borrow::Cow,
     io::Write,
+    num::NonZeroU64,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering::Relaxed},
@@ -44,25 +45,45 @@ fn format_host_port(host: &str, port: u16) -> String {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
-    pub dns_lookup: std::time::Duration,
-    pub dialup: std::time::Duration,
+    /// nanoseconds
+    dns_lookup: NonZeroU64,
+    /// nanoseconds
+    dialup: NonZeroU64,
+}
+
+impl ConnectionTime {
+    pub fn new(dns_lookup: std::time::Duration, dialup: std::time::Duration) -> Self {
+        Self {
+            dns_lookup: NonZeroU64::new((dns_lookup.as_nanos() as u64).max(1)).unwrap(),
+            dialup: NonZeroU64::new((dialup.as_nanos() as u64).max(1)).unwrap(),
+        }
+    }
+}
+
+impl ConnectionTime {
+    pub fn dns_lookup(&self) -> std::time::Duration {
+        std::time::Duration::from_nanos(self.dns_lookup.get())
+    }
+
+    pub fn dialup(&self) -> std::time::Duration {
+        std::time::Duration::from_nanos(self.dialup.get())
+    }
 }
 
 #[derive(Debug, Clone)]
 /// a result for a request
 pub struct RequestResult {
     pub rng: Pcg64Si,
-    // When the query should started
-    pub start_latency_correction: Option<std::time::Instant>,
     /// When the query started
+    /// It maybe corrected time when latency correction is applied
     pub start: std::time::Instant,
     /// DNS + dialup
     /// None when reuse connection
     pub connection_time: Option<ConnectionTime>,
     /// First body byte received
-    pub first_byte: Option<std::time::Instant>,
-    /// When the query ends
-    pub end: std::time::Instant,
+    pub first_byte: Option<NonZeroU64>,
+    /// Total duration in nanoseconds
+    pub duration: u64,
     /// HTTP status
     pub status: http::StatusCode,
     /// Length of body
@@ -72,7 +93,16 @@ pub struct RequestResult {
 impl RequestResult {
     /// Duration the request takes.
     pub fn duration(&self) -> std::time::Duration {
-        self.end - self.start_latency_correction.unwrap_or(self.start)
+        std::time::Duration::from_nanos(self.duration)
+    }
+
+    pub fn first_byte(&self) -> Option<std::time::Duration> {
+        self.first_byte
+            .map(|fb| std::time::Duration::from_nanos(fb.get()))
+    }
+
+    pub fn end(&self) -> std::time::Instant {
+        self.start + self.duration()
     }
 }
 
@@ -698,10 +728,7 @@ impl Client {
                     self.client_http1(&url, &mut client_state.rng).await?;
                 let dialup = std::time::Instant::now();
 
-                connection_time = Some(ConnectionTime {
-                    dns_lookup: dns_lookup - start,
-                    dialup: dialup - start,
-                });
+                connection_time = Some(ConnectionTime::new(dns_lookup - start, dialup - start));
                 send_request
             };
             while send_request.ready().await.is_err() {
@@ -712,10 +739,7 @@ impl Client {
                     self.client_http1(&url, &mut client_state.rng).await?;
                 send_request = send_request_;
                 let dialup = std::time::Instant::now();
-                connection_time = Some(ConnectionTime {
-                    dns_lookup: dns_lookup - start,
-                    dialup: dialup - start,
-                });
+                connection_time = Some(ConnectionTime::new(dns_lookup - start, dialup - start));
             }
             match send_request.send_request(request).await {
                 Ok(res) => {
@@ -753,10 +777,11 @@ impl Client {
 
                     let result = RequestResult {
                         rng,
-                        start_latency_correction: None,
                         start,
-                        first_byte,
-                        end,
+                        first_byte: first_byte.map(|t| {
+                            NonZeroU64::new((t - start).as_nanos().max(1) as u64).unwrap()
+                        }),
+                        duration: (end - start).as_nanos() as u64,
                         status,
                         len_bytes,
                         connection_time,
@@ -847,20 +872,14 @@ impl Client {
                 let dialup = std::time::Instant::now();
 
                 Ok((
-                    ConnectionTime {
-                        dns_lookup: dns_lookup - start,
-                        dialup: dialup - start,
-                    },
+                    ConnectionTime::new(dns_lookup - start, dialup - start),
                     send_request,
                 ))
             } else {
                 let send_request = stream.handshake_http2().await?;
                 let dialup = std::time::Instant::now();
                 Ok((
-                    ConnectionTime {
-                        dns_lookup: dns_lookup - start,
-                        dialup: dialup - start,
-                    },
+                    ConnectionTime::new(dns_lookup - start, dialup - start),
                     send_request,
                 ))
             }
@@ -871,10 +890,7 @@ impl Client {
             let send_request = stream.handshake_http2().await?;
             let dialup = std::time::Instant::now();
             Ok((
-                ConnectionTime {
-                    dns_lookup: dns_lookup - start,
-                    dialup: dialup - start,
-                },
+                ConnectionTime::new(dns_lookup - start, dialup - start),
                 send_request,
             ))
         }
@@ -907,10 +923,11 @@ impl Client {
 
                     let result = RequestResult {
                         rng,
-                        start_latency_correction: None,
                         start,
-                        first_byte,
-                        end,
+                        first_byte: first_byte.map(|t| {
+                            NonZeroU64::new((t - start).as_nanos().max(1) as u64).unwrap()
+                        }),
+                        duration: (end - start).as_nanos() as u64,
                         status,
                         len_bytes,
                         connection_time,
@@ -1099,7 +1116,16 @@ pub(crate) fn set_start_latency_correction<E>(
     start_latency_correction: std::time::Instant,
 ) {
     if let Ok(res) = res {
-        res.start_latency_correction = Some(start_latency_correction);
+        let delta_nanos = (res.start - start_latency_correction).as_nanos() as u64;
+        res.start = start_latency_correction;
+        res.duration += delta_nanos;
+        if let Some(first_byte) = res.first_byte.as_mut() {
+            *first_byte = first_byte.saturating_add(delta_nanos);
+        }
+        if let Some(connection_time) = res.connection_time.as_mut() {
+            connection_time.dns_lookup = connection_time.dns_lookup.saturating_add(delta_nanos);
+            connection_time.dialup = connection_time.dialup.saturating_add(delta_nanos);
+        }
     }
 }
 
