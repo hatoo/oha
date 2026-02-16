@@ -98,7 +98,7 @@ float-cmp = "0.10.0"
 http-mitm-proxy = { version = "0.18.0", default-features = false }
 jsonschema = "0.41.0"
 lazy_static = "1.5.0"
-predicates = "3.1.0"
+predicates = "3.1.4"
 # features = ["aws_lc_rs"] is a workaround for mac & native-tls
 # https://github.com/sfackler/rust-native-tls/issues/225
 rcgen = { version = "0.14.3", features = ["aws_lc_rs"] }
