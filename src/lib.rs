@@ -60,7 +60,11 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[command(styles = clap_cargo::style::CLAP_STYLING)]
 pub struct Opts {
     #[arg(help = "Target URL or file with multiple URLs.")]
-    url: String,
+    url: Option<String>,
+
+    #[arg(long = "completions", hide = true)]
+    pub completions: Option<clap_complete::Shell>,
+
     #[arg(
         help = "Number of requests to run. Accepts plain numbers or suffixes: k = 1,000, m = 1,000,000 (e.g. 10k, 1m).",
         short = 'n',
@@ -330,6 +334,7 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
 
 pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     let work_mode = opts.work_mode();
+    let url = opts.url.expect("URL is required");
 
     // Parse AWS credentials from basic auth if AWS signing is requested
     let aws_config = if let Some(signing_params) = opts.aws_sigv4 {
@@ -379,8 +384,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
     let url_generator = if opts.rand_regex_url {
         // Almost URL has dot in domain, so disable dot in regex for convenience.
-        let dot_disabled: String = opts
-            .url
+        let dot_disabled: String = url
             .chars()
             .map(|c| {
                 if c == '.' {
@@ -392,7 +396,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             .collect();
         UrlGenerator::new_dynamic(Regex::compile(&dot_disabled, opts.max_repeat)?)
     } else if opts.urls_from_file {
-        let path = Path::new(opts.url.as_str());
+        let path = Path::new(url.as_str());
         let file = File::open(path)?;
         let reader = std::io::BufReader::new(file);
 
@@ -404,7 +408,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             .collect::<Result<Vec<_>, _>>()?;
         UrlGenerator::new_multi_static(urls)
     } else {
-        UrlGenerator::new_static(Url::parse(&opts.url)?)
+        UrlGenerator::new_static(Url::parse(&url)?)
     };
 
     if let Some(n) = opts.dump_urls {
