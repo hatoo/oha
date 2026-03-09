@@ -964,9 +964,15 @@ impl Opts {
                 wait_ongoing_requests_after_deadline: self.wait_ongoing_requests_after_deadline,
             }
         } else {
+            let mut n_connections = self.n_connections;
+            let max_useful = self.n_requests.div_ceil(self.n_http2_parallel);
+            if n_connections > max_useful {
+                n_connections = max_useful;
+            }
+
             WorkMode::FixedNumber {
                 n_requests: self.n_requests,
-                n_connections: self.n_connections,
+                n_connections,
                 n_http2_parallel: self.n_http2_parallel,
                 query_limit: match self.query_per_second {
                     Some(0f64) | None => self.burst_duration.map(|burst_duration| {
