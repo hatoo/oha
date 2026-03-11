@@ -14,7 +14,7 @@ use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
 use std::{
-    env,
+    //env,
     fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -494,12 +494,12 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             );
         }
 
-        // User agent
+        // User-agent
         headers
             .entry(http::header::USER_AGENT)
             .or_insert(HeaderValue::from_static(concat!(
-                "oha/",
-                env!("CARGO_PKG_VERSION")
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36/",
+                //env!("CARGO_PKG_VERSION")
             )));
 
         if let Some(h) = opts.accept_header {
