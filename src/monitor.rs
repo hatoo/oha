@@ -215,7 +215,7 @@ impl Monitor {
                     EndLine::NumQuery(n) => format!("{} / {}", all.len(), n),
                 };
                 let gauge = Gauge::default()
-                    .block(Block::default().title("Progress").borders(Borders::ALL))
+                    .block(Block::default().title("进度").borders(Borders::ALL))
                     .gauge_style(Style::default().fg(colors.light_blue.unwrap_or(Color::White)))
                     .label(Span::raw(gauge_label))
                     .ratio(progress);
@@ -244,21 +244,21 @@ impl Monitor {
                     .collect();
 
                 let stats_text = vec![
-                    Line::from(format!("Requests : {}", last_1_timescale.len())),
+                    Line::from(format!("请求 : {}", last_1_timescale.len())),
                     Line::from(vec![Span::styled(
-                        format!("Slowest: {:.4} secs", last_1_minmaxmean.max(),),
+                        format!("最慢: {:.4} secs", last_1_minmaxmean.max(),),
                         Style::default().fg(colors.yellow.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(vec![Span::styled(
-                        format!("Fastest: {:.4} secs", last_1_minmaxmean.min(),),
+                        format!("最快: {:.4} secs", last_1_minmaxmean.min(),),
                         Style::default().fg(colors.green.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(vec![Span::styled(
-                        format!("Average: {:.4} secs", last_1_minmaxmean.mean(),),
+                        format!("平均: {:.4} secs", last_1_minmaxmean.mean(),),
                         Style::default().fg(colors.light_blue.unwrap_or(Color::Reset)),
                     )]),
                     Line::from(format!(
-                        "Data: {:.2}",
+                        "数据: {:.2}",
                         Byte::from_u64(
                             last_1_timescale
                                 .iter()
@@ -270,7 +270,7 @@ impl Monitor {
                     #[cfg(unix)]
                     // Note: Windows can open 255 * 255 * 255 files. So not showing on windows is OK.
                     Line::from(format!(
-                        "Number of open files: {} / {}",
+                        "打开的文件数: {} / {}",
                         nofile
                             .map(|c| c.to_string())
                             .unwrap_or_else(|_| "Error".to_string()),
@@ -280,7 +280,7 @@ impl Monitor {
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )),
                 ];
-                let stats_title = format!("Stats for last {timescale}");
+                let stats_title = format!("统计时间 {timescale}");
                 let stats = Paragraph::new(stats_text).block(
                     Block::default()
                         .title(Span::raw(stats_title))
@@ -300,13 +300,13 @@ impl Monitor {
                     .collect::<Vec<_>>();
                 let stats2 = Paragraph::new(stats2_text).block(
                     Block::default()
-                        .title("Status code distribution")
+                        .title("状态码分布")
                         .borders(Borders::ALL),
                 );
                 f.render_widget(stats2, mid[1]);
 
                 let mut error_v: Vec<(String, usize)> =
-                    all.error_distribution().clone().into_iter().collect();
+                    all.error_distribution().clone().into_iter().collect    ();
                 error_v.sort_by_key(|t| std::cmp::Reverse(t.1));
                 let errors_text = error_v
                     .into_iter()
@@ -314,7 +314,7 @@ impl Monitor {
                     .collect::<Vec<_>>();
                 let errors = Paragraph::new(errors_text).block(
                     Block::default()
-                        .title("Error distribution")
+                        .title("Error")
                         .borders(Borders::ALL),
                 );
                 f.render_widget(errors, row4[2]);
@@ -379,7 +379,7 @@ impl Monitor {
                 let resp_histo = BarChart::default()
                     .block(
                         Block::default()
-                            .title("Response time histogram")
+                            .title("响应时间")
                             .style(
                                 Style::default()
                                     .fg(colors.yellow.unwrap_or(Color::Reset))
