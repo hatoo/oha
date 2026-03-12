@@ -27,7 +27,7 @@ You can enable VSOCK support by enabling `vsock` feature.
 
     cargo install --features vsock oha
 
-You can enable experimental HTTP3 support by enabling the `http3` feature. This uses the [H3](https://github.com/hyperium/h3/r) library by the developers of Hyper.
+You can enable experimental HTTP3 support by enabling the `http3` feature. This uses the [H3](https://github.com/hyperium/h3) library by the developers of Hyper.
 It will remain experimental as long as H3 is experimental. It currently depends on using `rustls` for TLS.
 
 ## Download pre-built binary
