@@ -110,16 +110,14 @@ pub struct Opts {
     #[arg(help = "所有请求的速率限制，单位为每秒查询次数(QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"])]
     query_per_second: Option<f64>,
     #[arg(
-        help = "Introduce delay between a predefined number of requests.
-Note: If qps is specified, burst will be ignored",
+        help = "在预定义数量的请求之间引入延迟。注意:如果指定了qps，则burst将被忽略。",
         long = "burst-delay",
         requires = "burst_requests",
         conflicts_with = "query_per_second"
     )]
     burst_duration: Option<Duration>,
     #[arg(
-        help = "Rates of requests for burst. Default is 1
-Note: If qps is specified, burst will be ignored",
+        help = "突发请求的速率。默认值为1注意:如果指定了qps，则burst将被忽略。",
         long = "burst-rate",
         requires = "burst_duration",
         conflicts_with = "query_per_second"
@@ -168,18 +166,18 @@ Note: If qps is specified, burst will be ignored",
         default_value = "GET"
     )]
     method: http::Method,
-    #[arg(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H', value_parser = parse_header)]
+    #[arg(help = "自定义HTTP头。示例:: -H \"foo: bar\"", short = 'H', value_parser = parse_header)]
     headers: Vec<(HeaderName, HeaderValue)>,
     #[arg(
-        help = "Custom Proxy HTTP header. Examples: --proxy-header \"foo: bar\"",
+        help = "自定义代理HTTP头。示例: --proxy-header \"foo: bar\"",
         long = "proxy-header",
         value_parser = parse_header
     )]
     proxy_headers: Vec<(HeaderName, HeaderValue)>,
-    #[arg(help = "Timeout for each request. Default to infinite.", short = 't')]
+    #[arg(help = "每个请求的超时时间。默认为无限。", short = 't')]
     timeout: Option<humantime::Duration>,
     #[arg(
-        help = "Timeout for establishing a new connection. Default to 5s.",
+        help = "建立新连接的超时时间。默认为 5s。",
         long = "connect-timeout",
         default_value = "5s"
     )]
