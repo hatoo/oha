@@ -282,6 +282,8 @@ struct ClientStateHttp1 {
     rng: Pcg64Si,
     stream: Option<Stream>,
     request_cache: Vec<u8>,
+    buf: Vec<u8>,
+    decoder: shiguredo_http11::ResponseDecoder,
 }
 
 impl Default for ClientStateHttp1 {
@@ -290,6 +292,8 @@ impl Default for ClientStateHttp1 {
             rng: SeedableRng::from_rng(&mut rand::rng()),
             stream: None,
             request_cache: Vec::new(),
+            buf: vec![0; 4096],
+            decoder: shiguredo_http11::ResponseDecoder::new(),
         }
     }
 }
@@ -802,26 +806,25 @@ impl Client {
             stream.write_all(&client_state.request_cache).await?;
             stream.flush().await?;
 
-            let mut decoder = shiguredo_http11::ResponseDecoder::new();
+            client_state.decoder.reset();
 
-            let mut buf = [0; 4096];
             let response_header = loop {
-                if let Some((header, _body_kind)) = decoder.decode_headers()? {
+                if let Some((header, _body_kind)) = client_state.decoder.decode_headers()? {
                     break header;
                 } else {
-                    let n = stream.read(&mut buf).await?;
+                    let n = stream.read(&mut client_state.buf).await?;
                     if n == 0 {
                         return Err(ClientError::Io(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
                             "connection closed",
                         )));
                     }
-                    decoder.feed(&buf[..n])?;
+                    client_state.decoder.feed(&client_state.buf[..n])?;
                 }
             };
 
-            let mut len_body = decoder.remaining().len();
-            let mut first_byte = if decoder.remaining().is_empty() {
+            let mut len_body = client_state.decoder.remaining().len();
+            let mut first_byte = if client_state.decoder.remaining().is_empty() {
                 None
             } else {
                 Some(std::time::Instant::now())
@@ -829,7 +832,9 @@ impl Client {
 
             loop {
                 if matches!(
-                    decoder.consume_body(decoder.remaining().len())?,
+                    client_state
+                        .decoder
+                        .consume_body(client_state.decoder.remaining().len())?,
                     shiguredo_http11::BodyProgress::Complete { .. }
                 ) {
                     let end = std::time::Instant::now();
@@ -851,7 +856,7 @@ impl Client {
                     }
                     return Ok(result);
                 } else {
-                    let n = stream.read(&mut buf).await?;
+                    let n = stream.read(&mut client_state.buf).await?;
                     if n == 0 {
                         return Err(ClientError::Io(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
@@ -862,7 +867,7 @@ impl Client {
                     if first_byte.is_none() {
                         first_byte = Some(std::time::Instant::now());
                     }
-                    decoder.feed(&buf[..n])?;
+                    client_state.decoder.feed(&client_state.buf[..n])?;
                 }
             }
         };
