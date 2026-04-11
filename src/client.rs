@@ -281,6 +281,7 @@ impl Default for Client {
 struct ClientStateHttp1 {
     rng: Pcg64Si,
     stream: Option<Stream>,
+    request_cache: Vec<u8>,
 }
 
 impl Default for ClientStateHttp1 {
@@ -288,6 +289,7 @@ impl Default for ClientStateHttp1 {
         Self {
             rng: SeedableRng::from_rng(&mut rand::rng()),
             stream: None,
+            request_cache: Vec::new(),
         }
     }
 }
@@ -755,6 +757,7 @@ impl Client {
                 stream
             };
 
+            /*
             let request = shiguredo_http11::Request {
                 method: request.method().to_string(),
                 uri: request.uri().to_string(),
@@ -774,8 +777,29 @@ impl Client {
             };
 
             let request_bytes = request.encode();
+            */
 
-            stream.write_all(&request_bytes).await?;
+            if client_state.request_cache.is_empty() {
+                let request = shiguredo_http11::Request {
+                    method: request.method().to_string(),
+                    uri: request.uri().to_string(),
+                    version: "HTTP/1.1".to_string(),
+                    headers: request
+                        .headers()
+                        .iter()
+                        .map(|(k, v)| {
+                            (
+                                k.as_str().to_string(),
+                                v.to_str().unwrap_or_default().to_string(),
+                            )
+                        })
+                        .collect(),
+                    body: Vec::new(),
+                };
+                client_state.request_cache = request.encode();
+            }
+
+            stream.write_all(&client_state.request_cache).await?;
             stream.flush().await?;
 
             let mut decoder = shiguredo_http11::ResponseDecoder::new();
@@ -796,6 +820,7 @@ impl Client {
                 }
             };
 
+            let mut len_body = decoder.remaining().len();
             let mut first_byte = if decoder.remaining().is_empty() {
                 None
             } else {
@@ -803,7 +828,10 @@ impl Client {
             };
 
             loop {
-                if let Some(response) = decoder.peek_body() {
+                if matches!(
+                    decoder.consume_body(decoder.remaining().len())?,
+                    shiguredo_http11::BodyProgress::Complete { .. }
+                ) {
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
@@ -814,7 +842,7 @@ impl Client {
                         end,
                         // TODO
                         status: http::StatusCode::from_u16(response_header.status_code).unwrap(),
-                        len_bytes: response.len(),
+                        len_bytes: len_body,
                         connection_time,
                     };
 
@@ -830,6 +858,7 @@ impl Client {
                             "connection closed",
                         )));
                     }
+                    len_body += n;
                     if first_byte.is_none() {
                         first_byte = Some(std::time::Instant::now());
                     }
