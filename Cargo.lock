@@ -2516,6 +2516,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "shiguredo_http11",
  "tempfile",
  "thiserror 2.0.18",
  "tikv-jemallocator",
@@ -3570,6 +3571,12 @@ dependencies = [
  "sha2",
  "tokio",
 ]
+
+[[package]]
+name = "shiguredo_http11"
+version = "2026.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50203212be42844ef00003e05fe57f0b19a80b33d9d35745c48efc01e5d2fb63"
 
 [[package]]
 name = "shlex"
