@@ -175,13 +175,9 @@ impl Client {
         };
 
         if let Some(timeout) = self.timeout {
-            tokio::select! {
-                res = do_req => {
-                    res
-                }
-                _ = tokio::time::sleep(timeout) => {
-                    Err(ClientError::Timeout)
-                }
+            match tokio::time::timeout(timeout, do_req).await {
+                Ok(res) => res,
+                Err(_) => Err(ClientError::Timeout),
             }
         } else {
             do_req.await
