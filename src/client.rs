@@ -16,13 +16,13 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
 use url::{ParseError, Url};
 
 use crate::{
-    ConnectToEntry,
+    ConnectToEntry, cli,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
     url_generator::UrlGeneratorError,
@@ -204,6 +204,8 @@ pub enum ClientError {
     #[cfg(feature = "http3")]
     #[error(transparent)]
     Http3(#[from] crate::client_h3::Http3Error),
+    #[error(transparent)]
+    ShiguredoHttp11(#[from] shiguredo_http11::Error),
 }
 
 pub struct Client {
@@ -278,14 +280,14 @@ impl Default for Client {
 
 struct ClientStateHttp1 {
     rng: Pcg64Si,
-    send_request: Option<SendRequestHttp1>,
+    stream: Option<Stream>,
 }
 
 impl Default for ClientStateHttp1 {
     fn default() -> Self {
         Self {
             rng: SeedableRng::from_rng(&mut rand::rng()),
-            send_request: None,
+            stream: None,
         }
     }
 }
@@ -403,6 +405,54 @@ impl Stream {
                 panic!("quic is not supported in http2")
             }
         }
+    }
+
+    async fn write_all(&mut self, data: &[u8]) -> Result<(), ClientError> {
+        match self {
+            Stream::Tcp(stream) => stream.write_all(data).await?,
+            Stream::Tls(stream) => stream.write_all(data).await?,
+            #[cfg(unix)]
+            Stream::Unix(stream) => stream.write_all(data).await?,
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => stream.write_all(data).await?,
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support send_all")
+            }
+        }
+        Ok(())
+    }
+
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ClientError> {
+        let n = match self {
+            Stream::Tcp(stream) => stream.read(buf).await?,
+            Stream::Tls(stream) => stream.read(buf).await?,
+            #[cfg(unix)]
+            Stream::Unix(stream) => stream.read(buf).await?,
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => stream.read(buf).await?,
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support read")
+            }
+        };
+        Ok(n)
+    }
+
+    async fn flush(&mut self) -> Result<(), ClientError> {
+        match self {
+            Stream::Tcp(stream) => stream.flush().await?,
+            Stream::Tls(stream) => stream.flush().await?,
+            #[cfg(unix)]
+            Stream::Unix(stream) => stream.flush().await?,
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => stream.flush().await?,
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support flush")
+            }
+        }
+        Ok(())
     }
 }
 
@@ -687,36 +737,136 @@ impl Client {
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
             let (url, request, rng) = self.generate_request(&mut client_state.rng)?;
-            let mut start = std::time::Instant::now();
-            let mut first_byte: Option<std::time::Instant> = None;
+            let start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
-            let mut send_request = if let Some(send_request) = client_state.send_request.take() {
-                send_request
+            let mut stream = if let Some(stream) = client_state.stream.take() {
+                stream
             } else {
-                let (dns_lookup, send_request) =
-                    self.client_http1(&url, &mut client_state.rng).await?;
+                let (dns_lookup, stream) = self
+                    .client(&url, &mut client_state.rng, http::Version::HTTP_11)
+                    .await?;
                 let dialup = std::time::Instant::now();
 
                 connection_time = Some(ConnectionTime {
                     dns_lookup: dns_lookup - start,
                     dialup: dialup - start,
                 });
-                send_request
+                stream
             };
-            while send_request.ready().await.is_err() {
-                // This gets hit when the connection for HTTP/1.1 faults
-                // This re-connects
-                start = std::time::Instant::now();
-                let (dns_lookup, send_request_) =
-                    self.client_http1(&url, &mut client_state.rng).await?;
-                send_request = send_request_;
-                let dialup = std::time::Instant::now();
-                connection_time = Some(ConnectionTime {
-                    dns_lookup: dns_lookup - start,
-                    dialup: dialup - start,
-                });
+
+            let request = shiguredo_http11::Request {
+                method: request.method().to_string(),
+                uri: request.uri().to_string(),
+                version: "HTTP/1.1".to_string(),
+                headers: request
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.as_str().to_string(),
+                            v.to_str().unwrap_or_default().to_string(),
+                        )
+                    })
+                    .collect(),
+                // TODO: implement http body
+                body: Vec::new(),
+            };
+
+            let request_bytes = request.encode();
+
+            stream.write_all(&request_bytes).await?;
+            stream.flush().await?;
+
+            let mut decoder = shiguredo_http11::ResponseDecoder::new();
+
+            let mut buf = [0; 4096];
+            let response_header = loop {
+                if let Some((header, _body_kind)) = decoder.decode_headers()? {
+                    break header;
+                } else {
+                    let n = stream.read(&mut buf).await?;
+                    if n == 0 {
+                        return Err(ClientError::Io(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "connection closed",
+                        )));
+                    }
+                    decoder.feed(&buf[..n])?;
+                }
+            };
+
+            let mut first_byte = if decoder.remaining().is_empty() {
+                None
+            } else {
+                Some(std::time::Instant::now())
+            };
+
+            loop {
+                if let Some(response) = decoder.peek_body() {
+                    let end = std::time::Instant::now();
+
+                    let result = RequestResult {
+                        rng,
+                        start_latency_correction: None,
+                        start,
+                        first_byte,
+                        end,
+                        // TODO
+                        status: http::StatusCode::from_u16(response_header.status_code).unwrap(),
+                        len_bytes: response.len(),
+                        connection_time,
+                    };
+
+                    if !self.disable_keepalive {
+                        client_state.stream = Some(stream);
+                    }
+                    return Ok(result);
+                } else {
+                    let n = stream.read(&mut buf).await?;
+                    if n == 0 {
+                        return Err(ClientError::Io(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "connection closed",
+                        )));
+                    }
+                    if first_byte.is_none() {
+                        first_byte = Some(std::time::Instant::now());
+                    }
+                    decoder.feed(&buf[..n])?;
+                }
             }
+        };
+
+        /*
+        let mut send_request = if let Some(send_request) = client_state.send_request.take() {
+            send_request
+        } else {
+            let (dns_lookup, send_request) =
+                self.client_http1(&url, &mut client_state.rng).await?;
+            let dialup = std::time::Instant::now();
+
+            connection_time = Some(ConnectionTime {
+                dns_lookup: dns_lookup - start,
+                dialup: dialup - start,
+            });
+            send_request
+        };
+        while send_request.ready().await.is_err() {
+            // This gets hit when the connection for HTTP/1.1 faults
+            // This re-connects
+            start = std::time::Instant::now();
+            let (dns_lookup, send_request_) =
+                self.client_http1(&url, &mut client_state.rng).await?;
+            send_request = send_request_;
+            let dialup = std::time::Instant::now();
+            connection_time = Some(ConnectionTime {
+                dns_lookup: dns_lookup - start,
+                dialup: dialup - start,
+            });
+        }
+        */
+        /*
             match send_request.send_request(request).await {
                 Ok(res) => {
                     let (parts, mut stream) = res.into_parts();
@@ -774,6 +924,7 @@ impl Client {
                 }
             }
         };
+        */
 
         if let Some(timeout) = self.timeout {
             tokio::select! {
@@ -1125,6 +1276,13 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
             http::Response::from_parts(parts, body)
         }
         HttpWorkType::H1 => {
+            let mut client_state = ClientStateHttp1::default();
+
+            let result = client.work_http1(&mut client_state).await?;
+
+            dbg!(&result);
+            return Ok(());
+            /*
             let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
 
             let response = send_request.send_request(request).await?;
@@ -1132,6 +1290,7 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
             let body = body.collect().await.unwrap().to_bytes();
 
             http::Response::from_parts(parts, body)
+            */
         }
     };
 
