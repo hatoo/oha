@@ -454,13 +454,13 @@ fn print_summary<W: Write>(
     let style = StyleScheme {
         style_enabled: !disable_style,
     };
-    writeln!(w, "{}", style.heading("Summary:"))?;
+    writeln!(w, "{}", style.heading("摘要:"))?;
     let success_rate = 100.0 * res.success_rate();
     writeln!(
         w,
         "{}",
         style.success_rate(
-            &format!("  Success rate:\t{success_rate:.2}%"),
+            &format!("  成功率:\t{success_rate:.2}%"),
             success_rate
         )
     )?;
@@ -481,7 +481,7 @@ fn print_summary<W: Write>(
         w,
         "{}",
         style.slowest(&format!(
-            "  Slowest:\t{:.4} {timescale}",
+            "  最慢:\t{:.4} {timescale}",
             latency_stat.max() / timescale.as_secs_f64()
         ))
     )?;
@@ -489,7 +489,7 @@ fn print_summary<W: Write>(
         w,
         "{}",
         style.fastest(&format!(
-            "  Fastest:\t{:.4} {timescale}",
+            "  最快:\t{:.4} {timescale}",
             latency_stat.min() / timescale.as_secs_f64()
         ))
     )?;
@@ -497,32 +497,32 @@ fn print_summary<W: Write>(
         w,
         "{}",
         style.average(&format!(
-            "  Average:\t{:.4} {timescale}",
+            "  平均值:\t{:.4} {timescale}",
             latency_stat.mean() / timescale.as_secs_f64()
         ))
     )?;
     writeln!(
         w,
-        "  Requests/sec:\t{:.4}",
+        "  每秒请求速度:\t{:.4}",
         res.len() as f64 / total_duration.as_secs_f64()
     )?;
     writeln!(w)?;
     writeln!(
         w,
-        "  Total data:\t{:.2}",
+        "  总数据:\t{:.2}",
         Byte::from_u64(res.total_data() as u64).get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
     if let Some(size) = res
         .size_per_request()
         .map(|n| Byte::from_u64(n).get_appropriate_unit(byte_unit::UnitType::Binary))
     {
-        writeln!(w, "  Size/request:\t{size:.2}")?;
+        writeln!(w, "  请求大小:\t{size:.2}")?;
     } else {
-        writeln!(w, "  Size/request:\tNaN")?;
+        writeln!(w, "  请求大小:\tNaN")?;
     }
     writeln!(
         w,
-        "  Size/sec:\t{:.2}",
+        "  每秒大小:\t{:.2}",
         Byte::from_u64((res.total_data() as f64 / total_duration.as_secs_f64()) as u64)
             .get_appropriate_unit(byte_unit::UnitType::Binary)
     )?;
@@ -530,11 +530,11 @@ fn print_summary<W: Write>(
 
     let duration_all_statistics = res.duration_all_statistics();
 
-    writeln!(w, "{}", style.heading("Response time histogram:"))?;
+    writeln!(w, "{}", style.heading("响应时间直方图:"))?;
     print_histogram(w, &duration_all_statistics.histogram, style, timescale)?;
     writeln!(w)?;
 
-    writeln!(w, "{}", style.heading("Response time distribution:"))?;
+    writeln!(w, "{}", style.heading("响应时间分布:"))?;
     print_distribution(w, &duration_all_statistics.percentiles, style, timescale)?;
     writeln!(w)?;
 
@@ -544,7 +544,7 @@ fn print_summary<W: Write>(
         writeln!(
             w,
             "{}",
-            style.heading("Response time histogram (2xx only):")
+            style.heading("响应时间直方图 (仅 2xx):")
         )?;
         print_histogram(w, &durations_successful_statics.histogram, style, timescale)?;
         writeln!(w)?;
@@ -552,7 +552,7 @@ fn print_summary<W: Write>(
         writeln!(
             w,
             "{}",
-            style.heading("Response time distribution (2xx only):")
+            style.heading("响应时间分布 (仅 2xx):")
         )?;
         print_distribution(
             w,
@@ -567,7 +567,7 @@ fn print_summary<W: Write>(
         writeln!(
             w,
             "{}",
-            style.heading("Response time histogram (4xx + 5xx only):")
+            style.heading("响应时间直方图 (4xx + 5xx only):")
         )?;
         print_histogram(w, &durations_not_successful.histogram, style, timescale)?;
         writeln!(w)?;
@@ -575,7 +575,7 @@ fn print_summary<W: Write>(
         writeln!(
             w,
             "{}",
-            style.heading("Response time distribution (4xx + 5xx only):")
+            style.heading("响应时间分布 (4xx + 5xx only):")
         )?;
         print_distribution(w, &durations_not_successful.percentiles, style, timescale)?;
         writeln!(w)?;
@@ -588,7 +588,7 @@ fn print_summary<W: Write>(
     writeln!(
         w,
         "{}",
-        style.heading("Details (average, fastest, slowest):")
+        style.heading("详情 (平均,最快,最慢):")
     )?;
 
     writeln!(
@@ -612,7 +612,7 @@ fn print_summary<W: Write>(
     let mut status_v: Vec<(http::StatusCode, usize)> = status_dist.into_iter().collect();
     status_v.sort_by_key(|t| std::cmp::Reverse(t.1));
 
-    writeln!(w, "{}", style.heading("Status code distribution:"))?;
+    writeln!(w, "{}", style.heading("状态码分布:"))?;
 
     for (status, count) in status_v {
         writeln!(
@@ -634,7 +634,7 @@ fn print_summary<W: Write>(
 
     if !error_v.is_empty() {
         writeln!(w)?;
-        writeln!(w, "Error distribution:")?;
+        writeln!(w, "Error:")?;
         for (error, count) in error_v {
             writeln!(w, "  [{count}] {error}")?;
         }

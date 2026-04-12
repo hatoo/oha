@@ -14,7 +14,7 @@ use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
 use std::{
-    env,
+    //env,
     fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -59,14 +59,14 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[command(arg_required_else_help(true))]
 #[command(styles = clap_cargo::style::CLAP_STYLING)]
 pub struct Opts {
-    #[arg(help = "Target URL or file with multiple URLs.")]
+    #[arg(help = "目标url或者包含多个url的文件.")]
     url: Option<String>,
 
     #[arg(long = "completions", hide = true)]
     pub completions: Option<clap_complete::Shell>,
 
     #[arg(
-        help = "Number of requests to run. Accepts plain numbers or suffixes: k = 1,000, m = 1,000,000 (e.g. 10k, 1m).",
+        help = "要发送的请求数量。支持数字后缀：k = 1,000，m = 1,000,000（例如 10k，1m）。[默认: 200].",
         short = 'n',
         default_value = "200",
         conflicts_with = "duration",
@@ -74,48 +74,50 @@ pub struct Opts {
     )]
     n_requests: usize,
     #[arg(
-        help = "Number of connections to run concurrently. You may should increase limit to number of open files for larger `-c`.",
+        help = "要发送的连接数。您可能需要增加限制以支持更大的 `-c`。",
         short = 'c',
         default_value = "50"
     )]
     n_connections: usize,
     #[arg(
-        help = "Number of parallel requests to send on HTTP/2. `oha` will run c * p concurrent workers in total.",
+        help = "要发送的并行请求数量。`oha` 将总共运行 c * p 个并发工作线程。",
         short = 'p',
         default_value = "1"
     )]
     n_http2_parallel: usize,
     #[arg(
-        help = "Duration of application to send requests.
-On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
-You can change this behavior with `-w` option.
-Currently, on HTTP/2, When the duration is reached, ongoing requests are waited. `-w` option is ignored.
-Examples: -z 10s -z 3m.",
+        help = "发送请求的持续时间。
+          在 HTTP/1 中，当达到持续时间后，正在进行的请求会被终止，
+          并计为 “aborted due to deadline”（因超时截止被中止）。
+          可以使用 `-w` 选项改变该行为。
+          当前在 HTTP/2 中，当达到持续时间后，正在进行的请求会等待完成，
+          `-w` 选项会被忽略。
+          示例:
+            -z 10s
+            -z 3m",
         short = 'z',
         conflicts_with = "n_requests"
     )]
     duration: Option<Duration>,
     #[arg(
-        help = "When the duration is reached, ongoing requests are waited",
+        help = "在达到持续时间后，等待正在进行的请求完成",
         short,
         long,
         default_value = "false",
         requires = "duration"
     )]
     wait_ongoing_requests_after_deadline: bool,
-    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"])]
+    #[arg(help = "所有请求的速率限制，单位为每秒查询次数(QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"])]
     query_per_second: Option<f64>,
     #[arg(
-        help = "Introduce delay between a predefined number of requests.
-Note: If qps is specified, burst will be ignored",
+        help = "在预定义数量的请求之间引入延迟。注意:如果指定了qps，则burst将被忽略。",
         long = "burst-delay",
         requires = "burst_requests",
         conflicts_with = "query_per_second"
     )]
     burst_duration: Option<Duration>,
     #[arg(
-        help = "Rates of requests for burst. Default is 1
-Note: If qps is specified, burst will be ignored",
+        help = "突发请求的速率。默认值为1注意:如果指定了qps，则burst将被忽略。",
         long = "burst-rate",
         requires = "burst_duration",
         conflicts_with = "query_per_second"
@@ -123,164 +125,166 @@ Note: If qps is specified, burst will be ignored",
     burst_requests: Option<usize>,
 
     #[arg(
-        help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive do not work well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
+        help = "使用 rand_regex crate 生成 URL，但每个查询中的点被禁用。例如 http://127.0.0.1/[a-z][a-z][0-9]。目前动态方案、主机和端口与保持连接不兼容。详情请见 https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html。",
         default_value = "false",
         long
     )]
     rand_regex_url: bool,
 
     #[arg(
-        help = "Read the URLs to query from a file",
+        help = "从文件中读取要查询的 URLs",
         default_value = "false",
         long
     )]
     urls_from_file: bool,
 
     #[arg(
-        help = "A parameter for the '--rand-regex-url'. The max_repeat parameter gives the maximum extra repeat counts the x*, x+ and x{n,} operators will become.",
+        help = "`--rand-regex-url` 参数的最大重复次数用于 x*, x+, x{n,} 操作符。[默认: 4]",
         default_value = "4",
         long,
         requires = "rand_regex_url"
     )]
     max_repeat: u32,
     #[arg(
-        help = "Dump target Urls <DUMP_URLS> times to debug --rand-regex-url",
+        help = "输出生成的 URL <DUMP_URLS> 次，用于调试 --rand-regex-url",
         long
     )]
     dump_urls: Option<usize>,
     #[arg(
-        help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
+        help = "修正延迟以避免 coordinated omission 问题如果未设置 -q，则该选项会被忽略",
         long = "latency-correction"
     )]
     latency_correction: bool,
-    #[arg(help = "No realtime tui", long = "no-tui")]
+    #[arg(help = "非实时 tui", long = "no-tui")]
     no_tui: bool,
-    #[arg(help = "Frame per second for tui.", default_value = "16", long = "fps")]
+    #[arg(help = " TUI帧率.", default_value = "16", long = "fps")]
     fps: usize,
     #[arg(
-        help = "HTTP method",
+        help = "HTTP 方法",
         short = 'm',
         long = "method",
         default_value = "GET"
     )]
     method: http::Method,
-    #[arg(help = "Custom HTTP header. Examples: -H \"foo: bar\"", short = 'H', value_parser = parse_header)]
+    #[arg(help = "自定义HTTP头。示例:: -H \"foo: bar\"", short = 'H', value_parser = parse_header)]
     headers: Vec<(HeaderName, HeaderValue)>,
     #[arg(
-        help = "Custom Proxy HTTP header. Examples: --proxy-header \"foo: bar\"",
+        help = "自定义代理HTTP头。示例: --proxy-header \"foo: bar\"",
         long = "proxy-header",
         value_parser = parse_header
     )]
     proxy_headers: Vec<(HeaderName, HeaderValue)>,
-    #[arg(help = "Timeout for each request. Default to infinite.", short = 't')]
+    #[arg(help = "每个请求的超时时间。默认为无限。", short = 't')]
     timeout: Option<humantime::Duration>,
     #[arg(
-        help = "Timeout for establishing a new connection. Default to 5s.",
+        help = "建立新连接的超时时间。默认为 5s。",
         long = "connect-timeout",
         default_value = "5s"
     )]
     connect_timeout: humantime::Duration,
-    #[arg(help = "HTTP Accept Header.", short = 'A')]
+    #[arg(help = "HTTP 接受头.", short = 'A')]
     accept_header: Option<String>,
-    #[arg(help = "HTTP request body.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines", "form"])]
+    #[arg(help = "HTTP 请求体.", short = 'd', conflicts_with_all = ["body_path", "body_path_lines", "form"])]
     body_string: Option<String>,
-    #[arg(help = "HTTP request body from file.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines", "form"])]
+    #[arg(help = "HTTP 请求体来自文件.", short = 'D', conflicts_with_all = ["body_string", "body_path_lines", "form"])]
     body_path: Option<std::path::PathBuf>,
-    #[arg(help = "HTTP request body from file line by line.", short = 'Z', conflicts_with_all = ["body_string", "body_path", "form"])]
+    #[arg(help = "HTTP 请求体来自文件，逐行读取.", short = 'Z', conflicts_with_all = ["body_string", "body_path", "form"])]
     body_path_lines: Option<std::path::PathBuf>,
     #[arg(
-        help = "Specify HTTP multipart POST data (curl compatible). Examples: -F 'name=value' -F 'file=@path/to/file'",
+        help = "HTTP 表单数据. 格式与 curl 的 -F 选项相同，例如: -F \"field=value\" 或 -F \"file=@path/to/file\"",
         short = 'F',
         long = "form",
         conflicts_with_all = ["body_string", "body_path", "body_path_lines"]
     )]
     form: Vec<String>,
-    #[arg(help = "Content-Type.", short = 'T')]
+    #[arg(help = "链接类型.", short = 'T')]
     content_type: Option<String>,
     #[arg(
-        help = "Basic authentication (username:password), or AWS credentials (access_key:secret_key)",
+        help = "Basic 认证 (username:password), 或 AWS 凭证 (access_key:secret_key)",
         short = 'a'
     )]
     basic_auth: Option<String>,
-    #[arg(help = "AWS session token", long = "aws-session")]
+    #[arg(help = "AWS 会话 token", long = "aws-session")]
     aws_session: Option<String>,
     #[arg(
-        help = "AWS SigV4 signing params (format: aws:amz:region:service)",
+        help = " AWS SigV4 签名参数，格式:aws:amz:region:service",
         long = "aws-sigv4"
     )]
     aws_sigv4: Option<String>,
-    #[arg(help = "HTTP proxy", short = 'x')]
+    #[arg(help = "HTTP 代理", short = 'x')]
     proxy: Option<Url>,
     #[arg(
-        help = "HTTP version to connect to proxy. Available values 0.9, 1.0, 1.1, 2.",
+        help = "连接代理使用的 HTTP 版本可选:0.9, 1.0, 1.1, 2",
         long = "proxy-http-version"
     )]
     proxy_http_version: Option<String>,
     #[arg(
-        help = "Use HTTP/2 to connect to proxy. Shorthand for --proxy-http-version=2",
+        help = "使用 HTTP/2 连接代理等同于:--proxy-http-version=2",
         long = "proxy-http2"
     )]
     proxy_http2: bool,
     #[arg(
-        help = "HTTP version. Available values 0.9, 1.0, 1.1, 2, 3",
+        help = " HTTP 版本. 可选: 0.9, 1.0, 1.1, 2, 3",
         long = "http-version"
     )]
     http_version: Option<String>,
-    #[arg(help = "Use HTTP/2. Shorthand for --http-version=2", long = "http2")]
+    #[arg(help = "使用 HTTP/2. 等同于: --http-version=2", long = "http2")]
     http2: bool,
-    #[arg(help = "HTTP Host header", long = "host")]
+    #[arg(help = "HTTP Host 头", long = "host")]
     host: Option<String>,
-    #[arg(help = "Disable compression.", long = "disable-compression")]
+    #[arg(help = "禁用压缩.", long = "disable-compression")]
     disable_compression: bool,
     #[arg(
-        help = "Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2.",
+        help = "重定向最大次数设置 0 表示不允许重定向HTTP/2 不支持重定向 HTTP/2.",
         default_value = "10",
         short = 'r',
         long = "redirect"
     )]
     redirect: usize,
     #[arg(
-        help = "Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.",
+        help = "禁用 keep-alive，防止在不同的 HTTP 请求之间重用 TCP 连接。此功能不支持 HTTP/2。",
         long = "disable-keepalive"
     )]
     disable_keepalive: bool,
     #[arg(
-        help = "*Not* perform a DNS lookup at beginning to cache it",
+        help = "*不*在开始时执行 DNS 查找以缓存它",
         long = "no-pre-lookup",
         default_value = "false"
     )]
     no_pre_lookup: bool,
-    #[arg(help = "Lookup only ipv6.", long = "ipv6")]
+    #[arg(help = "仅解析 IPv6.", long = "ipv6")]
     ipv6: bool,
-    #[arg(help = "Lookup only ipv4.", long = "ipv4")]
+    #[arg(help = "仅解析 IPv4.", long = "ipv4")]
     ipv4: bool,
     #[arg(
-        help = "(TLS) Use the specified certificate file to verify the peer. Native certificate store is used even if this argument is specified.",
+        help = "(TLS) 使用指定证书验证服务器即使指定该参数，也会使用系统证书库.",
         long
     )]
     cacert: Option<PathBuf>,
     #[arg(
-        help = "(TLS) Use the specified client certificate file. --key must be also specified",
+        help = "(TLS) 客户端证书文件必须同时指定 --key",
         long,
         requires = "key"
     )]
     cert: Option<PathBuf>,
     #[arg(
-        help = "(TLS) Use the specified client key file. --cert must be also specified",
+        help = "(TLS) 客户端私钥文件必须同时指定 --cert",
         long,
         requires = "cert"
     )]
     key: Option<PathBuf>,
-    #[arg(help = "Accept invalid certs.", long = "insecure")]
+    #[arg(help = "接受无效证书.", long = "insecure")]
     insecure: bool,
     #[arg(
-        help = "Override DNS resolution and default port numbers with strings like 'example.org:443:localhost:8443'
-Note: if used several times for the same host:port:target_host:target_port, a random choice is made",
+        help = "覆盖 DNS 解析和默认端口格式:
+            example.org:443:localhost:8443
+          如果同一 host:port 指定多个目标，
+          会随机选择",
         long = "connect-to"
     )]
     connect_to: Vec<ConnectToEntry>,
     #[arg(
-        help = "Disable the color scheme.",
+        help = "禁用颜色方案.",
         alias = "disable-color",
         long = "no-color",
         env = "NO_COLOR"
@@ -288,7 +292,7 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
     no_color: bool,
     #[cfg(unix)]
     #[arg(
-        help = "Connect to a unix socket instead of the domain in the URL. Only for non-HTTPS URLs.",
+        help = "通过 Unix Socket 连接仅适用于非 HTTPS URL.",
         long = "unix-socket",
         group = "socket-type"
     )]
@@ -302,30 +306,38 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
     )]
     vsock_addr: Option<tokio_vsock::VsockAddr>,
     #[arg(
-        help = "Include a response status code successful or not successful breakdown for the time histogram and distribution statistics",
+        help = "在统计中显示成功请求的响应时间分布和直方图",
         long = "stats-success-breakdown"
     )]
     stats_success_breakdown: bool,
     #[arg(
-        help = "Write succeeded requests to sqlite database url E.G test.db",
+        help = "将成功请求写入 sqlite 数据库示例:test.db",
         long = "db-url"
     )]
     db_url: Option<String>,
     #[arg(
         long,
-        help = "Perform a single request and dump the request and response"
+        help = "发送单个请求并输出请求与响应"
     )]
     debug: bool,
     #[arg(
-        help = "Output file to write the results to. If not specified, results are written to stdout.",
+        help = "输出文件，用于写入结果。如果未指定，则结果将写入 stdout。",
         long,
         short
     )]
     output: Option<PathBuf>,
-    #[arg(help = "Output format", long, default_value = "text")]
+    #[arg(help = "输出格式", long, default_value = "text")]
     output_format: Option<PrintMode>,
     #[arg(
-        help = "Time unit to be used. If not specified, the time unit is determined automatically. This option affects only text format.",
+        help = "指定时间单位如果未指定，会自动选择仅影响 text 输出格式
+          可选:
+            ns
+            us
+            ms
+            s
+            m
+            h
+",
         long,
         short = 'u'
     )]
@@ -480,12 +492,12 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
             );
         }
 
-        // User agent
+        // User-agent
         headers
             .entry(http::header::USER_AGENT)
             .or_insert(HeaderValue::from_static(concat!(
-                "oha/",
-                env!("CARGO_PKG_VERSION")
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36/",
+                //env!("CARGO_PKG_VERSION")
             )));
 
         if let Some(h) = opts.accept_header {
