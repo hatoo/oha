@@ -469,21 +469,22 @@ impl Client {
     ) -> Result<(Cow<'_, Url>, Request<Full<Bytes>>, R), ClientError> {
         let snapshot = *rng;
         let (url, mut req) = self.request_generator.generate(rng)?;
-        if self.proxy_url.is_some() && req.uri().scheme_str() == Some("http") {
-            if let Some(authority) = req.uri().authority() {
-                let requested_host = authority.host();
-                let requested_port = authority.port_u16().unwrap_or(80);
-                if let Some(entry) = self
-                    .dns
-                    .select_connect_to(requested_host, requested_port, rng)
-                {
-                    let new_authority: http::uri::Authority =
-                        format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
-                    let mut parts = req.uri().clone().into_parts();
-                    parts.authority = Some(new_authority);
-                    let new_uri = http::Uri::from_parts(parts)?;
-                    *req.uri_mut() = new_uri;
-                }
+        if self.proxy_url.is_some()
+            && req.uri().scheme_str() == Some("http")
+            && let Some(authority) = req.uri().authority()
+        {
+            let requested_host = authority.host();
+            let requested_port = authority.port_u16().unwrap_or(80);
+            if let Some(entry) = self
+                .dns
+                .select_connect_to(requested_host, requested_port, rng)
+            {
+                let new_authority: http::uri::Authority =
+                    format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                let mut parts = req.uri().clone().into_parts();
+                parts.authority = Some(new_authority);
+                let new_uri = http::Uri::from_parts(parts)?;
+                *req.uri_mut() = new_uri;
             }
         }
         Ok((url, req, snapshot))
@@ -730,23 +731,23 @@ impl Client {
                         len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
                     }
 
-                    if self.redirect_limit != 0 {
-                        if let Some(location) = parts.headers.get("Location") {
-                            let (send_request_redirect, new_status, len) = self
-                                .redirect(
-                                    url,
-                                    rng,
-                                    send_request,
-                                    location,
-                                    self.redirect_limit,
-                                    &mut client_state.rng,
-                                )
-                                .await?;
+                    if self.redirect_limit != 0
+                        && let Some(location) = parts.headers.get("Location")
+                    {
+                        let (send_request_redirect, new_status, len) = self
+                            .redirect(
+                                url,
+                                rng,
+                                send_request,
+                                location,
+                                self.redirect_limit,
+                                &mut client_state.rng,
+                            )
+                            .await?;
 
-                            send_request = send_request_redirect;
-                            status = new_status;
-                            len_bytes = len;
-                        }
+                        send_request = send_request_redirect;
+                        status = new_status;
+                        len_bytes = len;
                     }
 
                     let end = std::time::Instant::now();
@@ -976,21 +977,22 @@ impl Client {
         } else {
             url[url::Position::BeforePath..].parse()?
         };
-        if self.proxy_url.is_some() && request.uri().scheme_str() == Some("http") {
-            if let Some(authority) = request.uri().authority() {
-                let requested_host = authority.host();
-                let requested_port = authority.port_u16().unwrap_or(80);
-                if let Some(entry) = self
-                    .dns
-                    .select_connect_to(requested_host, requested_port, rng)
-                {
-                    let new_authority: http::uri::Authority =
-                        format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
-                    let mut parts = request.uri().clone().into_parts();
-                    parts.authority = Some(new_authority);
-                    let new_uri = http::Uri::from_parts(parts)?;
-                    *request.uri_mut() = new_uri;
-                }
+        if self.proxy_url.is_some()
+            && request.uri().scheme_str() == Some("http")
+            && let Some(authority) = request.uri().authority()
+        {
+            let requested_host = authority.host();
+            let requested_port = authority.port_u16().unwrap_or(80);
+            if let Some(entry) = self
+                .dns
+                .select_connect_to(requested_host, requested_port, rng)
+            {
+                let new_authority: http::uri::Authority =
+                    format_host_port(entry.target_host.as_str(), entry.target_port).parse()?;
+                let mut parts = request.uri().clone().into_parts();
+                parts.authority = Some(new_authority);
+                let new_uri = http::Uri::from_parts(parts)?;
+                *request.uri_mut() = new_uri;
             }
         }
         let res = send_request.send_request(request).await?;
@@ -1756,10 +1758,10 @@ pub async fn work_until(
             } else {
                 for f in futures {
                     f.abort();
-                    if let Err(e) = f.await {
-                        if e.is_cancelled() {
-                            report_tx.send(Err(ClientError::Deadline)).unwrap();
-                        }
+                    if let Err(e) = f.await
+                        && e.is_cancelled()
+                    {
+                        report_tx.send(Err(ClientError::Deadline)).unwrap();
                     }
                 }
             }
@@ -1966,10 +1968,10 @@ pub async fn work_until_with_qps(
             } else {
                 for f in futures {
                     f.abort();
-                    if let Err(e) = f.await {
-                        if e.is_cancelled() {
-                            report_tx.send(Err(ClientError::Deadline)).unwrap();
-                        }
+                    if let Err(e) = f.await
+                        && e.is_cancelled()
+                    {
+                        report_tx.send(Err(ClientError::Deadline)).unwrap();
                     }
                 }
             }
@@ -2175,10 +2177,10 @@ pub async fn work_until_with_qps_latency_correction(
             } else {
                 for f in futures {
                     f.abort();
-                    if let Err(e) = f.await {
-                        if e.is_cancelled() {
-                            report_tx.send(Err(ClientError::Deadline)).unwrap();
-                        }
+                    if let Err(e) = f.await
+                        && e.is_cancelled()
+                    {
+                        report_tx.send(Err(ClientError::Deadline)).unwrap();
                     }
                 }
             }
