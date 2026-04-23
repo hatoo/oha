@@ -14,7 +14,6 @@ use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
 use std::{
-    env,
     fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -890,21 +889,9 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 }
 
 pub(crate) fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
-    // check if we are running in termux https://github.com/termux/termux-app
-    // `parse_resolv_conf` in hickory 0.26 is only available on non-Apple/non-Android Unix.
-    #[cfg(all(unix, not(any(target_os = "android", target_vendor = "apple"))))]
-    if env::var("TERMUX_VERSION").is_ok() {
-        let prefix = env::var("PREFIX")?;
-        let path = format!("{prefix}/etc/resolv.conf");
-        return match std::fs::read(&path) {
-            Ok(conf_data) => hickory_resolver::system_conf::parse_resolv_conf(conf_data)
-                .context(format!("DNS: failed to parse {path}")),
-            Err(err) => {
-                fallback_resolver_config(anyhow::anyhow!("DNS: failed to load {path}: {err}"))
-            }
-        };
-    }
-
+    // Termux (https://github.com/termux/termux-app) is no longer supported:
+    // hickory-resolver 0.26 removed `parse_resolv_conf` on Android, so we can
+    // no longer read `$PREFIX/etc/resolv.conf` via hickory.
     match hickory_resolver::system_conf::read_system_conf() {
         Ok(conf) => Ok(conf),
         Err(err) => fallback_resolver_config(anyhow::anyhow!(
