@@ -891,7 +891,8 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
 pub(crate) fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
     // check if we are running in termux https://github.com/termux/termux-app
-    #[cfg(unix)]
+    // `parse_resolv_conf` in hickory 0.26 is only available on non-Apple/non-Android Unix.
+    #[cfg(all(unix, not(any(target_os = "android", target_vendor = "apple"))))]
     if env::var("TERMUX_VERSION").is_ok() {
         let prefix = env::var("PREFIX")?;
         let path = format!("{prefix}/etc/resolv.conf");
