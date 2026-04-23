@@ -87,8 +87,7 @@ enum HttpWorkType {
 
 pub struct Dns {
     pub connect_to: Vec<ConnectToEntry>,
-    pub resolver:
-        hickory_resolver::Resolver<hickory_resolver::name_server::TokioConnectionProvider>,
+    pub resolver: hickory_resolver::Resolver<hickory_resolver::net::runtime::TokioRuntimeProvider>,
 }
 
 impl Dns {
@@ -160,8 +159,8 @@ pub enum ClientError {
     #[error("Redirection limit has reached")]
     TooManyRedirect,
     #[error(transparent)]
-    // Use Box here because ResolveError is big.
-    Resolve(#[from] Box<hickory_resolver::ResolveError>),
+    // Use Box here because NetError is big.
+    Resolve(#[from] Box<hickory_resolver::net::NetError>),
 
     #[cfg(feature = "native-tls")]
     #[error(transparent)]
@@ -235,10 +234,11 @@ impl Default for Client {
             .unwrap_or_else(|_| (ResolverConfig::default(), ResolverOpts::default()));
         let resolver = hickory_resolver::Resolver::builder_with_config(
             resolver_config,
-            hickory_resolver::name_server::TokioConnectionProvider::default(),
+            hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
         )
         .with_options(resolver_opts)
-        .build();
+        .build()
+        .unwrap();
 
         Self {
             request_generator: RequestGenerator {

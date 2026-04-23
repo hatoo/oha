@@ -554,7 +554,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
                 hickory_resolver::config::LookupIpStrategy::Ipv6thenIpv4
             } else {
-                Default::default()
+                hickory_resolver::config::LookupIpStrategy::Ipv4thenIpv6
             }
         }
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
@@ -565,10 +565,10 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::Resolver::builder_with_config(
         config,
-        hickory_resolver::name_server::TokioConnectionProvider::default(),
+        hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
     )
     .with_options(resolver_opts)
-    .build();
+    .build()?;
     let cacert = opts.cacert.as_deref().map(std::fs::read).transpose()?;
     let client_auth = match (opts.cert, opts.key) {
         (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
