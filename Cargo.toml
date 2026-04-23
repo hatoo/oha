@@ -14,7 +14,7 @@ name = "oha"
 readme = "README.md"
 repository = "https://github.com/hatoo/oha"
 version = "1.14.0"
-rust-version = "1.87"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -32,7 +32,7 @@ http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn-proto", "dep:quinn", "dep:http"]
 
 [dependencies]
 anyhow = "1.0.86"
-average = "0.16.0"
+average = "0.17.0"
 byte-unit = "5.1.4"
 clap = { version = "4.5.9", features = ["derive", "env"] }
 clap_complete = "4"
@@ -73,14 +73,14 @@ quinn = { version = "0.11.7", optional = true, features = [
 
 base64 = "0.22.1"
 rand = "0.10.0"
-hickory-resolver = { version = "0.25.2", features = ["tokio"] }
+hickory-resolver = { version = "0.26.0", features = ["tokio", "system-config"] }
 rand_regex = "0.19.0"
 regex-syntax = "0.8.5"
 url = "2.5.2"
 http-body-util = "0.1.2"
 hyper-util = { version = "0.1.6", features = ["tokio"] }
 tokio-vsock = { version = "0.7.2", optional = true }
-rusqlite = { version = "0.38.0", features = ["bundled"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 num_cpus = "1.16.0"
 tokio-util = "0.7.13"
 clap-cargo = "0.18.3"
@@ -97,7 +97,7 @@ axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
 http-mitm-proxy = { version = "0.18.0", default-features = false }
-jsonschema = "0.42.2"
+jsonschema = "0.46.2"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
 # features = ["aws_lc_rs"] is a workaround for mac & native-tls
@@ -108,7 +108,7 @@ tempfile = "3.10.1"
 rustls = "0.23.18"
 rstest = "0.26.0"
 rstest_reuse = "0.7.0"
-ctor = "0.6.1"
+ctor = "0.10.1"
 
 [target.'cfg(unix)'.dev-dependencies]
 actix-web = "4"

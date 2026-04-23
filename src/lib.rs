@@ -14,7 +14,6 @@ use rand_regex::Regex;
 use ratatui::crossterm;
 use result_data::ResultData;
 use std::{
-    env,
     fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -554,7 +553,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 
                 hickory_resolver::config::LookupIpStrategy::Ipv6thenIpv4
             } else {
-                Default::default()
+                hickory_resolver::config::LookupIpStrategy::Ipv4thenIpv6
             }
         }
         (true, false) => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
@@ -565,10 +564,10 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
     resolver_opts.ip_strategy = ip_strategy;
     let resolver = hickory_resolver::Resolver::builder_with_config(
         config,
-        hickory_resolver::name_server::TokioConnectionProvider::default(),
+        hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
     )
     .with_options(resolver_opts)
-    .build();
+    .build()?;
     let cacert = opts.cacert.as_deref().map(std::fs::read).transpose()?;
     let client_auth = match (opts.cert, opts.key) {
         (Some(cert), Some(key)) => Some((std::fs::read(cert)?, std::fs::read(key)?)),
@@ -890,20 +889,9 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
 }
 
 pub(crate) fn system_resolv_conf() -> anyhow::Result<(ResolverConfig, ResolverOpts)> {
-    // check if we are running in termux https://github.com/termux/termux-app
-    #[cfg(unix)]
-    if env::var("TERMUX_VERSION").is_ok() {
-        let prefix = env::var("PREFIX")?;
-        let path = format!("{prefix}/etc/resolv.conf");
-        return match std::fs::read(&path) {
-            Ok(conf_data) => hickory_resolver::system_conf::parse_resolv_conf(conf_data)
-                .context(format!("DNS: failed to parse {path}")),
-            Err(err) => {
-                fallback_resolver_config(anyhow::anyhow!("DNS: failed to load {path}: {err}"))
-            }
-        };
-    }
-
+    // Termux (https://github.com/termux/termux-app) is no longer supported:
+    // hickory-resolver 0.26 removed `parse_resolv_conf` on Android, so we can
+    // no longer read `$PREFIX/etc/resolv.conf` via hickory.
     match hickory_resolver::system_conf::read_system_conf() {
         Ok(conf) => Ok(conf),
         Err(err) => fallback_resolver_config(anyhow::anyhow!(

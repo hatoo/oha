@@ -139,10 +139,10 @@ impl Client {
                 .await
                 .map_err(Http3Error::from)?;
             // send the request body now
-            if let Some(Ok(frame)) = req_body.frame().await {
-                if let Ok(data) = frame.into_data() {
-                    stream.send_data(data).await.map_err(Http3Error::from)?;
-                }
+            if let Some(Ok(frame)) = req_body.frame().await
+                && let Ok(data) = frame.into_data()
+            {
+                stream.send_data(data).await.map_err(Http3Error::from)?;
             }
             stream.finish().await.map_err(Http3Error::from)?;
 
@@ -211,10 +211,10 @@ pub(crate) async fn send_debug_request_http3(
     let request = http::request::Request::from_parts(head, ());
 
     let mut stream = client_state.send_request(request).await?;
-    if let Some(Ok(frame)) = req_body.frame().await {
-        if let Ok(data) = frame.into_data() {
-            stream.send_data(data).await?;
-        }
+    if let Some(Ok(frame)) = req_body.frame().await
+        && let Ok(data) = frame.into_data()
+    {
+        stream.send_data(data).await?;
     }
 
     stream.finish().await?;
