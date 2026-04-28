@@ -8,6 +8,7 @@ use kanal::AsyncReceiver;
 use quinn::default_runtime;
 use std::net::SocketAddr;
 use std::net::UdpSocket;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicIsize;
@@ -73,10 +74,7 @@ impl Client {
         let send_request = stream.handshake_http3().await?;
         let dialup = std::time::Instant::now();
         Ok((
-            ConnectionTime {
-                dns_lookup: dns_lookup - start,
-                dialup: dialup - start,
-            },
+            ConnectionTime::new(dns_lookup - start, dialup - start),
             send_request,
         ))
     }
@@ -162,10 +160,10 @@ impl Client {
 
             let result = RequestResult {
                 rng,
-                start_latency_correction: None,
                 start,
-                first_byte,
-                end,
+                first_byte: first_byte
+                    .map(|fb| NonZeroU64::new((fb - start).as_nanos().max(1) as u64).unwrap()),
+                duration: (end - start).as_nanos() as u64,
                 status,
                 len_bytes,
                 connection_time,
