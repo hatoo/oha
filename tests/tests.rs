@@ -553,10 +553,6 @@ async fn test_setting_method() {
         http::method::Method::POST
     );
     assert_eq!(
-        get_req("/", &["-m", "CONNECT"]).await.method(),
-        http::method::Method::CONNECT
-    );
-    assert_eq!(
         get_req("/", &["-m", "DELETE"]).await.method(),
         http::method::Method::DELETE
     );

@@ -2,7 +2,7 @@ use bytes::Bytes;
 #[cfg(test)]
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use http_body_util::{BodyExt, Full};
-use hyper::{Method, Request, http};
+use hyper::{Method, Request, client, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::{prelude::*, rng};
 use std::{
@@ -281,7 +281,7 @@ impl Default for Client {
 struct ClientStateHttp1 {
     rng: Pcg64Si,
     stream: Option<Stream>,
-    request_cache: Vec<u8>,
+    request_cache: Option<Vec<u8>>,
     decoder: shiguredo_http11::ResponseDecoder,
 }
 
@@ -290,7 +290,7 @@ impl Default for ClientStateHttp1 {
         Self {
             rng: SeedableRng::from_rng(&mut rand::rng()),
             stream: None,
-            request_cache: Vec::new(),
+            request_cache: None,
             decoder: shiguredo_http11::ResponseDecoder::new(),
         }
     }
@@ -740,7 +740,11 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            let (url, request, rng) = self.generate_request(&mut client_state.rng)?;
+            let rng = client_state.rng;
+            let url = self
+                .request_generator
+                .url_generator
+                .generate(&mut client_state.rng)?;
             let start = std::time::Instant::now();
             let mut connection_time: Option<ConnectionTime> = None;
 
@@ -759,49 +763,26 @@ impl Client {
                 stream
             };
 
-            /*
-            let request = shiguredo_http11::Request {
-                method: request.method().to_string(),
-                uri: request.uri().to_string(),
-                version: "HTTP/1.1".to_string(),
-                headers: request
-                    .headers()
-                    .iter()
-                    .map(|(k, v)| {
-                        (
-                            k.as_str().to_string(),
-                            v.to_str().unwrap_or_default().to_string(),
-                        )
-                    })
-                    .collect(),
-                // TODO: implement http body
-                body: Vec::new(),
+            if self.request_generator.is_static() {
+                let data = if let Some(cache) = client_state.request_cache.as_ref() {
+                    cache.as_slice()
+                } else {
+                    client_state.request_cache = Some(
+                        self.request_generator
+                            .generate_http1_request(&url, &mut client_state.rng)?,
+                    );
+                    client_state.request_cache.as_ref().unwrap().as_slice()
+                };
+
+                stream.write_all(data).await?;
+            } else {
+                let data = self
+                    .request_generator
+                    .generate_http1_request(&url, &mut client_state.rng)?;
+
+                stream.write_all(&data).await?;
             };
 
-            let request_bytes = request.encode();
-            */
-
-            if client_state.request_cache.is_empty() {
-                let request = shiguredo_http11::Request {
-                    method: request.method().to_string(),
-                    uri: request.uri().to_string(),
-                    version: "HTTP/1.1".to_string(),
-                    headers: request
-                        .headers()
-                        .iter()
-                        .map(|(k, v)| {
-                            (
-                                k.as_str().to_string(),
-                                v.to_str().unwrap_or_default().to_string(),
-                            )
-                        })
-                        .collect(),
-                    body: None,
-                };
-                client_state.request_cache = request.encode();
-            }
-
-            stream.write_all(&client_state.request_cache).await?;
             stream.flush().await?;
 
             client_state.decoder.reset();
@@ -869,94 +850,6 @@ impl Client {
                 }
             }
         };
-
-        /*
-        let mut send_request = if let Some(send_request) = client_state.send_request.take() {
-            send_request
-        } else {
-            let (dns_lookup, send_request) =
-                self.client_http1(&url, &mut client_state.rng).await?;
-            let dialup = std::time::Instant::now();
-
-            connection_time = Some(ConnectionTime {
-                dns_lookup: dns_lookup - start,
-                dialup: dialup - start,
-            });
-            send_request
-        };
-        while send_request.ready().await.is_err() {
-            // This gets hit when the connection for HTTP/1.1 faults
-            // This re-connects
-            start = std::time::Instant::now();
-            let (dns_lookup, send_request_) =
-                self.client_http1(&url, &mut client_state.rng).await?;
-            send_request = send_request_;
-            let dialup = std::time::Instant::now();
-            connection_time = Some(ConnectionTime {
-                dns_lookup: dns_lookup - start,
-                dialup: dialup - start,
-            });
-        }
-        */
-        /*
-            match send_request.send_request(request).await {
-                Ok(res) => {
-                    let (parts, mut stream) = res.into_parts();
-                    let mut status = parts.status;
-
-                    let mut len_bytes = 0;
-                    while let Some(chunk) = stream.frame().await {
-                        if first_byte.is_none() {
-                            first_byte = Some(std::time::Instant::now())
-                        }
-                        len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
-                    }
-
-                    if self.redirect_limit != 0 {
-                        if let Some(location) = parts.headers.get("Location") {
-                            let (send_request_redirect, new_status, len) = self
-                                .redirect(
-                                    url,
-                                    rng,
-                                    send_request,
-                                    location,
-                                    self.redirect_limit,
-                                    &mut client_state.rng,
-                                )
-                                .await?;
-
-                            send_request = send_request_redirect;
-                            status = new_status;
-                            len_bytes = len;
-                        }
-                    }
-
-                    let end = std::time::Instant::now();
-
-                    let result = RequestResult {
-                        rng,
-                        start_latency_correction: None,
-                        start,
-                        first_byte,
-                        end,
-                        status,
-                        len_bytes,
-                        connection_time,
-                    };
-
-                    if !self.disable_keepalive {
-                        client_state.send_request = Some(send_request);
-                    }
-
-                    Ok::<_, ClientError>(result)
-                }
-                Err(e) => {
-                    client_state.send_request = Some(send_request);
-                    Err(e.into())
-                }
-            }
-        };
-        */
 
         if let Some(timeout) = self.timeout {
             match tokio::time::timeout(timeout, do_req).await {

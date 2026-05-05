@@ -57,6 +57,57 @@ impl RequestGenerator {
         }
     }
 
+    pub fn is_static(&self) -> bool {
+        matches!(self.body_generator, BodyGenerator::Static(_)) && self.aws_config.is_none()
+    }
+
+    pub fn generate_url<R: Rng>(
+        &self,
+        rng: &mut R,
+    ) -> Result<Cow<'_, Url>, RequestGenerationError> {
+        Ok(self.url_generator.generate(rng)?)
+    }
+
+    pub fn generate_http1_request<R: Rng>(
+        &self,
+        url: &Url,
+        rng: &mut R,
+    ) -> Result<Vec<u8>, RequestGenerationError> {
+        let body = self.generate_body(rng);
+        let mut headers = self.headers.clone();
+
+        // Apply AWS SigV4 if configured
+        if let Some(aws_config) = &self.aws_config {
+            aws_config.sign_request(self.method.as_str(), &mut headers, &url, &body)?;
+        }
+
+        headers
+            .entry(http::header::HOST)
+            .or_insert_with(|| http::header::HeaderValue::from_str(url.authority()).unwrap());
+
+        let request = shiguredo_http11::Request {
+            method: self.method.to_string(),
+            uri: url[url::Position::BeforePath..].to_string(),
+            version: format!("{:?}", self.version),
+            headers: headers
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.as_str().to_string(),
+                        v.to_str().unwrap_or_default().to_string(),
+                    )
+                })
+                .collect(),
+            body: if body.is_empty() {
+                None
+            } else {
+                Some(body.to_vec())
+            },
+        };
+
+        Ok(request.encode())
+    }
+
     pub fn generate<R: Rng>(
         &self,
         rng: &mut R,
