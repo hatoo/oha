@@ -61,13 +61,6 @@ impl RequestGenerator {
         matches!(self.body_generator, BodyGenerator::Static(_)) && self.aws_config.is_none()
     }
 
-    pub fn generate_url<R: Rng>(
-        &self,
-        rng: &mut R,
-    ) -> Result<Cow<'_, Url>, RequestGenerationError> {
-        Ok(self.url_generator.generate(rng)?)
-    }
-
     pub fn generate_http1_request<R: Rng>(
         &self,
         url: &Url,
