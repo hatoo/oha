@@ -825,7 +825,7 @@ impl Client {
                         start,
                         first_byte,
                         end,
-                        // TODO
+                        // Already in range, .unwrap() should not fail
                         status: http::StatusCode::from_u16(response_header.status_code).unwrap(),
                         len_bytes: len_body,
                         connection_time,
