@@ -84,7 +84,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 num_cpus = "1.16.0"
 tokio-util = "0.7.13"
 clap-cargo = "0.18.3"
-shiguredo_http11 = "2026.1.1"
+shiguredo_http11 = "=2026.3.0-canary.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"

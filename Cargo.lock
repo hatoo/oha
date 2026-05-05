@@ -3574,9 +3574,9 @@ dependencies = [
 
 [[package]]
 name = "shiguredo_http11"
-version = "2026.1.1"
+version = "2026.3.0-canary.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50203212be42844ef00003e05fe57f0b19a80b33d9d35745c48efc01e5d2fb63"
+checksum = "c0791958ae7952d223456af5f7f9fa68eaea05d1e9acb0f49239be67f70f9db7"
 
 [[package]]
 name = "shlex"
