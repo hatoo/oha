@@ -34,6 +34,8 @@ use crate::client_h3::send_debug_request_http3;
 type SendRequestHttp1 = hyper::client::conn::http1::SendRequest<Full<Bytes>>;
 type SendRequestHttp2 = hyper::client::conn::http2::SendRequest<Full<Bytes>>;
 
+const BUF_SIZE: usize = 4096;
+
 fn format_host_port(host: &str, port: u16) -> String {
     if host.contains(':') && !(host.starts_with('[') && host.ends_with(']')) {
         format!("[{host}]:{port}")
@@ -740,7 +742,6 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
-            const BUF_SIZE: usize = 4096;
             let rng = client_state.rng;
             let url = self
                 .request_generator
@@ -753,7 +754,7 @@ impl Client {
                 stream
             } else {
                 let (dns_lookup, stream) = self
-                    .client(&url, &mut client_state.rng, http::Version::HTTP_11)
+                    .client(&url, &mut client_state.rng, self.request_generator.version)
                     .await?;
                 let dialup = std::time::Instant::now();
 
@@ -812,11 +813,52 @@ impl Client {
 
             loop {
                 if matches!(
-                    client_state
-                        .decoder
-                        .consume_body(client_state.decoder.remaining().len())?,
+                    if client_state.decoder.remaining().is_empty() {
+                        client_state.decoder.progress()?
+                    } else {
+                        client_state
+                            .decoder
+                            .consume_body(client_state.decoder.remaining().len())?
+                    },
                     shiguredo_http11::BodyProgress::Complete { .. }
                 ) {
+                    if self.redirect_limit > 0
+                        && let Some((_, location)) = response_header
+                            .headers
+                            .iter()
+                            .find(|(key, _)| key.eq_ignore_ascii_case("location"))
+                    {
+                        let (stream, status, len) = self
+                            .redirect(
+                                &url,
+                                stream,
+                                &mut client_state.decoder,
+                                location.as_str(),
+                                self.redirect_limit,
+                                &mut client_state.rng,
+                            )
+                            .await?;
+
+                        let end = std::time::Instant::now();
+
+                        let result = RequestResult {
+                            rng,
+                            start_latency_correction: None,
+                            start,
+                            first_byte,
+                            end,
+                            // Already in range, .unwrap() should not fail
+                            status: http::StatusCode::from_u16(status).unwrap(),
+                            len_bytes: len_body + len,
+                            connection_time,
+                        };
+
+                        if !self.disable_keepalive {
+                            client_state.stream = Some(stream);
+                        }
+                        return Ok(result);
+                    }
+
                     let end = std::time::Instant::now();
 
                     let result = RequestResult {
@@ -1012,51 +1054,37 @@ impl Client {
     #[allow(clippy::type_complexity)]
     async fn redirect<R: Rng + Send + Copy>(
         &self,
-        base_url: Cow<'_, Url>,
-        seed: R,
-        send_request: SendRequestHttp1,
-        location: &http::header::HeaderValue,
+        base_url: &Url,
+        stream: Stream,
+        decoder: &mut shiguredo_http11::ResponseDecoder,
+        location: &str,
         limit: usize,
         rng: &mut R,
-    ) -> Result<(SendRequestHttp1, http::StatusCode, usize), ClientError> {
+    ) -> Result<(Stream, u16, usize), ClientError> {
         if limit == 0 {
             return Err(ClientError::TooManyRedirect);
         }
-        let url = match Url::parse(location.to_str()?) {
+        let url = match Url::parse(location) {
             Ok(url) => url,
-            Err(ParseError::RelativeUrlWithoutBase) => Url::options()
-                .base_url(Some(&base_url))
-                .parse(location.to_str()?)?,
+            Err(ParseError::RelativeUrlWithoutBase) => {
+                Url::options().base_url(Some(&base_url)).parse(location)?
+            }
             Err(err) => Err(err)?,
         };
 
         let (mut send_request, send_request_base) =
             if base_url.authority() == url.authority() && !self.disable_keepalive {
                 // reuse connection
-                (send_request, None)
+                (stream, None)
             } else {
-                let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
-                (stream, Some(send_request))
+                let (_dns_lookup, new_stream) = self
+                    .client(&url, rng, self.request_generator.version)
+                    .await?;
+                (new_stream, Some(stream))
             };
 
-        while send_request.ready().await.is_err() {
-            let (_dns_lookup, stream) = self.client_http1(&url, rng).await?;
-            send_request = stream;
-        }
-
-        let mut request = self.generate_request(&mut seed.clone())?.1;
-        if url.authority() != base_url.authority() {
-            request.headers_mut().insert(
-                http::header::HOST,
-                http::HeaderValue::from_str(url.authority())?,
-            );
-        }
-        *request.uri_mut() = if self.proxy_url.is_some() && url.scheme() == "http" {
-            // Full URL in request() for HTTP proxy
-            url.as_str().parse()?
-        } else {
-            url[url::Position::BeforePath..].parse()?
-        };
+        let request = self.request_generator.generate_http1_request(&url, rng)?;
+        /*
         if self.proxy_url.is_some() && request.uri().scheme_str() == Some("http") {
             if let Some(authority) = request.uri().authority() {
                 let requested_host = authority.host();
@@ -1074,18 +1102,60 @@ impl Client {
                 }
             }
         }
-        let res = send_request.send_request(request).await?;
-        let (parts, mut stream) = res.into_parts();
-        let mut status = parts.status;
+        */
+        send_request.write_all(&request).await?;
+        send_request.flush().await?;
 
+        decoder.reset();
+
+        let response_header = loop {
+            if let Some((header, _body_kind)) = decoder.decode_headers()? {
+                break header;
+            } else {
+                let n = send_request.read(decoder.mut_buf(BUF_SIZE)?).await?;
+                if n == 0 {
+                    return Err(ClientError::Io(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "connection closed",
+                    )));
+                }
+                decoder.advance_buf(n);
+            }
+        };
+
+        let mut status = response_header.status_code;
         let mut len_bytes = 0;
-        while let Some(chunk) = stream.frame().await {
-            len_bytes += chunk?.data_ref().map(|d| d.len()).unwrap_or_default();
+
+        loop {
+            if matches!(
+                if decoder.remaining().is_empty() {
+                    decoder.progress()?
+                } else {
+                    decoder.consume_body(decoder.remaining().len())?
+                },
+                shiguredo_http11::BodyProgress::Complete { .. }
+            ) {
+                break;
+            } else {
+                let n = send_request.read(decoder.mut_buf(BUF_SIZE)?).await?;
+                if n == 0 {
+                    return Err(ClientError::Io(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "connection closed",
+                    )));
+                }
+                len_bytes += n;
+                decoder.advance_buf(n);
+            }
         }
 
-        if let Some(location) = parts.headers.get("Location") {
+        if let Some((_, location)) = response_header
+            .headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("location"))
+        {
             let (send_request_redirect, new_status, len) =
-                Box::pin(self.redirect(base_url, seed, send_request, location, limit - 1, rng))
+                Box::pin(self.redirect(base_url, send_request, decoder, location, limit - 1, rng))
                     .await?;
             send_request = send_request_redirect;
             status = new_status;
