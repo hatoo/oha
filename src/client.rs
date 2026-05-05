@@ -740,6 +740,7 @@ impl Client {
         client_state: &mut ClientStateHttp1,
     ) -> Result<RequestResult, ClientError> {
         let do_req = async {
+            const BUF_SIZE: usize = 4096;
             let rng = client_state.rng;
             let url = self
                 .request_generator
@@ -791,7 +792,7 @@ impl Client {
                 if let Some((header, _body_kind)) = client_state.decoder.decode_headers()? {
                     break header;
                 } else {
-                    let n = stream.read(client_state.decoder.mut_buf(4096)?).await?;
+                    let n = stream.read(client_state.decoder.mut_buf(BUF_SIZE)?).await?;
                     if n == 0 {
                         return Err(ClientError::Io(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
@@ -835,7 +836,7 @@ impl Client {
                     }
                     return Ok(result);
                 } else {
-                    let n = stream.read(client_state.decoder.mut_buf(4096)?).await?;
+                    let n = stream.read(client_state.decoder.mut_buf(BUF_SIZE)?).await?;
                     if n == 0 {
                         return Err(ClientError::Io(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
