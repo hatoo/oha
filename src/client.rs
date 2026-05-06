@@ -2,7 +2,7 @@ use bytes::Bytes;
 #[cfg(test)]
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use http_body_util::{BodyExt, Full};
-use hyper::{Method, Request, client, http};
+use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::{prelude::*, rng};
 use std::{
@@ -462,6 +462,81 @@ impl Stream {
     }
 }
 
+#[inline(always)]
+async fn receive_http1(
+    stream: &mut Stream,
+    decoder: &mut shiguredo_http11::ResponseDecoder,
+    is_head: bool,
+) -> Result<
+    (
+        shiguredo_http11::ResponseHead,
+        Option<std::time::Instant>,
+        usize,
+    ),
+    ClientError,
+> {
+    decoder.reset();
+
+    let mut header = None;
+    let mut body_kind = None;
+    let mut first_byte = None;
+    let mut body_len = 0;
+
+    'outer: loop {
+        let want = decoder.available_buf().min(BUF_SIZE);
+        let n = stream.read(decoder.mut_buf(want)?).await?;
+
+        decoder.advance_buf(n);
+
+        if header.is_none() {
+            if let Some((h, k)) = decoder.decode_headers()? {
+                header = Some(h);
+                match k {
+                    shiguredo_http11::BodyKind::None | shiguredo_http11::BodyKind::Tunnel => {
+                        break 'outer;
+                    }
+                    _ => {}
+                }
+                if is_head {
+                    break 'outer;
+                }
+                body_kind = Some(k);
+            } else {
+                continue;
+            }
+        }
+
+        loop {
+            if let Some(data) = decoder.peek_body() {
+                if first_byte.is_none() {
+                    first_byte = Some(std::time::Instant::now());
+                }
+                body_len += data.len();
+                match decoder.consume_body(data.len())? {
+                    shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
+                    shiguredo_http11::BodyProgress::Advanced
+                    | shiguredo_http11::BodyProgress::NeedData => continue,
+                }
+            }
+            match decoder.progress()? {
+                shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
+                shiguredo_http11::BodyProgress::Advanced => continue,
+                shiguredo_http11::BodyProgress::NeedData => break,
+            }
+        }
+        if n == 0 {
+            if matches!(body_kind, Some(shiguredo_http11::BodyKind::CloseDelimited)) {
+                continue;
+            }
+            return Err(ClientError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "unexpected EOF",
+            )));
+        }
+    }
+    Ok((header.unwrap(), first_byte, body_len))
+}
+
 impl Client {
     #[inline]
     fn is_http2(&self) -> bool {
@@ -737,6 +812,49 @@ impl Client {
         }
     }
 
+    async fn connect_https<R: Rng>(
+        &self,
+        stream: &mut Stream,
+        decoder: &mut shiguredo_http11::ResponseDecoder,
+        url: &Url,
+        rng: &mut R,
+    ) -> Result<(), ClientError> {
+        let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
+        let requested_port = url
+            .port_or_known_default()
+            .ok_or(ClientError::PortNotFound)?;
+        let (connect_host, connect_port) = if let Some(entry) =
+            self.dns
+                .select_connect_to(requested_host, requested_port, rng)
+        {
+            (entry.target_host.as_str(), entry.target_port)
+        } else {
+            (requested_host, requested_port)
+        };
+        let connect_authority = format_host_port(connect_host, connect_port);
+        let request = shiguredo_http11::Request {
+            method: "CONNECT".to_string(),
+            uri: connect_authority,
+            // TODO
+            version: format!("{:?}", self.request_generator.version),
+            headers: self
+                .proxy_headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect(),
+            body: None,
+        };
+
+        let data = request.encode();
+
+        stream.write_all(&data).await?;
+        stream.flush().await?;
+
+        receive_http1(stream, decoder, false).await?;
+
+        Ok(())
+    }
+
     async fn work_http1(
         &self,
         client_state: &mut ClientStateHttp1,
@@ -753,8 +871,16 @@ impl Client {
             let mut stream = if let Some(stream) = client_state.stream.take() {
                 stream
             } else {
-                let (dns_lookup, stream) = self
-                    .client(&url, &mut client_state.rng, self.request_generator.version)
+                let (dns_lookup, mut stream) = self
+                    .client(
+                        if let Some(proxy_url) = &self.proxy_url {
+                            proxy_url
+                        } else {
+                            &url
+                        },
+                        &mut client_state.rng,
+                        self.request_generator.version,
+                    )
                     .await?;
                 let dialup = std::time::Instant::now();
 
@@ -762,6 +888,18 @@ impl Client {
                     dns_lookup: dns_lookup - start,
                     dialup: dialup - start,
                 });
+
+                if self.proxy_url.is_some() {
+                    if url.scheme() == "https" {
+                        self.connect_https(
+                            &mut stream,
+                            &mut client_state.decoder,
+                            &url,
+                            &mut client_state.rng,
+                        )
+                        .await?;
+                    }
+                }
                 stream
             };
 
@@ -787,69 +925,14 @@ impl Client {
 
             stream.flush().await?;
 
-            client_state.decoder.reset();
-
-            let mut header = None;
-            let mut body_kind = None;
-            let mut first_byte = None;
-            let mut body_len = 0;
-
-            'outer: loop {
-                let want = client_state.decoder.available_buf().min(BUF_SIZE);
-                let n = stream.read(client_state.decoder.mut_buf(want)?).await?;
-
-                client_state.decoder.advance_buf(n);
-
-                if header.is_none() {
-                    if let Some((h, k)) = client_state.decoder.decode_headers()? {
-                        header = Some(h);
-                        match k {
-                            shiguredo_http11::BodyKind::None
-                            | shiguredo_http11::BodyKind::Tunnel => {
-                                break 'outer;
-                            }
-                            _ => {}
-                        }
-                        if self.request_generator.method == http::Method::HEAD {
-                            break 'outer;
-                        }
-                        body_kind = Some(k);
-                    } else {
-                        continue;
-                    }
-                }
-
-                loop {
-                    if let Some(data) = client_state.decoder.peek_body() {
-                        if first_byte.is_none() {
-                            first_byte = Some(std::time::Instant::now());
-                        }
-                        body_len += data.len();
-                        match client_state.decoder.consume_body(data.len())? {
-                            shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
-                            shiguredo_http11::BodyProgress::Advanced
-                            | shiguredo_http11::BodyProgress::NeedData => continue,
-                        }
-                    }
-                    match client_state.decoder.progress()? {
-                        shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
-                        shiguredo_http11::BodyProgress::Advanced => continue,
-                        shiguredo_http11::BodyProgress::NeedData => break,
-                    }
-                }
-                if n == 0 {
-                    if matches!(body_kind, Some(shiguredo_http11::BodyKind::CloseDelimited)) {
-                        continue;
-                    }
-                    return Err(ClientError::Io(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "unexpected EOF",
-                    )));
-                }
-            }
+            let (header, first_byte, body_len) = receive_http1(
+                &mut stream,
+                &mut client_state.decoder,
+                self.request_generator.method == http::Method::HEAD,
+            )
+            .await?;
 
             let end = std::time::Instant::now();
-            let header = header.unwrap();
 
             if self.redirect_limit > 0
                 && let Some((_, location)) = header
@@ -1118,60 +1201,13 @@ impl Client {
         send_request.write_all(&request).await?;
         send_request.flush().await?;
 
-        let mut header = None;
-        let mut body_kind = None;
-        let mut body_len = 0;
-        decoder.reset();
-        'outer: loop {
-            let want = decoder.available_buf().min(BUF_SIZE);
-            let n = send_request.read(decoder.mut_buf(want)?).await?;
+        let (header, first_byte, mut body_len) = receive_http1(
+            &mut send_request,
+            decoder,
+            self.request_generator.method == http::Method::HEAD,
+        )
+        .await?;
 
-            decoder.advance_buf(n);
-
-            if header.is_none() {
-                if let Some((h, k)) = decoder.decode_headers()? {
-                    header = Some(h);
-                    match k {
-                        shiguredo_http11::BodyKind::None | shiguredo_http11::BodyKind::Tunnel => {
-                            break 'outer;
-                        }
-                        _ => {}
-                    }
-                    if self.request_generator.method == http::Method::HEAD {
-                        break 'outer;
-                    }
-                    body_kind = Some(k);
-                } else {
-                    continue;
-                }
-            }
-            loop {
-                if let Some(data) = decoder.peek_body() {
-                    body_len += data.len();
-                    match decoder.consume_body(data.len())? {
-                        shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
-                        shiguredo_http11::BodyProgress::Advanced
-                        | shiguredo_http11::BodyProgress::NeedData => continue,
-                    }
-                }
-                match decoder.progress()? {
-                    shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
-                    shiguredo_http11::BodyProgress::Advanced => continue,
-                    shiguredo_http11::BodyProgress::NeedData => break,
-                }
-            }
-            if n == 0 {
-                if matches!(body_kind, Some(shiguredo_http11::BodyKind::CloseDelimited)) {
-                    continue;
-                }
-                return Err(ClientError::Io(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "unexpected EOF",
-                )));
-            }
-        }
-
-        let header = header.unwrap();
         let mut status = header.status_code;
         if let Some((_, location)) = header
             .headers

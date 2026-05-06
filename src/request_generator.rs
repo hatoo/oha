@@ -80,7 +80,11 @@ impl RequestGenerator {
 
         let request = shiguredo_http11::Request {
             method: self.method.to_string(),
-            uri: url[url::Position::BeforePath..].to_string(),
+            uri: if self.http_proxy.is_some() {
+                url.to_string()
+            } else {
+                url[url::Position::BeforePath..].to_string()
+            },
             version: format!("{:?}", self.version),
             headers: headers
                 .iter()
