@@ -8,6 +8,7 @@ use rand::{prelude::*, rng};
 use std::{
     borrow::Cow,
     io::Write,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering::Relaxed},
@@ -282,7 +283,7 @@ impl Default for Client {
 
 struct ClientStateHttp1 {
     rng: Pcg64Si,
-    stream: Option<Stream>,
+    stream: Option<Box<dyn AsyncReadWrite>>,
     request_cache: Option<Vec<u8>>,
     decoder: shiguredo_http11::ResponseDecoder,
 }
@@ -462,11 +463,93 @@ impl Stream {
     }
 }
 
+impl AsyncRead for Stream {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        match this {
+            Stream::Tcp(stream) => Pin::new(stream).poll_read(cx, buf),
+            Stream::Tls(stream) => Pin::new(stream).poll_read(cx, buf),
+            #[cfg(unix)]
+            Stream::Unix(stream) => Pin::new(stream).poll_read(cx, buf),
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => Pin::new(stream).poll_read(cx, buf),
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support AsyncRead")
+            }
+        }
+    }
+}
+
+impl AsyncWrite for Stream {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        match this {
+            Stream::Tcp(stream) => Pin::new(stream).poll_write(cx, buf),
+            Stream::Tls(stream) => Pin::new(stream).poll_write(cx, buf),
+            #[cfg(unix)]
+            Stream::Unix(stream) => Pin::new(stream).poll_write(cx, buf),
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => Pin::new(stream).poll_write(cx, buf),
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support AsyncWrite")
+            }
+        }
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        match this {
+            Stream::Tcp(stream) => Pin::new(stream).poll_flush(cx),
+            Stream::Tls(stream) => Pin::new(stream).poll_flush(cx),
+            #[cfg(unix)]
+            Stream::Unix(stream) => Pin::new(stream).poll_flush(cx),
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => Pin::new(stream).poll_flush(cx),
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support AsyncWrite")
+            }
+        }
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        match this {
+            Stream::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
+            Stream::Tls(stream) => Pin::new(stream).poll_shutdown(cx),
+            #[cfg(unix)]
+            Stream::Unix(stream) => Pin::new(stream).poll_shutdown(cx),
+            #[cfg(feature = "vsock")]
+            Stream::Vsock(stream) => Pin::new(stream).poll_shutdown(cx),
+            #[cfg(feature = "http3")]
+            Stream::Quic(_) => {
+                panic!("quic does not support AsyncWrite")
+            }
+        }
+    }
+}
+
 #[inline(always)]
-async fn receive_http1(
-    stream: &mut Stream,
+async fn receive_http1<S: AsyncReadWrite>(
+    stream: &mut S,
     decoder: &mut shiguredo_http11::ResponseDecoder,
-    is_head: bool,
+    request_method: &str,
 ) -> Result<
     (
         shiguredo_http11::ResponseHead,
@@ -476,6 +559,8 @@ async fn receive_http1(
     ClientError,
 > {
     decoder.reset();
+    decoder.set_request_method(request_method);
+    decoder.set_expect_no_body(request_method == "HEAD");
 
     let mut header = None;
     let mut body_kind = None;
@@ -484,7 +569,8 @@ async fn receive_http1(
 
     'outer: loop {
         let want = decoder.available_buf().min(BUF_SIZE);
-        let n = stream.read(decoder.mut_buf(want)?).await?;
+        let buf = decoder.mut_buf(want)?;
+        let n = stream.read(buf).await?;
 
         decoder.advance_buf(n);
 
@@ -496,9 +582,6 @@ async fn receive_http1(
                         break 'outer;
                     }
                     _ => {}
-                }
-                if is_head {
-                    break 'outer;
                 }
                 body_kind = Some(k);
             } else {
@@ -536,6 +619,13 @@ async fn receive_http1(
     }
     Ok((header.unwrap(), first_byte, body_len))
 }
+
+trait AsyncReadWrite: AsyncRead + AsyncWrite + Send + Unpin {}
+
+impl AsyncReadWrite for Stream {}
+impl<T: AsyncReadWrite> AsyncReadWrite for tokio_rustls::client::TlsStream<T> {}
+impl<T: AsyncReadWrite> AsyncReadWrite for Box<T> {}
+impl AsyncReadWrite for Box<dyn AsyncReadWrite> {}
 
 impl Client {
     #[inline]
@@ -754,6 +844,75 @@ impl Client {
     async fn client_http1<R: Rng>(
         &self,
         url: &Url,
+        decoder: &mut shiguredo_http11::ResponseDecoder,
+        rng: &mut R,
+    ) -> Result<(Instant, Box<dyn AsyncReadWrite>), ClientError> {
+        if let Some(proxy_url) = &self.proxy_url {
+            // TODO
+            /*
+            let http_proxy_version = if self.is_proxy_http2() {
+                http::Version::HTTP_2
+            } else {
+                http::Version::HTTP_11
+            };
+            */
+            let (dns_lookup, mut stream) =
+                self.client(proxy_url, rng, http::Version::HTTP_11).await?;
+            if url.scheme() == "https" {
+                let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
+                let requested_port = url
+                    .port_or_known_default()
+                    .ok_or(ClientError::PortNotFound)?;
+                let (connect_host, connect_port) = if let Some(entry) =
+                    self.dns
+                        .select_connect_to(requested_host, requested_port, rng)
+                {
+                    (entry.target_host.as_str(), entry.target_port)
+                } else {
+                    (requested_host, requested_port)
+                };
+                let connect_authority = format_host_port(connect_host, connect_port);
+                // Do CONNECT request to proxy
+                let req = shiguredo_http11::Request {
+                    method: "CONNECT".to_string(),
+                    uri: connect_authority.clone(),
+                    // TODO
+                    version: format!("{:?}", self.request_generator.version),
+                    headers: std::iter::once((
+                        "Host".to_string(),
+                        format_host_port(connect_host, connect_port),
+                    ))
+                    .chain(self.proxy_headers.iter().map(|(k, v)| {
+                        (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())
+                    }))
+                    .collect(),
+                    body: None,
+                };
+
+                let data = req.encode();
+                stream.write_all(&data).await?;
+                stream.flush().await?;
+                let (_, _, _) =
+                    receive_http1(&mut stream, decoder, self.request_generator.method.as_str())
+                        .await?;
+
+                let stream = self
+                    .connect_tls(stream, url, http::Version::HTTP_11)
+                    .await?;
+                Ok((dns_lookup, stream))
+            } else {
+                // Send full URL in request() for HTTP proxy
+                Ok((dns_lookup, Box::new(stream)))
+            }
+        } else {
+            let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_11).await?;
+            Ok((dns_lookup, Box::new(stream)))
+        }
+    }
+
+    async fn _client_http1<R: Rng>(
+        &self,
+        url: &Url,
         rng: &mut R,
     ) -> Result<(Instant, SendRequestHttp1), ClientError> {
         if let Some(proxy_url) = &self.proxy_url {
@@ -812,49 +971,6 @@ impl Client {
         }
     }
 
-    async fn connect_https<R: Rng>(
-        &self,
-        stream: &mut Stream,
-        decoder: &mut shiguredo_http11::ResponseDecoder,
-        url: &Url,
-        rng: &mut R,
-    ) -> Result<(), ClientError> {
-        let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
-        let requested_port = url
-            .port_or_known_default()
-            .ok_or(ClientError::PortNotFound)?;
-        let (connect_host, connect_port) = if let Some(entry) =
-            self.dns
-                .select_connect_to(requested_host, requested_port, rng)
-        {
-            (entry.target_host.as_str(), entry.target_port)
-        } else {
-            (requested_host, requested_port)
-        };
-        let connect_authority = format_host_port(connect_host, connect_port);
-        let request = shiguredo_http11::Request {
-            method: "CONNECT".to_string(),
-            uri: connect_authority,
-            // TODO
-            version: format!("{:?}", self.request_generator.version),
-            headers: self
-                .proxy_headers
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect(),
-            body: None,
-        };
-
-        let data = request.encode();
-
-        stream.write_all(&data).await?;
-        stream.flush().await?;
-
-        receive_http1(stream, decoder, false).await?;
-
-        Ok(())
-    }
-
     async fn work_http1(
         &self,
         client_state: &mut ClientStateHttp1,
@@ -871,16 +987,8 @@ impl Client {
             let mut stream = if let Some(stream) = client_state.stream.take() {
                 stream
             } else {
-                let (dns_lookup, mut stream) = self
-                    .client(
-                        if let Some(proxy_url) = &self.proxy_url {
-                            proxy_url
-                        } else {
-                            &url
-                        },
-                        &mut client_state.rng,
-                        self.request_generator.version,
-                    )
+                let (dns_lookup, stream) = self
+                    .client_http1(&url, &mut client_state.decoder, &mut client_state.rng)
                     .await?;
                 let dialup = std::time::Instant::now();
 
@@ -889,17 +997,6 @@ impl Client {
                     dialup: dialup - start,
                 });
 
-                if self.proxy_url.is_some() {
-                    if url.scheme() == "https" {
-                        self.connect_https(
-                            &mut stream,
-                            &mut client_state.decoder,
-                            &url,
-                            &mut client_state.rng,
-                        )
-                        .await?;
-                    }
-                }
                 stream
             };
 
@@ -928,7 +1025,7 @@ impl Client {
             let (header, first_byte, body_len) = receive_http1(
                 &mut stream,
                 &mut client_state.decoder,
-                self.request_generator.method == http::Method::HEAD,
+                self.request_generator.method.as_str(),
             )
             .await?;
 
@@ -1150,12 +1247,12 @@ impl Client {
     async fn redirect<R: Rng + Send + Copy>(
         &self,
         base_url: &Url,
-        stream: Stream,
+        stream: Box<dyn AsyncReadWrite>,
         decoder: &mut shiguredo_http11::ResponseDecoder,
         location: &str,
         limit: usize,
         rng: &mut R,
-    ) -> Result<(Stream, u16, usize), ClientError> {
+    ) -> Result<(Box<dyn AsyncReadWrite>, u16, usize), ClientError> {
         if limit == 0 {
             return Err(ClientError::TooManyRedirect);
         }
@@ -1172,9 +1269,7 @@ impl Client {
                 // reuse connection
                 (stream, None)
             } else {
-                let (_dns_lookup, new_stream) = self
-                    .client(&url, rng, self.request_generator.version)
-                    .await?;
+                let (_dns_lookup, new_stream) = self.client_http1(&url, decoder, rng).await?;
                 (new_stream, Some(stream))
             };
 
@@ -1204,7 +1299,7 @@ impl Client {
         let (header, first_byte, mut body_len) = receive_http1(
             &mut send_request,
             decoder,
-            self.request_generator.method == http::Method::HEAD,
+            self.request_generator.method.as_str(),
         )
         .await?;
 
@@ -1332,7 +1427,6 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
 
             let result = client.work_http1(&mut client_state).await?;
 
-            dbg!(&result);
             return Ok(());
             /*
             let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
