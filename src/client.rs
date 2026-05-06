@@ -810,6 +810,9 @@ impl Client {
                             }
                             _ => {}
                         }
+                        if self.request_generator.method == http::Method::HEAD {
+                            break 'outer;
+                        }
                         body_kind = Some(k);
                     } else {
                         continue;
@@ -1133,6 +1136,9 @@ impl Client {
                             break 'outer;
                         }
                         _ => {}
+                    }
+                    if self.request_generator.method == http::Method::HEAD {
+                        break 'outer;
                     }
                     body_kind = Some(k);
                 } else {
