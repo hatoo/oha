@@ -56,6 +56,54 @@
         "sizePerSec"
       ]
     },
+    "metrics": {
+      "description": "CI friendly statistics",
+      "type": "object",
+      "properties": {
+        "success_rate": {
+          "description": "The number of success requests / All requests which isn't includes deadline",
+          "type": "number"
+        },
+        "requests_per_sec": {
+          "description": "The number of requests per second",
+          "type": "number"
+        },
+        "latency_ms": {
+          "description": "Selected latency statistics in millieseconds",
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "mean": {
+              "type": "number"
+            },
+            "p50": {
+              "type": "number"
+            },
+            "p95": {
+              "type": "number"
+            },
+            "p99": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "min",
+            "mean",
+            "p50",
+            "p95",
+            "p99",
+            "max"
+          ]
+        }
+      },
+      "required": [
+        "success_rate",
+        "requests_per_sec",
+        "latency_ms"
+      ]
+    },
     "responseTimeHistogram": {
       "description": "The histogram of response time in seconds. The key is the response time in seconds and the value is the number of requests",
       "type": "object",
