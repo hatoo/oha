@@ -848,15 +848,12 @@ impl Client {
             let end = std::time::Instant::now();
             let header = header.unwrap();
 
-            if let Some((_, location)) = header
-                .headers
-                .iter()
-                .find(|(key, _)| key.eq_ignore_ascii_case("location"))
+            if self.redirect_limit > 0
+                && let Some((_, location)) = header
+                    .headers
+                    .iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case("location"))
             {
-                if self.redirect_limit == 0 {
-                    return Err(ClientError::TooManyRedirect);
-                }
-
                 let (stream, status, len) = self
                     .redirect(
                         &url,
