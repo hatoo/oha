@@ -1427,6 +1427,8 @@ pub async fn work_debug<W: Write>(w: &mut W, client: Arc<Client>) -> Result<(), 
 
             let result = client.work_http1(&mut client_state).await?;
 
+            dbg!(&result);
+
             return Ok(());
             /*
             let (_dns_lookup, mut send_request) = client.client_http1(&url, &mut rng).await?;
