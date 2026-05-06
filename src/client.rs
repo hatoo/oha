@@ -789,109 +789,82 @@ impl Client {
 
             client_state.decoder.reset();
 
-            let response_header = loop {
-                if let Some((header, _body_kind)) = client_state.decoder.decode_headers()? {
-                    break header;
-                } else {
-                    let n = stream.read(client_state.decoder.mut_buf(BUF_SIZE)?).await?;
-                    if n == 0 {
-                        return Err(ClientError::Io(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "connection closed",
-                        )));
-                    }
-                    client_state.decoder.advance_buf(n);
-                }
-            };
+            let mut header = None;
+            let mut body_kind = None;
+            let mut first_byte = None;
+            let mut body_len = 0;
 
-            let mut len_body = client_state.decoder.remaining().len();
-            let mut first_byte = if client_state.decoder.remaining().is_empty() {
-                None
-            } else {
-                Some(std::time::Instant::now())
-            };
+            'outer: loop {
+                let want = client_state.decoder.available_buf().min(BUF_SIZE);
+                let n = stream.read(client_state.decoder.mut_buf(want)?).await?;
 
-            loop {
-                if matches!(
-                    if client_state.decoder.remaining().is_empty() {
-                        client_state.decoder.progress()?
-                    } else {
-                        client_state
-                            .decoder
-                            .consume_body(client_state.decoder.remaining().len())?
-                    },
-                    shiguredo_http11::BodyProgress::Complete { .. }
-                ) {
-                    if self.redirect_limit > 0
-                        && let Some((_, location)) = response_header
-                            .headers
-                            .iter()
-                            .find(|(key, _)| key.eq_ignore_ascii_case("location"))
-                    {
-                        let (stream, status, len) = self
-                            .redirect(
-                                &url,
-                                stream,
-                                &mut client_state.decoder,
-                                location.as_str(),
-                                self.redirect_limit,
-                                &mut client_state.rng,
-                            )
-                            .await?;
+                client_state.decoder.advance_buf(n);
 
-                        let end = std::time::Instant::now();
-
-                        let result = RequestResult {
-                            rng,
-                            start_latency_correction: None,
-                            start,
-                            first_byte,
-                            end,
-                            // Already in range, .unwrap() should not fail
-                            status: http::StatusCode::from_u16(status).unwrap(),
-                            len_bytes: len_body + len,
-                            connection_time,
-                        };
-
-                        if !self.disable_keepalive {
-                            client_state.stream = Some(stream);
+                if header.is_none() {
+                    if let Some((h, k)) = client_state.decoder.decode_headers()? {
+                        header = Some(h);
+                        match k {
+                            shiguredo_http11::BodyKind::None
+                            | shiguredo_http11::BodyKind::Tunnel => {
+                                break 'outer;
+                            }
+                            _ => {}
                         }
-                        return Ok(result);
+                        body_kind = Some(k);
+                    } else {
+                        continue;
                     }
+                }
 
-                    let end = std::time::Instant::now();
-
-                    let result = RequestResult {
-                        rng,
-                        start_latency_correction: None,
-                        start,
-                        first_byte,
-                        end,
-                        // Already in range, .unwrap() should not fail
-                        status: http::StatusCode::from_u16(response_header.status_code).unwrap(),
-                        len_bytes: len_body,
-                        connection_time,
-                    };
-
-                    if !self.disable_keepalive {
-                        client_state.stream = Some(stream);
+                loop {
+                    if let Some(data) = client_state.decoder.peek_body() {
+                        if first_byte.is_none() {
+                            first_byte = Some(std::time::Instant::now());
+                        }
+                        body_len += data.len();
+                        match client_state.decoder.consume_body(data.len())? {
+                            shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
+                            shiguredo_http11::BodyProgress::Advanced
+                            | shiguredo_http11::BodyProgress::NeedData => continue,
+                        }
                     }
-                    return Ok(result);
-                } else {
-                    let n = stream.read(client_state.decoder.mut_buf(BUF_SIZE)?).await?;
-                    if n == 0 {
-                        return Err(ClientError::Io(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "connection closed",
-                        )));
+                    match client_state.decoder.progress()? {
+                        shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
+                        shiguredo_http11::BodyProgress::Advanced => continue,
+                        shiguredo_http11::BodyProgress::NeedData => break,
                     }
-                    len_body += n;
-                    if first_byte.is_none() {
-                        first_byte = Some(std::time::Instant::now());
+                }
+                if n == 0 {
+                    if matches!(body_kind, Some(shiguredo_http11::BodyKind::CloseDelimited)) {
+                        continue;
                     }
-                    client_state.decoder.advance_buf(n);
+                    return Err(ClientError::Io(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "unexpected EOF",
+                    )));
                 }
             }
+
+            let end = std::time::Instant::now();
+            let header = header.unwrap();
+
+            if self.disable_keepalive {
+                // close the connection immediately
+                drop(stream);
+            } else {
+                client_state.stream = Some(stream);
+            }
+
+            Ok(RequestResult {
+                rng,
+                start_latency_correction: None,
+                start,
+                first_byte,
+                end,
+                status: http::StatusCode::from_u16(header.status_code).unwrap(),
+                len_bytes: body_len,
+                connection_time,
+            })
         };
 
         if let Some(timeout) = self.timeout {
