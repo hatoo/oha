@@ -1296,7 +1296,7 @@ impl Client {
         send_request.write_all(&request).await?;
         send_request.flush().await?;
 
-        let (header, first_byte, mut body_len) = receive_http1(
+        let (header, _first_byte, mut body_len) = receive_http1(
             &mut send_request,
             decoder,
             self.request_generator.method.as_str(),
