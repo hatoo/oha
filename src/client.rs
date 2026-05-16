@@ -23,7 +23,7 @@ use tokio::{
 use url::{ParseError, Url};
 
 use crate::{
-    ConnectToEntry, cli,
+    ConnectToEntry,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
     url_generator::UrlGeneratorError,
