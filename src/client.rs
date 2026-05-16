@@ -416,6 +416,7 @@ impl Stream {
         }
     }
 
+    /*
     async fn write_all(&mut self, data: &[u8]) -> Result<(), ClientError> {
         match self {
             Stream::Tcp(stream) => stream.write_all(data).await?,
@@ -463,6 +464,7 @@ impl Stream {
         }
         Ok(())
     }
+    */
 }
 
 impl AsyncRead for Stream {
