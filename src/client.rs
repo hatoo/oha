@@ -209,6 +209,8 @@ pub enum ClientError {
     Http3(#[from] crate::client_h3::Http3Error),
     #[error(transparent)]
     ShiguredoHttp11(#[from] shiguredo_http11::Error),
+    #[error(transparent)]
+    Encode(#[from] shiguredo_http11::EncodeError),
 }
 
 pub struct Client {
@@ -560,7 +562,6 @@ async fn receive_http1<S: AsyncReadWrite>(
 > {
     decoder.reset();
     decoder.set_request_method(request_method);
-    decoder.set_expect_no_body(request_method == "HEAD");
 
     let mut header = None;
     let mut body_kind = None;
@@ -873,23 +874,25 @@ impl Client {
                 };
                 let connect_authority = format_host_port(connect_host, connect_port);
                 // Do CONNECT request to proxy
-                let req = shiguredo_http11::Request {
-                    method: "CONNECT".to_string(),
-                    uri: connect_authority.clone(),
-                    // TODO
-                    version: format!("{:?}", self.request_generator.version),
-                    headers: std::iter::once((
+                let mut req = shiguredo_http11::Request::with_version(
+                    "CONNECT".to_string(),
+                    connect_authority.clone(),
+                    format!("{:?}", self.request_generator.version),
+                )?;
+
+                for (k, v) in
+                    std::iter::once((
                         "Host".to_string(),
                         format_host_port(connect_host, connect_port),
                     ))
                     .chain(self.proxy_headers.iter().map(|(k, v)| {
                         (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())
                     }))
-                    .collect(),
-                    body: None,
-                };
+                {
+                    req.add_header(k, v)?;
+                }
 
-                let data = req.encode();
+                let data = req.encode()?;
                 stream.write_all(&data).await?;
                 stream.flush().await?;
                 let (_, _, _) =
@@ -1033,7 +1036,7 @@ impl Client {
 
             if self.redirect_limit > 0
                 && let Some((_, location)) = header
-                    .headers
+                    .headers()
                     .iter()
                     .find(|(key, _)| key.eq_ignore_ascii_case("location"))
             {
@@ -1080,7 +1083,7 @@ impl Client {
                 start,
                 first_byte,
                 end,
-                status: http::StatusCode::from_u16(header.status_code).unwrap(),
+                status: http::StatusCode::from_u16(header.status_code()).unwrap(),
                 len_bytes: body_len,
                 connection_time,
             })
@@ -1303,9 +1306,9 @@ impl Client {
         )
         .await?;
 
-        let mut status = header.status_code;
+        let mut status = header.status_code();
         if let Some((_, location)) = header
-            .headers
+            .headers()
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case("location"))
         {

@@ -42,6 +42,10 @@ pub enum RequestGenerationError {
     RequestBuild(#[from] http::Error),
     #[error("AWS Signature error: {0}")]
     AwsSignature(#[from] aws_auth::AwsSignatureError),
+    #[error("HTTP/1.1 encoding error: {0}")]
+    EncodeError(#[from] shiguredo_http11::EncodeError),
+    #[error(transparent)]
+    InvalidHeaderValue(#[from] http::header::ToStrError),
 }
 
 impl RequestGenerator {
@@ -78,31 +82,27 @@ impl RequestGenerator {
             .entry(http::header::HOST)
             .or_insert_with(|| http::header::HeaderValue::from_str(url.authority()).unwrap());
 
-        let request = shiguredo_http11::Request {
-            method: self.method.to_string(),
-            uri: if self.http_proxy.is_some() {
+        let mut request = shiguredo_http11::Request::with_version(
+            self.method.to_string(),
+            if self.http_proxy.is_some() {
                 url.to_string()
             } else {
                 url[url::Position::BeforePath..].to_string()
             },
-            version: format!("{:?}", self.version),
-            headers: headers
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        k.as_str().to_string(),
-                        v.to_str().unwrap_or_default().to_string(),
-                    )
-                })
-                .collect(),
-            body: if body.is_empty() {
-                None
-            } else {
-                Some(body.to_vec())
-            },
-        };
+            format!("{:?}", self.version),
+        )?;
 
-        Ok(request.encode())
+        for (k, v) in headers {
+            if let Some(k) = k {
+                request.set_header(k.as_str(), v.to_str()?)?;
+            }
+        }
+
+        if !body.is_empty() {
+            request.set_body(body.to_vec());
+        }
+
+        Ok(request.encode()?)
     }
 
     pub fn generate<R: Rng>(
