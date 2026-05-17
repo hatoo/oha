@@ -926,67 +926,6 @@ impl Client {
         }
     }
 
-    async fn _client_http1<R: Rng>(
-        &self,
-        url: &Url,
-        rng: &mut R,
-    ) -> Result<(Instant, SendRequestHttp1), ClientError> {
-        if let Some(proxy_url) = &self.proxy_url {
-            let http_proxy_version = if self.is_proxy_http2() {
-                http::Version::HTTP_2
-            } else {
-                http::Version::HTTP_11
-            };
-            let (dns_lookup, stream) = self.client(proxy_url, rng, http_proxy_version).await?;
-            if url.scheme() == "https" {
-                let requested_host = url.host_str().ok_or(ClientError::HostNotFound)?;
-                let requested_port = url
-                    .port_or_known_default()
-                    .ok_or(ClientError::PortNotFound)?;
-                let (connect_host, connect_port) = if let Some(entry) =
-                    self.dns
-                        .select_connect_to(requested_host, requested_port, rng)
-                {
-                    (entry.target_host.as_str(), entry.target_port)
-                } else {
-                    (requested_host, requested_port)
-                };
-                let connect_authority = format_host_port(connect_host, connect_port);
-                // Do CONNECT request to proxy
-                let req = {
-                    let mut builder = http::Request::builder()
-                        .method(Method::CONNECT)
-                        .uri(connect_authority);
-                    *builder
-                        .headers_mut()
-                        .ok_or(ClientError::GetHeaderFromBuilder)? = self.proxy_headers.clone();
-                    builder.body(http_body_util::Full::default())?
-                };
-                let res = if self.proxy_http_version == http::Version::HTTP_2 {
-                    let mut send_request = stream.handshake_http2().await?;
-                    send_request.send_request(req).await?
-                } else {
-                    let mut send_request = stream.handshake_http1(true).await?;
-                    send_request.send_request(req).await?
-                };
-                let stream = hyper::upgrade::on(res).await?;
-                let stream = self
-                    .connect_tls(TokioIo::new(stream), url, self.request_generator.version)
-                    .await?;
-                let (send_request, conn) =
-                    hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-                tokio::spawn(conn);
-                Ok((dns_lookup, send_request))
-            } else {
-                // Send full URL in request() for HTTP proxy
-                Ok((dns_lookup, stream.handshake_http1(false).await?))
-            }
-        } else {
-            let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_11).await?;
-            Ok((dns_lookup, stream.handshake_http1(false).await?))
-        }
-    }
-
     async fn work_http1(
         &self,
         client_state: &mut ClientStateHttp1,
@@ -1038,7 +977,7 @@ impl Client {
 
             stream.flush().await?;
 
-            let (header, first_byte, body_len) = receive_http1(
+            let (head, first_byte, body_len) = receive_http1(
                 &mut stream,
                 &mut client_state.decoder,
                 self.request_generator.method.as_str(),
@@ -1048,7 +987,7 @@ impl Client {
             let end = std::time::Instant::now();
 
             if self.redirect_limit > 0
-                && let Some((_, location)) = header
+                && let Some((_, location)) = head
                     .headers()
                     .iter()
                     .find(|(key, _)| key.eq_ignore_ascii_case("location"))
@@ -1096,7 +1035,7 @@ impl Client {
                 start,
                 first_byte,
                 end,
-                status: http::StatusCode::from_u16(header.status_code()).unwrap(),
+                status: http::StatusCode::from_u16(head.status_code()).unwrap(),
                 len_bytes: body_len,
                 connection_time,
             })
@@ -1312,15 +1251,15 @@ impl Client {
         send_request.write_all(&request).await?;
         send_request.flush().await?;
 
-        let (header, _first_byte, mut body_len) = receive_http1(
+        let (head, _first_byte, mut body_len) = receive_http1(
             &mut send_request,
             decoder,
             self.request_generator.method.as_str(),
         )
         .await?;
 
-        let mut status = header.status_code();
-        if let Some((_, location)) = header
+        let mut status = head.status_code();
+        if let Some((_, location)) = head
             .headers()
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case("location"))
