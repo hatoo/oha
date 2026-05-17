@@ -565,62 +565,73 @@ async fn receive_http1<S: AsyncReadWrite>(
     decoder.reset();
     decoder.set_request_method(request_method);
 
-    let mut header = None;
-    let mut body_kind = None;
     let mut first_byte = None;
     let mut body_len = 0;
 
-    'outer: loop {
+    let (head, body_kind) = loop {
         let want = decoder.available_buf().min(BUF_SIZE);
         let buf = decoder.mut_buf(want)?;
         let n = stream.read(buf).await?;
-
-        decoder.advance_buf(n);
-
-        if header.is_none() {
-            if let Some((h, k)) = decoder.decode_headers()? {
-                header = Some(h);
-                match k {
-                    shiguredo_http11::BodyKind::None | shiguredo_http11::BodyKind::Tunnel => {
-                        break 'outer;
-                    }
-                    _ => {}
-                }
-                body_kind = Some(k);
-            } else {
-                continue;
-            }
-        }
-
-        loop {
-            if let Some(data) = decoder.peek_body() {
-                if first_byte.is_none() {
-                    first_byte = Some(std::time::Instant::now());
-                }
-                body_len += data.len();
-                match decoder.consume_body(data.len())? {
-                    shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
-                    shiguredo_http11::BodyProgress::Advanced
-                    | shiguredo_http11::BodyProgress::NeedData => continue,
-                }
-            }
-            match decoder.progress()? {
-                shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
-                shiguredo_http11::BodyProgress::Advanced => continue,
-                shiguredo_http11::BodyProgress::NeedData => break,
-            }
-        }
         if n == 0 {
-            if matches!(body_kind, Some(shiguredo_http11::BodyKind::CloseDelimited)) {
-                continue;
-            }
-            return Err(ClientError::Io(std::io::Error::new(
+            decoder.advance_buf(0);
+            return Err(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
-                "unexpected EOF",
-            )));
+                "unexpected EOF while reading response",
+            )
+            .into());
+        }
+        decoder.advance_buf(n);
+        if let Some(result) = decoder.decode_headers()? {
+            break result;
+        }
+    };
+
+    // ボディをストリーミングで読み取り
+    if let shiguredo_http11::BodyKind::ContentLength(_) | shiguredo_http11::BodyKind::Chunked =
+        body_kind
+    {
+        'outer: loop {
+            loop {
+                if let Some(data) = decoder.peek_body() {
+                    if first_byte.is_none() {
+                        first_byte = Some(std::time::Instant::now());
+                    }
+                    body_len += data.len();
+                    let len = data.len();
+                    match decoder.consume_body(len)? {
+                        shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
+                        // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                        // 直後の peek_body() は None を返すため progress 分岐に進む。
+                        shiguredo_http11::BodyProgress::Advanced
+                        | shiguredo_http11::BodyProgress::NeedData => continue,
+                    }
+                }
+                // peek_body() が None → 状態機械を進める
+                match decoder.progress()? {
+                    shiguredo_http11::BodyProgress::Complete { .. } => break 'outer,
+                    shiguredo_http11::BodyProgress::Advanced => continue,
+                    // バッファ不足: 内側ループを抜けて I/O 読み取りに戻る
+                    shiguredo_http11::BodyProgress::NeedData => break,
+                }
+            }
+
+            // 追加データを内部バッファに直接 read
+            let want = decoder.available_buf().min(BUF_SIZE);
+            let buf = decoder.mut_buf(want)?;
+            let n = stream.read(buf).await?;
+            if n == 0 {
+                decoder.advance_buf(0);
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "unexpected EOF while reading response body",
+                )
+                .into());
+            }
+            decoder.advance_buf(n);
         }
     }
-    Ok((header.unwrap(), first_byte, body_len))
+
+    Ok((head, first_byte, body_len))
 }
 
 trait AsyncReadWrite: AsyncRead + AsyncWrite + Send + Unpin {}
