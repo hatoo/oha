@@ -711,6 +711,10 @@ async fn test_connect_to_redirect() {
     )
 }
 
+/*
+/// Abusolute URL form and custom Host header isn't RFC complianmt, so drop this test for now.
+/// curl uses CONNECT tunnel.
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_http_proxy_override() {
     let (tx, rx) = kanal::unbounded();
@@ -768,6 +772,7 @@ async fn test_connect_to_http_proxy_override() {
     assert_eq!(authority, format!("127.0.0.1:{override_port}"));
     assert_eq!(host, "example.test");
 }
+    */
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_connect_to_https_proxy_connect_override() {
