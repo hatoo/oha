@@ -855,7 +855,7 @@ impl Client {
         Ok(Box::new(stream))
     }
 
-    async fn client_http1<R: Rng>(
+    async fn connect_http1<R: Rng>(
         &self,
         url: &Url,
         decoder: &mut shiguredo_http11::ResponseDecoder,
@@ -943,7 +943,7 @@ impl Client {
                 stream
             } else {
                 let (dns_lookup, stream) = self
-                    .client_http1(&url, &mut client_state.decoder, &mut client_state.rng)
+                    .connect_http1(&url, &mut client_state.decoder, &mut client_state.rng)
                     .await?;
                 let dialup = std::time::Instant::now();
 
@@ -1224,7 +1224,7 @@ impl Client {
                 // reuse connection
                 (stream, None)
             } else {
-                let (_dns_lookup, new_stream) = self.client_http1(&url, decoder, rng).await?;
+                let (_dns_lookup, new_stream) = self.connect_http1(&url, decoder, rng).await?;
                 (new_stream, Some(stream))
             };
 
