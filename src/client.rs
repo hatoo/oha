@@ -5,10 +5,8 @@ use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::{prelude::*, rng};
-use serde_json::error;
 use std::{
     borrow::Cow,
-    collections::BTreeMap,
     io::Write,
     pin::Pin,
     sync::{
@@ -25,7 +23,7 @@ use tokio::{
 use url::{ParseError, Url};
 
 use crate::{
-    ConnectToEntry, cli,
+    ConnectToEntry,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
     url_generator::UrlGeneratorError,
@@ -2479,7 +2477,7 @@ pub mod fast {
             is_cancel_error, is_hyper_error, set_connection_time, setup_http2,
         },
         pcg64si::Pcg64Si,
-        result_data::{self, ResultData},
+        result_data::ResultData,
     };
 
     use super::Client;
@@ -2549,7 +2547,7 @@ pub mod fast {
                                 let mut rng: Pcg64Si = SeedableRng::from_rng(&mut rand::rng());
                                 let url =
                                     client.request_generator.url_generator.generate(&mut rng)?;
-                                let (start, stream) =
+                                let (_start, stream) =
                                     client.client(&url, &mut rng, Version::HTTP_2).await?;
 
                                 let mut map = BTreeMap::new();
