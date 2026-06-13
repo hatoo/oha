@@ -5,8 +5,10 @@ use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, http};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rand::{prelude::*, rng};
+use serde_json::error;
 use std::{
     borrow::Cow,
+    collections::BTreeMap,
     io::Write,
     pin::Pin,
     sync::{
@@ -23,7 +25,7 @@ use tokio::{
 use url::{ParseError, Url};
 
 use crate::{
-    ConnectToEntry,
+    ConnectToEntry, cli,
     pcg64si::Pcg64Si,
     request_generator::{RequestGenerationError, RequestGenerator},
     url_generator::UrlGeneratorError,
@@ -211,6 +213,8 @@ pub enum ClientError {
     ShiguredoHttp11(#[from] shiguredo_http11::Error),
     #[error(transparent)]
     Encode(#[from] shiguredo_http11::EncodeError),
+    #[error(transparent)]
+    TokioHttp2(#[from] tokio_http2::Error),
 }
 
 pub struct Client {
@@ -888,7 +892,7 @@ impl Client {
                 let connect_authority = format_host_port(connect_host, connect_port);
                 // Do CONNECT request to proxy
                 let mut req = shiguredo_http11::Request::with_version(
-                    "CONNECT".to_string(),
+                    shiguredo_http11::Method::CONNECT,
                     connect_authority.clone(),
                     format!("{:?}", self.request_generator.version),
                 )?;
@@ -902,7 +906,7 @@ impl Client {
                         (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())
                     }))
                 {
-                    req.add_header(k, v)?;
+                    req.add_header(shiguredo_http11::HeaderName::new(k).unwrap(), v)?;
                 }
 
                 let data = req.encode()?;
@@ -990,7 +994,7 @@ impl Client {
                 && let Some((_, location)) = head
                     .headers()
                     .iter()
-                    .find(|(key, _)| key.eq_ignore_ascii_case("location"))
+                    .find(|(key, _)| key.as_str().eq_ignore_ascii_case("location"))
             {
                 let (stream, status, len) = self
                     .redirect(
@@ -1262,7 +1266,7 @@ impl Client {
         if let Some((_, location)) = head
             .headers()
             .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case("location"))
+            .find(|(key, _)| key.as_str().eq_ignore_ascii_case("location"))
         {
             let (send_request_redirect, new_status, len) =
                 Box::pin(self.redirect(base_url, send_request, decoder, location, limit - 1, rng))
@@ -2458,20 +2462,24 @@ pub async fn work_until_with_qps_latency_correction(
 
 /// Optimized workers for `--no-tui` mode
 pub mod fast {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicIsize, Ordering},
+    use std::{
+        collections::BTreeMap,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicIsize, Ordering},
+        },
     };
 
+    use hyper::Version;
     use rand::SeedableRng;
 
     use crate::{
         client::{
-            ClientError, ClientStateHttp1, ClientStateHttp2, HttpWorkType, is_cancel_error,
-            is_hyper_error, set_connection_time, setup_http2,
+            ClientError, ClientStateHttp1, ClientStateHttp2, HttpWorkType, RequestResult,
+            is_cancel_error, is_hyper_error, set_connection_time, setup_http2,
         },
         pcg64si::Pcg64Si,
-        result_data::ResultData,
+        result_data::{self, ResultData},
     };
 
     use super::Client;
@@ -2517,133 +2525,154 @@ pub mod fast {
         let handles = match client.work_type() {
             #[cfg(feature = "http3")]
             HttpWorkType::H3 => unreachable!(),
-            HttpWorkType::H2 => {
-                connections
-                    .map(|num_connections| {
-                        let report_tx = report_tx.clone();
-                        let counter = counter.clone();
+            HttpWorkType::H2 => connections
+                .map(|num_connections| {
+                    let report_tx = report_tx.clone();
+                    let counter = counter.clone();
+                    let client = client.clone();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let token = token.clone();
+
+                    std::thread::spawn(move || {
                         let client = client.clone();
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .unwrap();
-                        let token = token.clone();
-
-                        std::thread::spawn(move || {
+                        let local = tokio::task::LocalSet::new();
+                        for _ in 0..num_connections {
+                            let report_tx = report_tx.clone();
+                            let counter = counter.clone();
                             let client = client.clone();
-                            let local = tokio::task::LocalSet::new();
-                            for _ in 0..num_connections {
-                                let report_tx = report_tx.clone();
-                                let counter = counter.clone();
-                                let client = client.clone();
-                                let token = token.clone();
-                                local.spawn_local(Box::pin(async move {
-                                    let mut has_err = false;
-                                    let mut result_data_err = ResultData::default();
-                                    let mut rng: Pcg64Si = SeedableRng::from_rng(&mut rand::rng());
-                                    loop {
-                                        let client = client.clone();
-                                        match setup_http2(&client, &mut rng).await {
-                                            Ok((connection_time, send_request)) => {
-                                                let futures = (0..n_http_parallel)
-                                                    .map(|_| {
-                                                        let mut client_state = ClientStateHttp2 {
-                                                            rng: SeedableRng::from_rng(
-                                                                &mut rand::rng(),
-                                                            ),
-                                                            send_request: send_request.clone(),
-                                                        };
-                                                        let counter = counter.clone();
-                                                        let client = client.clone();
-                                                        let report_tx = report_tx.clone();
-                                                        let token = token.clone();
-                                                        tokio::task::spawn_local(async move {
-                                                            let mut result_data =
-                                                                ResultData::default();
+                            let token = token.clone();
+                            local.spawn_local(Box::pin(async move {
+                                let mut result_data = ResultData::default();
+                                let mut rng: Pcg64Si = SeedableRng::from_rng(&mut rand::rng());
+                                let url =
+                                    client.request_generator.url_generator.generate(&mut rng)?;
+                                let (start, stream) =
+                                    client.client(&url, &mut rng, Version::HTTP_2).await?;
 
-                                                            let work = async {
-                                                                while counter
-                                                                    .fetch_sub(1, Ordering::Relaxed)
-                                                                    > 0
-                                                                {
-                                                                    let mut res = client
-                                                                        .work_http2(
-                                                                            &mut client_state,
-                                                                        )
-                                                                        .await;
-                                                                    let is_cancel =
-                                                                        is_cancel_error(&res);
-                                                                    let is_reconnect =
-                                                                        is_hyper_error(&res);
-                                                                    set_connection_time(
-                                                                        &mut res,
-                                                                        connection_time,
-                                                                    );
+                                let mut map = BTreeMap::new();
 
-                                                                    result_data.push(res);
+                                let mut connection = tokio_http2::Connection::client(
+                                    stream,
+                                    shiguredo_http2::Limits::default(),
+                                );
+                                connection.send_preface().await?;
+                                connection.initiate().await?;
+                                for _ in 0..n_http_parallel {
+                                    if counter.fetch_sub(1, Ordering::Relaxed) > 0 {
+                                        let headers = vec![
+                                            tokio_http2::HeaderField::new(":method", "GET")
+                                                .unwrap(),
+                                            tokio_http2::HeaderField::new(":path", url.path())
+                                                .unwrap(),
+                                            tokio_http2::HeaderField::new(":scheme", "https")
+                                                .unwrap(),
+                                            tokio_http2::HeaderField::new(
+                                                ":authority",
+                                                url.authority(),
+                                            )
+                                            .unwrap(),
+                                            tokio_http2::HeaderField::new(
+                                                "user-agent",
+                                                "shiguredo-http2",
+                                            )
+                                            .unwrap(),
+                                            tokio_http2::HeaderField::new("accept", "*/*").unwrap(),
+                                        ];
 
-                                                                    if is_cancel || is_reconnect {
-                                                                        return is_cancel;
-                                                                    }
-                                                                }
-                                                                true
-                                                            };
+                                        let start = std::time::Instant::now();
+                                        let stream_id =
+                                            connection.send_request(headers, true).await?;
+                                        map.insert(stream_id.as_u32(), start);
+                                    }
+                                }
 
-                                                            let is_cancel = tokio::select! {
-                                                                is_cancel = work => {
-                                                                    is_cancel
-                                                                }
-                                                                _ = token.cancelled() => {
-                                                                    true
-                                                                }
-                                                            };
-
-                                                            report_tx.send(result_data).unwrap();
-                                                            is_cancel
-                                                        })
-                                                    })
-                                                    .collect::<Vec<_>>();
-
-                                                let mut connection_gone = false;
-                                                for f in futures {
-                                                    match f.await {
-                                                        Ok(true) => {
-                                                            // All works done
-                                                            connection_gone = true;
-                                                        }
-                                                        Err(_) => {
-                                                            // Unexpected
-                                                            connection_gone = true;
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                }
-
-                                                if connection_gone {
-                                                    break;
-                                                }
-                                            }
-                                            Err(err) => {
+                                while !map.is_empty() {
+                                    let event = tokio::select! {
+                                        _ = token.cancelled() => {
+                                            break;
+                                        }
+                                        event = connection.next_event() => event,
+                                    }?;
+                                    match event {
+                                        shiguredo_http2::Event::StreamClosed { stream_id }
+                                        | shiguredo_http2::Event::HeadersReceived {
+                                            stream_id,
+                                            end_stream: true,
+                                            ..
+                                        }
+                                        | shiguredo_http2::Event::DataReceived {
+                                            stream_id,
+                                            end_stream: true,
+                                            ..
+                                        } => {
+                                            if let Some(start) = map.remove(&stream_id.as_u32()) {
+                                                result_data.push(Ok(RequestResult {
+                                                    rng: SeedableRng::seed_from_u64(0),
+                                                    start_latency_correction: Some(start),
+                                                    start,
+                                                    connection_time: None,
+                                                    first_byte: None,
+                                                    end: std::time::Instant::now(),
+                                                    status: hyper::http::StatusCode::OK,
+                                                    len_bytes: 0, // Not measured
+                                                }));
                                                 if counter.fetch_sub(1, Ordering::Relaxed) > 0 {
-                                                    has_err = true;
-                                                    result_data_err.push(Err(err));
-                                                } else {
-                                                    break;
+                                                    let headers = vec![
+                                                        tokio_http2::HeaderField::new(
+                                                            ":method", "GET",
+                                                        )
+                                                        .unwrap(),
+                                                        tokio_http2::HeaderField::new(
+                                                            ":path",
+                                                            url.path(),
+                                                        )
+                                                        .unwrap(),
+                                                        tokio_http2::HeaderField::new(
+                                                            ":scheme", "https",
+                                                        )
+                                                        .unwrap(),
+                                                        tokio_http2::HeaderField::new(
+                                                            ":authority",
+                                                            url.authority(),
+                                                        )
+                                                        .unwrap(),
+                                                        tokio_http2::HeaderField::new(
+                                                            "user-agent",
+                                                            "shiguredo-http2",
+                                                        )
+                                                        .unwrap(),
+                                                        tokio_http2::HeaderField::new(
+                                                            "accept", "*/*",
+                                                        )
+                                                        .unwrap(),
+                                                    ];
+
+                                                    let start = std::time::Instant::now();
+                                                    let stream_id = connection
+                                                        .send_request(headers, true)
+                                                        .await?;
+                                                    map.insert(stream_id.as_u32(), start);
                                                 }
                                             }
                                         }
+                                        _ => {
+                                            // dbg!(event);
+                                        }
                                     }
-                                    if has_err {
-                                        report_tx.send(result_data_err).unwrap();
-                                    }
-                                }));
-                            }
+                                }
 
-                            rt.block_on(local);
-                        })
+                                report_tx.send(result_data).unwrap();
+                                Ok::<_, ClientError>(())
+                            }));
+                        }
+
+                        rt.block_on(local);
                     })
-                    .collect::<Vec<_>>()
-            }
+                })
+                .collect::<Vec<_>>(),
             HttpWorkType::H1 => connections
                 .map(|num_connection| {
                     let report_tx = report_tx.clone();

@@ -46,6 +46,8 @@ pub enum RequestGenerationError {
     EncodeError(#[from] shiguredo_http11::EncodeError),
     #[error(transparent)]
     InvalidHeaderValue(#[from] http::header::ToStrError),
+    #[error(transparent)]
+    InvalidHeaderName(#[from] shiguredo_http11::HeaderNameError),
 }
 
 impl RequestGenerator {
@@ -83,7 +85,8 @@ impl RequestGenerator {
             .or_insert_with(|| http::header::HeaderValue::from_str(url.authority()).unwrap());
 
         let mut request = shiguredo_http11::Request::with_version(
-            self.method.to_string(),
+            // TODO
+            shiguredo_http11::Method::new(self.method.as_str().as_bytes()).unwrap(),
             if self.http_proxy.is_some() {
                 url.to_string()
             } else {
@@ -94,7 +97,7 @@ impl RequestGenerator {
 
         for (k, v) in headers {
             if let Some(k) = k {
-                request.set_header(k.as_str(), v.to_str()?)?;
+                request.set_header(shiguredo_http11::HeaderName::new(k.as_str())?, v.to_str()?)?;
             }
         }
 
