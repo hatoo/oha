@@ -2556,33 +2556,23 @@ pub mod fast {
                                     stream,
                                     shiguredo_http2::Limits::default(),
                                 );
+                                let headers = vec![
+                                    tokio_http2::HeaderField::new(":method", "GET").unwrap(),
+                                    tokio_http2::HeaderField::new(":path", url.path()).unwrap(),
+                                    tokio_http2::HeaderField::new(":scheme", "https").unwrap(),
+                                    tokio_http2::HeaderField::new(":authority", url.authority())
+                                        .unwrap(),
+                                    tokio_http2::HeaderField::new("user-agent", "shiguredo-http2")
+                                        .unwrap(),
+                                    tokio_http2::HeaderField::new("accept", "*/*").unwrap(),
+                                ];
                                 connection.send_preface().await?;
                                 connection.initiate().await?;
                                 for _ in 0..n_http_parallel {
                                     if counter.fetch_sub(1, Ordering::Relaxed) > 0 {
-                                        let headers = vec![
-                                            tokio_http2::HeaderField::new(":method", "GET")
-                                                .unwrap(),
-                                            tokio_http2::HeaderField::new(":path", url.path())
-                                                .unwrap(),
-                                            tokio_http2::HeaderField::new(":scheme", "https")
-                                                .unwrap(),
-                                            tokio_http2::HeaderField::new(
-                                                ":authority",
-                                                url.authority(),
-                                            )
-                                            .unwrap(),
-                                            tokio_http2::HeaderField::new(
-                                                "user-agent",
-                                                "shiguredo-http2",
-                                            )
-                                            .unwrap(),
-                                            tokio_http2::HeaderField::new("accept", "*/*").unwrap(),
-                                        ];
-
                                         let start = std::time::Instant::now();
                                         let stream_id =
-                                            connection.send_request(headers, true).await?;
+                                            connection.send_request(headers.clone(), true).await?;
                                         map.insert(stream_id.as_u32(), start);
                                     }
                                 }
@@ -2618,39 +2608,9 @@ pub mod fast {
                                                     len_bytes: 0, // Not measured
                                                 }));
                                                 if counter.fetch_sub(1, Ordering::Relaxed) > 0 {
-                                                    let headers = vec![
-                                                        tokio_http2::HeaderField::new(
-                                                            ":method", "GET",
-                                                        )
-                                                        .unwrap(),
-                                                        tokio_http2::HeaderField::new(
-                                                            ":path",
-                                                            url.path(),
-                                                        )
-                                                        .unwrap(),
-                                                        tokio_http2::HeaderField::new(
-                                                            ":scheme", "https",
-                                                        )
-                                                        .unwrap(),
-                                                        tokio_http2::HeaderField::new(
-                                                            ":authority",
-                                                            url.authority(),
-                                                        )
-                                                        .unwrap(),
-                                                        tokio_http2::HeaderField::new(
-                                                            "user-agent",
-                                                            "shiguredo-http2",
-                                                        )
-                                                        .unwrap(),
-                                                        tokio_http2::HeaderField::new(
-                                                            "accept", "*/*",
-                                                        )
-                                                        .unwrap(),
-                                                    ];
-
                                                     let start = std::time::Instant::now();
                                                     let stream_id = connection
-                                                        .send_request(headers, true)
+                                                        .send_request(headers.clone(), true)
                                                         .await?;
                                                     map.insert(stream_id.as_u32(), start);
                                                 }
