@@ -282,7 +282,10 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         help = "Disable the color scheme.",
         alias = "disable-color",
         long = "no-color",
-        env = "NO_COLOR"
+        env = "NO_COLOR",
+        default_value = "",
+        default_missing_value = "true",
+        value_parser = cli::parse_no_color
     )]
     no_color: bool,
     #[cfg(unix)]

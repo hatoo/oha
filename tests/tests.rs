@@ -11,7 +11,7 @@ use std::{
 
 use axum::{Router, extract::Path, response::Redirect, routing::get};
 use bytes::Bytes;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use http::{HeaderMap, Request, Response};
 use http_body_util::BodyExt;
 use http_mitm_proxy::MitmProxy;
@@ -34,6 +34,35 @@ async fn run<'a>(args: impl Iterator<Item = &'a str>) {
     );
 
     oha::run(opts).await.unwrap();
+}
+
+#[test]
+fn test_no_color_env_convention() {
+    for value in ["1", ""] {
+        let status = std::process::Command::new(env!("CARGO_BIN_EXE_oha"))
+            .args([
+                "http://127.0.0.1:9",
+                "-n",
+                "1",
+                "--no-tui",
+                "--output-format",
+                "quiet",
+            ])
+            .env("NO_COLOR", value)
+            .status()
+            .unwrap();
+
+        assert!(status.success());
+    }
+}
+
+#[test]
+fn test_no_color_cli_flag() {
+    let matches = oha::Opts::command()
+        .mut_arg("no_color", |arg| arg.env(None))
+        .try_get_matches_from(["oha", "--no-color", "http://example.com"])
+        .unwrap();
+    assert!(matches.get_flag("no_color"));
 }
 
 // Port 5111- is reserved for testing

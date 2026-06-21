@@ -24,6 +24,23 @@ pub fn parse_n_requests(s: &str) -> Result<usize, String> {
     }
 }
 
+pub fn parse_no_color(s: &str) -> Result<bool, String> {
+    Ok(!s.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_no_color;
+
+    #[test]
+    fn test_parse_no_color() {
+        assert!(!parse_no_color("").unwrap());
+        assert!(parse_no_color("1").unwrap());
+        assert!(parse_no_color("true").unwrap());
+        assert!(parse_no_color("false").unwrap());
+    }
+}
+
 /// An entry specified by `connect-to` to override DNS resolution and default
 /// port numbers. For example, `example.org:80:localhost:5000` will connect to
 /// `localhost:5000` whenever `http://example.org` is requested.
