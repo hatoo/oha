@@ -168,6 +168,24 @@ fn print_json<W: Write>(
     }
 
     #[derive(Serialize)]
+    struct Metrics {
+        success_rate: f64,
+        requests_per_sec: f64,
+        latency_ms: LatencyMs,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename = "latency_ms")]
+    struct LatencyMs {
+        min: f64,
+        mean: f64,
+        p50: f64,
+        p95: f64,
+        p99: f64,
+        max: f64,
+    }
+
+    #[derive(Serialize)]
     struct Triple {
         average: f64,
         fastest: f64,
@@ -196,6 +214,7 @@ fn print_json<W: Write>(
     #[derive(Serialize)]
     struct Result {
         summary: Summary,
+        metrics: Metrics,
         #[serde(rename = "responseTimeHistogram")]
         response_time_histogram: BTreeMap<String, usize>,
         #[serde(rename = "latencyPercentiles")]
@@ -259,7 +278,20 @@ fn print_json<W: Write>(
         .percentiles
         .into_iter()
         .map(|(p, v)| (format!("p{p}"), v))
-        .collect();
+        .collect::<BTreeMap<String, f64>>();
+
+    let metrics = Metrics {
+        success_rate: res.success_rate(),
+        requests_per_sec: res.len() as f64 / total_duration.as_secs_f64(),
+        latency_ms: LatencyMs {
+            min: ms(latency_stat.min()),
+            mean: ms(latency_stat.mean()),
+            p50: ms(latency_percentiles["p50"]),
+            p95: ms(latency_percentiles["p95"]),
+            p99: ms(latency_percentiles["p99"]),
+            max: ms(latency_stat.max()),
+        },
+    };
 
     let first_byte_statistics = res.first_byte_all_statistics();
 
@@ -389,6 +421,7 @@ fn print_json<W: Write>(
         w,
         &Result {
             summary,
+            metrics,
             response_time_histogram,
             latency_percentiles,
             first_byte_histogram,
@@ -730,6 +763,11 @@ fn percentiles(values: &mut [f64]) -> BTreeMap<String, f64> {
     percentile_iter(values)
         .map(|(p, v)| (format!("p{p}"), v))
         .collect()
+}
+
+// convert s to ms
+fn ms(value: f64) -> f64 {
+    (value * 1000.0 * 1000.0).round() / 1000.0
 }
 
 #[cfg(test)]
