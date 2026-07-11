@@ -233,7 +233,7 @@ Note: If qps is specified, burst will be ignored",
     disable_compression: bool,
     #[arg(
         help = "Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2.",
-        default_value = "10",
+        default_value = "0",
         short = 'r',
         long = "redirect"
     )]

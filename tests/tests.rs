@@ -352,6 +352,8 @@ async fn get_host_with_connect_to_redirect(host: &'static str) -> String {
     let args = [
         "-n".to_string(),
         "1".to_string(),
+        "-r".to_string(),
+        "10".to_string(),
         format!("http://{host}/source"),
         "--connect-to".to_string(),
         format!("{host}:80:localhost:{port}"),
