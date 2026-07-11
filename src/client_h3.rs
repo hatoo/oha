@@ -341,7 +341,9 @@ async fn create_and_load_up_single_connection_http3(
                             }
                         }
                         _ = s.acquire() => {
-                            report_tx.send(Err(ClientError::Deadline)).unwrap();
+                            if report_tx.send(Err(ClientError::Deadline)).is_err() {
+                                return;
+                            }
                             connection_gone = true;
                         }
                     }
@@ -358,7 +360,9 @@ async fn create_and_load_up_single_connection_http3(
                     break;
                     // Consume a task
                 } else if rx.recv().await.is_ok() {
-                    report_tx.send(Err(err)).unwrap();
+                    if report_tx.send(Err(err)).is_err() {
+                        return;
+                    }
                 } else {
                     return;
                 }
@@ -426,7 +430,9 @@ pub(crate) async fn work_http3_once(
     if let Some(start_latency_correction) = start_latency_correction {
         set_start_latency_correction(&mut res, start_latency_correction);
     }
-    report_tx.send(res).unwrap();
+    if report_tx.send(res).is_err() {
+        return (true, is_reconnect);
+    }
     (is_cancel, is_reconnect)
 }
 
@@ -519,7 +525,9 @@ pub(crate) fn http3_connection_fast_work_until(
                                         }
                                     };
 
-                                    report_tx.send(result_data).unwrap();
+                                    if report_tx.send(result_data).is_err() {
+                                        return true;
+                                    }
                                     is_cancel
                                 })
                             })
@@ -559,7 +567,7 @@ pub(crate) fn http3_connection_fast_work_until(
                 }
             }
             if has_err {
-                report_tx.send(result_data_err).unwrap();
+                let _sent = report_tx.send(result_data_err);
             }
         }));
     }
