@@ -86,7 +86,7 @@ tokio-util = "0.7.13"
 clap-cargo = "0.18.3"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6"
+tikv-jemallocator = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.11.0"
