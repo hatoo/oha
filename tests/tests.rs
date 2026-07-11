@@ -73,7 +73,7 @@ fn next_port() -> u16 {
 }
 
 #[ctor::ctor]
-fn install_crypto_provider() {
+unsafe fn install_crypto_provider() {
     static INSTALL: OnceLock<()> = OnceLock::new();
     INSTALL.get_or_init(|| {
         let _ = rustls::crypto::CryptoProvider::install_default(
