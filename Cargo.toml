@@ -65,14 +65,14 @@ rustls-pki-types = { version = "1.7.0", optional = true }
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
 quinn-proto = { version = "0.11.10", optional = true, features = ["aws-lc-rs"] }
-http = { version = "1.4.0", optional = true }
+http = { version = "1.4.2", optional = true }
 quinn = { version = "0.11.7", optional = true, features = [
     "aws-lc-rs",
     "runtime-tokio",
 ] }
 
 base64 = "0.22.1"
-rand = "0.10.0"
+rand = "0.10.2"
 hickory-resolver = { version = "0.26.0", features = ["tokio", "system-config"] }
 rand_regex = "0.19.0"
 regex-syntax = "0.8.5"
@@ -80,13 +80,13 @@ url = "2.5.2"
 http-body-util = "0.1.2"
 hyper-util = { version = "0.1.6", features = ["tokio"] }
 tokio-vsock = { version = "0.7.2", optional = true }
-rusqlite = { version = "0.39.0", features = ["bundled"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 num_cpus = "1.16.0"
 tokio-util = "0.7.13"
 clap-cargo = "0.18.3"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6"
+tikv-jemallocator = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 rlimit = "0.11.0"
@@ -97,7 +97,7 @@ axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 bytes = "1.6"
 float-cmp = "0.10.0"
 http-mitm-proxy = { version = "0.18.0", default-features = false }
-jsonschema = "0.46.2"
+jsonschema = "0.47.0"
 lazy_static = "1.5.0"
 predicates = "3.1.0"
 # features = ["aws_lc_rs"] is a workaround for mac & native-tls
@@ -108,7 +108,7 @@ tempfile = "3.10.1"
 rustls = "0.23.18"
 rstest = "0.26.0"
 rstest_reuse = "0.7.0"
-ctor = "0.10.1"
+ctor = "1"
 
 [target.'cfg(unix)'.dev-dependencies]
 actix-web = "4"
