@@ -1,5 +1,13 @@
 # Unreleased
 
+# 1.15.0
+
+- Change default redirect limit to 0 #887
+- Fix NO_COLOR environment handling #886
+- Add metrics to output #882
+- Cap connections to minimum needed #874
+- Add shell completion support #861
+
 # 1.14.0
 
 - fix Possible bug with latency_correction #857
