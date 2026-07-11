@@ -194,7 +194,7 @@ Options:
       --disable-compression
           Disable compression.
   -r, --redirect <REDIRECT>
-          Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2. [default: 10]
+          Limit for number of Redirect. Set 0 for no redirection. Redirection isn't supported for HTTP/2. [default: 0]
       --disable-keepalive
           Disable keep-alive, prevents re-use of TCP connections between different HTTP requests. This isn't supported for HTTP/2.
       --no-pre-lookup
