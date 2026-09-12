@@ -40,7 +40,7 @@ pub enum Http3Error {
 
 use crate::client::QueryLimit;
 use crate::client::{
-    Client, ClientError, ConnectionTime, RequestResult, Stream, is_cancel_error,
+    Client, ClientError, ConnectionTime, RequestResult, Stream, is_cancel_error, send_report,
     set_connection_time, set_start_latency_correction,
 };
 use crate::pcg64si::Pcg64Si;
@@ -386,7 +386,7 @@ async fn create_and_load_up_single_connection_http3(
                             }
                         }
                         _ = s.acquire() => {
-                            report_tx.send(Err(ClientError::Deadline)).unwrap();
+                            send_report(&report_tx, Err(ClientError::Deadline));
                             connection_gone = true;
                         }
                     }
@@ -404,12 +404,12 @@ async fn create_and_load_up_single_connection_http3(
                 } else if let Some(rx) = &rx {
                     // Consume a task
                     if rx.recv().await.is_ok() {
-                        report_tx.send(Err(err)).unwrap();
+                        send_report(&report_tx, Err(err));
                     } else {
                         return;
                     }
                 } else {
-                    report_tx.send(Err(err)).unwrap();
+                    send_report(&report_tx, Err(err));
                 }
             }
         }
@@ -475,7 +475,7 @@ pub(crate) async fn work_http3_once(
     if let Some(start_latency_correction) = start_latency_correction {
         set_start_latency_correction(&mut res, start_latency_correction);
     }
-    report_tx.send(res).unwrap();
+    send_report(report_tx, res);
     (is_cancel, is_reconnect)
 }
 
@@ -568,7 +568,7 @@ pub(crate) fn http3_connection_fast_work_until(
                                         }
                                     };
 
-                                    report_tx.send(result_data).unwrap();
+                                    send_report(&report_tx, result_data);
                                     is_cancel
                                 })
                             })
@@ -608,7 +608,7 @@ pub(crate) fn http3_connection_fast_work_until(
                 }
             }
             if has_err {
-                report_tx.send(result_data_err).unwrap();
+                send_report(&report_tx, result_data_err);
             }
         }));
     }
