@@ -16,7 +16,7 @@ jobs:
         additional_args: ["", "--no-default-features --features native-tls", "--features http3"]
         # vsock feature is only on linux
         include:
-          - os: ["ubuntu-latest"]
+          - os: ubuntu-latest
             additional_args: "--features vsock"
     steps:
       # We need nasm to build aws-lc on windows
@@ -25,6 +25,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test ${{ matrix.additional_args }}
+      - name: Enable VSOCK loopback
+        if: matrix.additional_args == '--features vsock'
+        run: sudo modprobe vsock_loopback
+      - name: Test VSOCK HTTP transport
+        if: matrix.additional_args == '--features vsock'
+        run: cargo test --features vsock --test tests test_vsock -- --ignored
 
   fmt:
     name: Rustfmt

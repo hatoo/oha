@@ -928,6 +928,88 @@ async fn test_http_versions() {
     );
 }
 
+#[cfg(all(target_os = "linux", feature = "vsock"))]
+#[tokio::test]
+#[ignore = "requires vsock_loopback; run with cargo test --features vsock test_vsock -- --ignored"]
+async fn test_vsock() {
+    use tokio_vsock::{VsockAddr, VsockListener};
+
+    let listener = VsockListener::bind(VsockAddr::new(libc::VMADDR_CID_ANY, libc::VMADDR_PORT_ANY))
+        .expect("vsock listener requires Linux VSOCK support");
+    let addr = format!(
+        "{}:{}",
+        libc::VMADDR_CID_LOCAL,
+        listener.local_addr().unwrap().port()
+    );
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    // JoinSet aborts the listener and connection tasks when the test ends.
+    let mut tasks = tokio::task::JoinSet::new();
+    tasks.spawn(async move {
+        let mut connections = tokio::task::JoinSet::new();
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let tx = tx.clone();
+            connections.spawn(async move {
+                hyper::server::conn::http1::Builder::new()
+                    .serve_connection(
+                        TokioIo::new(stream),
+                        service_fn(move |request: Request<Incoming>| {
+                            tx.send((request.uri().clone(), request.headers().clone()))
+                                .unwrap();
+                            async {
+                                Ok::<_, Infallible>(Response::new(http_body_util::Full::new(
+                                    Bytes::from_static(b"Hello World"),
+                                )))
+                            }
+                        }),
+                    )
+                    .await
+                    .unwrap();
+            });
+        }
+    });
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_oha"))
+            .args([
+                "--no-tui",
+                "--output-format",
+                "json",
+                "--vsock-addr",
+                &addr,
+                "-n",
+                "10",
+                "-c",
+                "2",
+                "-t",
+                "2s",
+                "http://vsock.invalid/hello?test=vsock",
+            ])
+            .env("TOKIO_WORKER_THREADS", "2")
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("vsock test timed out")
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["summary"]["successRate"], 1.0, "{report}");
+    assert_eq!(report["statusCodeDistribution"]["200"], 10, "{report}");
+    assert_eq!(report["summary"]["totalData"], 110, "{report}");
+    for _ in 0..10 {
+        let (uri, headers) = rx.try_recv().unwrap();
+        assert_eq!(uri, "/hello?test=vsock");
+        assert_eq!(headers["host"], "vsock.invalid");
+    }
+    assert!(rx.try_recv().is_err());
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn test_unix_socket() {
