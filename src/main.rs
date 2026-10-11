@@ -83,7 +83,7 @@ struct Opts {
         short = 'p',
         default_value = "1"
     )]
-    n_http2_parallel: usize,
+    n_http2_parallel: std::num::NonZeroUsize,
     #[arg(
         help = "Duration of application to send requests.
 On HTTP/1, When the duration is reached, ongoing requests are aborted and counted as \"aborted due to deadline\"
@@ -102,7 +102,7 @@ Examples: -z 10s -z 3m.",
         requires = "duration"
     )]
     wait_ongoing_requests_after_deadline: bool,
-    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"])]
+    #[arg(help = "Rate limit for all, in queries per second (QPS)", short = 'q', conflicts_with_all = ["burst_duration", "burst_requests"], value_parser = cli::parse_qps)]
     query_per_second: Option<f64>,
     #[arg(
         help = "Introduce delay between a predefined number of requests.
@@ -119,7 +119,7 @@ Note: If qps is specified, burst will be ignored",
         requires = "burst_duration",
         conflicts_with = "query_per_second"
     )]
-    burst_requests: Option<usize>,
+    burst_requests: Option<std::num::NonZeroUsize>,
 
     #[arg(
         help = "Generate URL by rand_regex crate but dot is disabled for each query e.g. http://127.0.0.1/[a-z][a-z][0-9]. Currently dynamic scheme, host and port with keep-alive do not work well. See https://docs.rs/rand_regex/latest/rand_regex/struct.Regex.html for details of syntax.",
@@ -951,12 +951,12 @@ impl Opts {
             WorkMode::Until {
                 duration: duration.into(),
                 n_connections: self.n_connections,
-                n_http2_parallel: self.n_http2_parallel,
+                n_http2_parallel: self.n_http2_parallel.get(),
                 query_limit: match self.query_per_second {
                     Some(0f64) | None => self.burst_duration.map(|burst_duration| {
                         client::QueryLimit::Burst(
                             burst_duration.into(),
-                            self.burst_requests.unwrap_or(1),
+                            self.burst_requests.map_or(1, std::num::NonZeroUsize::get),
                         )
                     }),
                     Some(qps) => Some(client::QueryLimit::Qps(qps)),
@@ -966,7 +966,7 @@ impl Opts {
             }
         } else {
             let mut n_connections = self.n_connections;
-            let max_useful = self.n_requests.div_ceil(self.n_http2_parallel);
+            let max_useful = self.n_requests.div_ceil(self.n_http2_parallel.get());
             if n_connections > max_useful {
                 n_connections = max_useful;
             }
@@ -974,12 +974,12 @@ impl Opts {
             WorkMode::FixedNumber {
                 n_requests: self.n_requests,
                 n_connections,
-                n_http2_parallel: self.n_http2_parallel,
+                n_http2_parallel: self.n_http2_parallel.get(),
                 query_limit: match self.query_per_second {
                     Some(0f64) | None => self.burst_duration.map(|burst_duration| {
                         client::QueryLimit::Burst(
                             burst_duration.into(),
-                            self.burst_requests.unwrap_or(1),
+                            self.burst_requests.map_or(1, std::num::NonZeroUsize::get),
                         )
                     }),
                     Some(qps) => Some(client::QueryLimit::Qps(qps)),
@@ -1041,5 +1041,20 @@ mod tests {
         assert!(
             Opts::try_parse_from(["oha", "--worker-threads", "-1", "http://example.com"]).is_err()
         );
+    }
+
+    #[test]
+    fn test_invalid_numeric_cli_flags() {
+        for args in [
+            &["-p", "0"][..],
+            &["-q", "NaN"],
+            &["-q=-1"],
+            &["--burst-delay", "1s", "--burst-rate", "0"],
+        ] {
+            let args = ["oha"].iter().chain(args).chain(&["http://example.com"]);
+            assert!(Opts::try_parse_from(args).is_err());
+        }
+
+        assert!(Opts::try_parse_from(["oha", "-q", "0", "http://example.com"]).is_ok());
     }
 }

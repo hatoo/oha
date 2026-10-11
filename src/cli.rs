@@ -24,6 +24,15 @@ pub fn parse_n_requests(s: &str) -> Result<usize, String> {
     }
 }
 
+pub fn parse_qps(s: &str) -> Result<f64, String> {
+    let qps = s.parse::<f64>().map_err(|e| e.to_string())?;
+    if qps >= 0.0 {
+        Ok(qps)
+    } else {
+        Err("must be 0 or greater".to_string())
+    }
+}
+
 pub fn parse_no_color(s: &str) -> Result<bool, String> {
     Ok(!s.is_empty())
 }
