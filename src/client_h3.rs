@@ -722,7 +722,7 @@ pub async fn work_with_qps_latency_correction(
 ) {
     let (tx, rx) = kanal::unbounded();
 
-    let _work_queue = async move {
+    let work_queue = async move {
         match query_limit {
             QueryLimit::Qps(qps) => {
                 let start = std::time::Instant::now();
@@ -772,6 +772,7 @@ pub async fn work_with_qps_latency_correction(
         None,
     )
     .await;
+    work_queue.await.unwrap();
     for f in futures {
         let _ = f.await;
     }
