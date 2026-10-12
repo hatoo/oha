@@ -885,6 +885,26 @@ async fn test_ipv6() {
     rx.try_recv().unwrap().unwrap();
 }
 
+#[apply(test_all_http_versions)]
+#[tokio::test]
+async fn test_latency_correction(http_version_param: &str) {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        get_req(
+            "/",
+            &[
+                "-q",
+                "10",
+                "--latency-correction",
+                "--http-version",
+                http_version_param,
+            ],
+        ),
+    )
+    .await
+    .expect("oha did not finish");
+}
+
 #[tokio::test]
 async fn test_query_limit() {
     // burst 10 requests with delay of 2s and rate of 4
