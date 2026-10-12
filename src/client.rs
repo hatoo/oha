@@ -1064,8 +1064,17 @@ async fn work_http2_once(
     if let Some(start_latency_correction) = start_latency_correction {
         set_start_latency_correction(&mut res, start_latency_correction);
     }
-    report_tx.send(res).unwrap();
+    send_report(report_tx, res);
     (is_cancel, is_reconnect)
+}
+
+/// Reports a completed request unless reporting has already stopped.
+///
+/// The receiver can be dropped while workers are winding down after a deadline
+/// or cancellation. At that point the result cannot be consumed, and a worker
+/// must not panic merely because it can no longer report it.
+pub(crate) fn send_report<T>(report_tx: &kanal::Sender<T>, result: T) {
+    let _ = report_tx.send(result);
 }
 
 pub(crate) fn set_connection_time<E>(
@@ -1209,7 +1218,7 @@ pub async fn work(
                                 }
                                 Err(err) => {
                                     if counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
-                                        report_tx.send(Err(err)).unwrap();
+                                        send_report(&report_tx, Err(err));
                                     } else {
                                         return;
                                     }
@@ -1234,7 +1243,7 @@ pub async fn work(
                         while counter.fetch_add(1, Ordering::Relaxed) < n_tasks {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
-                            report_tx.send(res).unwrap();
+                            send_report(&report_tx, res);
                             if is_cancel {
                                 break;
                             }
@@ -1375,7 +1384,7 @@ pub async fn work_with_qps(
                                 Err(err) => {
                                     // Consume a task
                                     if let Ok(()) = rx.recv().await {
-                                        report_tx.send(Err(err)).unwrap();
+                                        send_report(&report_tx, Err(err));
                                     } else {
                                         return;
                                     }
@@ -1402,7 +1411,7 @@ pub async fn work_with_qps(
                         while let Ok(()) = rx.recv().await {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
-                            report_tx.send(res).unwrap();
+                            send_report(&report_tx, res);
                             if is_cancel {
                                 break;
                             }
@@ -1549,7 +1558,7 @@ pub async fn work_with_qps_latency_correction(
                                 Err(err) => {
                                     // Consume a task
                                     if rx.recv().await.is_ok() {
-                                        report_tx.send(Err(err)).unwrap();
+                                        send_report(&report_tx, Err(err));
                                     } else {
                                         return;
                                     }
@@ -1577,7 +1586,7 @@ pub async fn work_with_qps_latency_correction(
                             let mut res = client.work_http1(&mut client_state).await;
                             set_start_latency_correction(&mut res, start);
                             let is_cancel = is_cancel_error(&res);
-                            report_tx.send(res).unwrap();
+                            send_report(&report_tx, res);
                             if is_cancel {
                                 break;
                             }
@@ -1686,7 +1695,7 @@ pub async fn work_until(
                                                 }
                                             }
                                             _ = s.acquire() => {
-                                                report_tx.send(Err(ClientError::Deadline)).unwrap();
+                                                send_report(&report_tx, Err(ClientError::Deadline));
                                                 connection_gone = true;
                                             }
                                         }
@@ -1697,7 +1706,7 @@ pub async fn work_until(
                                 }
 
                                 Err(err) => {
-                                    report_tx.send(Err(err)).unwrap();
+                                    send_report(&report_tx, Err(err));
                                     if s.is_closed() {
                                         break;
                                     }
@@ -1728,7 +1737,7 @@ pub async fn work_until(
                         loop {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
-                            report_tx.send(res).unwrap();
+                            send_report(&report_tx, res);
                             if is_cancel || is_end.load(Relaxed) {
                                 break;
                             }
@@ -1750,7 +1759,7 @@ pub async fn work_until(
                     if let Err(e) = f.await
                         && e.is_cancelled()
                     {
-                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+                        send_report(&report_tx, Err(ClientError::Deadline));
                     }
                 }
             }
@@ -1890,7 +1899,7 @@ pub async fn work_until_with_qps(
                                                 }
                                             }
                                             _ = s.acquire() => {
-                                                report_tx.send(Err(ClientError::Deadline)).unwrap();
+                                                send_report(&report_tx, Err(ClientError::Deadline));
                                                 connection_gone = true;
                                             }
                                         }
@@ -1902,7 +1911,7 @@ pub async fn work_until_with_qps(
                                 Err(err) => {
                                     // Consume a task
                                     if rx.recv().await.is_ok() {
-                                        report_tx.send(Err(err)).unwrap();
+                                        send_report(&report_tx, Err(err));
                                     } else {
                                         return;
                                     }
@@ -1938,7 +1947,7 @@ pub async fn work_until_with_qps(
                         while let Ok(()) = rx.recv().await {
                             let res = client.work_http1(&mut client_state).await;
                             let is_cancel = is_cancel_error(&res);
-                            report_tx.send(res).unwrap();
+                            send_report(&report_tx, res);
                             if is_cancel || is_end.load(Relaxed) {
                                 break;
                             }
@@ -1960,7 +1969,7 @@ pub async fn work_until_with_qps(
                     if let Err(e) = f.await
                         && e.is_cancelled()
                     {
-                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+                        send_report(&report_tx, Err(ClientError::Deadline));
                     }
                 }
             }
@@ -2098,7 +2107,7 @@ pub async fn work_until_with_qps_latency_correction(
                                                 }
                                             }
                                             _ = s.acquire() => {
-                                                report_tx.send(Err(ClientError::Deadline)).unwrap();
+                                                send_report(&report_tx, Err(ClientError::Deadline));
                                                 connection_gone = true;
                                             }
                                         }
@@ -2110,7 +2119,7 @@ pub async fn work_until_with_qps_latency_correction(
 
                                 Err(err) => {
                                     if rx.recv().await.is_ok() {
-                                        report_tx.send(Err(err)).unwrap();
+                                        send_report(&report_tx, Err(err));
                                     } else {
                                         return;
                                     }
@@ -2147,7 +2156,7 @@ pub async fn work_until_with_qps_latency_correction(
                             let mut res = client.work_http1(&mut client_state).await;
                             set_start_latency_correction(&mut res, start);
                             let is_cancel = is_cancel_error(&res);
-                            report_tx.send(res).unwrap();
+                            send_report(&report_tx, res);
                             if is_cancel || is_end.load(Relaxed) {
                                 break;
                             }
@@ -2169,7 +2178,7 @@ pub async fn work_until_with_qps_latency_correction(
                     if let Err(e) = f.await
                         && e.is_cancelled()
                     {
-                        report_tx.send(Err(ClientError::Deadline)).unwrap();
+                        send_report(&report_tx, Err(ClientError::Deadline));
                     }
                 }
             }
@@ -2195,7 +2204,7 @@ pub mod fast {
         result_data::ResultData,
     };
 
-    use super::Client;
+    use super::{Client, send_report};
 
     /// Run n tasks by m workers
     pub async fn work(
@@ -2321,7 +2330,7 @@ pub mod fast {
                                                                 }
                                                             };
 
-                                                            report_tx.send(result_data).unwrap();
+                                                            send_report(&report_tx, result_data);
                                                             is_cancel
                                                         })
                                                     })
@@ -2357,7 +2366,7 @@ pub mod fast {
                                         }
                                     }
                                     if has_err {
-                                        report_tx.send(result_data_err).unwrap();
+                                        send_report(&report_tx, result_data_err);
                                     }
                                 }));
                             }
@@ -2403,7 +2412,7 @@ pub mod fast {
                                         }
                                     } => {}
                                 }
-                                report_tx.send(result_data).unwrap();
+                                send_report(&report_tx, result_data);
                             }));
                         }
                         rt.block_on(local);
@@ -2540,7 +2549,7 @@ pub mod fast {
                                                             }
                                                         };
 
-                                                        report_tx.send(result_data).unwrap();
+                                                        send_report(&report_tx, result_data);
                                                         is_cancel
                                                     })
                                                 })
@@ -2575,7 +2584,7 @@ pub mod fast {
                                     }
                                 }
                                 if has_err {
-                                    report_tx.send(result_data_err).unwrap();
+                                    send_report(&report_tx, result_data_err);
                                 }
                             }));
                         }
@@ -2626,7 +2635,7 @@ pub mod fast {
                                         result_data.push(Err(ClientError::Deadline));
                                     }
                                 }
-                                report_tx.send(result_data).unwrap();
+                                send_report(&report_tx, result_data);
                             }));
                         }
                         rt.block_on(local);
@@ -2651,5 +2660,18 @@ pub mod fast {
                 let _ = handle.join();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::send_report;
+
+    #[test]
+    fn send_report_ignores_a_closed_receiver() {
+        let (report_tx, report_rx) = kanal::unbounded();
+        drop(report_rx);
+
+        send_report(&report_tx, ());
     }
 }
