@@ -43,15 +43,19 @@ pub async fn h3_server(
         let _ = tokio::spawn(async move {
             match new_conn.await {
                 Ok(conn) => {
-                    let mut h3_conn = h3::server::Connection::new(h3_quinn::Connection::new(conn))
-                        .await
-                        .unwrap();
+                    let mut h3_conn =
+                        h3::server::Connection::new(h3_quinn::Connection::new(conn.clone()))
+                            .await
+                            .unwrap();
 
                     let tx = tx.clone();
                     match h3_conn.accept().await {
                         Ok(Some(request_resolver)) => {
                             let (req, stream) = request_resolver.resolve_request().await.unwrap();
-                            process_request(req, stream, tx).await
+                            let result = process_request(req, stream, tx).await;
+                            // Closing here would hide client shutdown hangs.
+                            conn.closed().await;
+                            result
                         }
 
                         // indicating no more streams to be received
