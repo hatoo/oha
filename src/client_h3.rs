@@ -256,6 +256,8 @@ pub(crate) async fn send_debug_request_http3(
     }
     let body = body_bytes.freeze();
     let (parts, _) = response.into_parts();
+    drop(stream);
+    drop(client_state);
     let _ = shutdown_tx.send(());
     let _ = http3_driver.await.unwrap();
     Ok(http::Response::from_parts(parts, body))
@@ -573,6 +575,7 @@ pub(crate) fn http3_connection_fast_work_until(
                                 })
                             })
                             .collect::<Vec<_>>();
+                        drop(send_request);
 
                         let mut connection_gone = false;
                         for f in futures {

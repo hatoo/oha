@@ -948,6 +948,66 @@ async fn test_http_versions() {
     );
 }
 
+#[cfg(feature = "http3")]
+#[rstest]
+#[case::debug(&["--debug"])]
+#[case::fast(&["--no-tui"])]
+#[case::rate_limited(&["--no-tui", "-q", "10"])]
+#[tokio::test]
+async fn test_http3_shutdown(#[case] args: &[&str]) {
+    let (tx, rx) = kanal::unbounded();
+    let endpoint = common::bind_h3_server().unwrap();
+    let port = endpoint.local_addr().unwrap().port();
+    let mut server = tokio::task::JoinSet::new();
+    server.spawn(async move {
+        common::h3_server(tx, endpoint).await.unwrap();
+    });
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_oha"))
+            .args([
+                "--http-version",
+                "3",
+                "--insecure",
+                "--output-format",
+                "json",
+                "--worker-threads",
+                "1",
+                "-n",
+                "1",
+                "-c",
+                "1",
+            ])
+            .args(args)
+            .arg(format!("https://127.0.0.1:{port}/"))
+            .env("TOKIO_WORKER_THREADS", "2")
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("oha did not shut down after its HTTP/3 response")
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "oha exited with {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert_eq!(
+        rx.try_recv().unwrap().unwrap().version(),
+        http::Version::HTTP_3
+    );
+    if args.contains(&"--debug") {
+        assert!(String::from_utf8_lossy(&output.stdout).contains("Hello world"));
+    } else {
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["statusCodeDistribution"]["200"], 1, "{report}");
+        assert_eq!(report["summary"]["totalData"], 11, "{report}");
+    }
+}
+
 #[cfg(all(target_os = "linux", feature = "vsock"))]
 #[tokio::test]
 #[ignore = "requires vsock_loopback; run with cargo test --features vsock test_vsock -- --ignored"]
