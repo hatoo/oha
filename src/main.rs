@@ -148,7 +148,7 @@ Note: If qps is specified, burst will be ignored",
     )]
     dump_urls: Option<usize>,
     #[arg(
-        help = "Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.",
+        help = "Correct latency to avoid coordinated omission problem. It's ignored if neither -q nor --burst-delay is set.",
         long = "latency-correction"
     )]
     latency_correction: bool,

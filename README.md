@@ -146,7 +146,7 @@ Options:
       --dump-urls <DUMP_URLS>
           Dump target Urls <DUMP_URLS> times to debug --rand-regex-url
       --latency-correction
-          Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.
+          Correct latency to avoid coordinated omission problem. It's ignored if neither -q nor --burst-delay is set.
       --no-tui
           No realtime tui
       --fps <FPS>
@@ -270,6 +270,11 @@ oha <-z or -n> -c <number of concurrent connections> -q <query per seconds> --la
 - --latency-correction
 
     You can avoid `Coordinated Omission Problem` by using `--latency-correction`.
+
+    With `-q` (or `--burst-delay`), `oha` schedules requests at a fixed rate, but a request can only be sent when one of the `-c` connections is free. If the server is slow, scheduled requests wait for a connection.
+    By default, latency is measured from when a request is actually sent, so this waiting time is left out and the results look better than what clients sending at that rate would see.
+    With `--latency-correction`, latency is measured from the time the request was scheduled, so the waiting time is included.
+    It has no effect unless `-q` or `--burst-delay` is set.
 
 ## Burst feature
 

@@ -148,7 +148,7 @@ Options:
       --dump-urls <DUMP_URLS>
           Dump target Urls <DUMP_URLS> times to debug --rand-regex-url
       --latency-correction
-          Correct latency to avoid coordinated omission problem. It's ignored if -q is not set.
+          Correct latency to avoid coordinated omission problem. It's ignored if neither -q nor --burst-delay is set.
       --no-tui
           No realtime tui
       --fps <FPS>
