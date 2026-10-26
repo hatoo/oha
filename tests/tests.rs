@@ -1326,6 +1326,32 @@ async fn test_json_schema(#[case] success_breakdown: bool) {
 }
 
 #[tokio::test]
+async fn test_text_output_first_byte() {
+    let app = Router::new().route("/", get(|| async move { "Hello World" }));
+
+    let (listener, port) = bind_port().await;
+    tokio::spawn(async { axum::serve(listener, app).await });
+
+    let temp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    run_command([
+        OsStr::new("--no-tui"),
+        OsStr::new("-n"),
+        OsStr::new("5"),
+        OsStr::new(&format!("http://127.0.0.1:{port}/")),
+        OsStr::new("--output"),
+        temp_path.as_os_str(),
+    ])
+    .await;
+
+    let output = std::fs::read_to_string(&temp_path).unwrap();
+
+    assert!(
+        output.contains("  First byte:\t"),
+        "missing first byte line in text output:\n{output}"
+    );
+}
+
+#[tokio::test]
 async fn test_csv_output() {
     let app = Router::new().route("/", get(|| async move { "Hello World" }));
 

@@ -617,6 +617,7 @@ fn print_summary<W: Write>(
 
     let dns_dialup_stat = res.dns_dialup_stat();
     let dns_lookup_stat = res.dns_lookup_stat();
+    let first_byte_stat = res.first_byte_stat();
 
     writeln!(
         w,
@@ -637,6 +638,13 @@ fn print_summary<W: Write>(
         dns_lookup_stat.mean() / timescale.as_secs_f64(),
         dns_lookup_stat.min() / timescale.as_secs_f64(),
         dns_lookup_stat.max() / timescale.as_secs_f64()
+    )?;
+    writeln!(
+        w,
+        "  First byte:\t{:.4} {timescale}, {:.4} {timescale}, {:.4} {timescale}",
+        first_byte_stat.mean() / timescale.as_secs_f64(),
+        first_byte_stat.min() / timescale.as_secs_f64(),
+        first_byte_stat.max() / timescale.as_secs_f64()
     )?;
     writeln!(w)?;
 
