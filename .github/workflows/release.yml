@@ -39,7 +39,7 @@ jobs:
             target: aarch64-unknown-linux-musl
             additional_args: "--features vsock"
             use_cross: true
-          - os: macos-14
+          - os: macos-latest
             artifact_name: oha
             release_name: oha-macos-arm64
             target: aarch64-apple-darwin
