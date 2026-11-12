@@ -31,6 +31,8 @@ mod client;
 mod client_h3;
 mod curl_compat;
 mod db;
+#[cfg(target_os = "linux")]
+mod fd_table;
 mod histogram;
 mod monitor;
 mod pcg64si;
@@ -996,6 +998,19 @@ fn main() {
     if let Some(shell) = opts.completions {
         clap_complete::generate(shell, &mut Opts::command(), "oha", &mut std::io::stdout());
         return;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let n_connections = match opts.work_mode() {
+            WorkMode::Debug => 1,
+            WorkMode::FixedNumber { n_connections, .. } | WorkMode::Until { n_connections, .. } => {
+                n_connections
+            }
+        };
+        // This is a best-effort optimization; ordinary socket creation will
+        // still report resource errors if the requested load cannot be run.
+        let _ = fd_table::reserve(n_connections, opts.worker_threads.get());
     }
 
     let rt = tokio::runtime::Builder::new_multi_thread()
