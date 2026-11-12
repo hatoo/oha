@@ -930,6 +930,111 @@ async fn test_worker_threads_fast_mode() {
     );
 }
 
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_result_collection_single_worker(#[case] latency_correction: bool) {
+    let (listener, port) = bind_port().await;
+    let app = Router::new().route("/", get(|| async { "ok" }));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_oha"));
+    command.args([
+        "--no-tui",
+        "--output-format",
+        "json",
+        "--worker-threads",
+        "1",
+        "-n",
+        "20",
+        "-q",
+        "100",
+        "-c",
+        "1",
+    ]);
+    if latency_correction {
+        command.arg("--latency-correction");
+    }
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        command
+            .arg(format!("http://127.0.0.1:{port}/"))
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("result collection blocked the runtime")
+    .unwrap();
+    server.abort();
+    assert!(output.status.success(), "{:?}", output);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["statusCodeDistribution"]["200"], 20);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_result_collection_ctrl_c() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let count = Arc::new(AtomicUsize::new(0));
+    let stalled = Arc::new(tokio::sync::Notify::new());
+    let stalled_server = stalled.clone();
+    let app = Router::new().route(
+        "/",
+        get(move || {
+            let count = count.clone();
+            let stalled = stalled_server.clone();
+            async move {
+                if count.fetch_add(1, Ordering::SeqCst) == 10 {
+                    // With one connection, the previous ten responses have completed.
+                    // Leave this request pending to check that Ctrl+C does not wait for it.
+                    stalled.notify_one();
+                    std::future::pending::<()>().await;
+                }
+                "ok"
+            }
+        }),
+    );
+    let (listener, port) = bind_port().await;
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_oha"))
+        .args([
+            "--no-tui",
+            "--output-format",
+            "json",
+            "--worker-threads",
+            "1",
+            "-n",
+            "1000",
+            "-q",
+            "100",
+            "-c",
+            "1",
+        ])
+        .arg(format!("http://127.0.0.1:{port}/"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), stalled.notified())
+        .await
+        .expect("requests did not complete");
+    // SAFETY: the child is still owned and has not been reaped.
+    assert_eq!(
+        unsafe { libc::kill(child.id().unwrap() as libc::pid_t, libc::SIGINT) },
+        0
+    );
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait_with_output())
+        .await
+        .expect("Ctrl+C did not stop oha")
+        .unwrap();
+    server.abort();
+    assert!(output.status.success(), "{:?}", output);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["statusCodeDistribution"]["200"], 10);
+}
+
 #[tokio::test]
 async fn test_http_versions() {
     assert_eq!(get_req("/", &[]).await.version(), http::Version::HTTP_11);
