@@ -738,39 +738,56 @@ async fn run(mut opts: Opts) -> anyhow::Result<()> {
             mode => {
                 let (result_tx, result_rx) = kanal::unbounded();
                 let data_collector = if no_tui {
-                    // When `--no-tui` is enabled, just collect all data.
+                    // Keep receiving results during the run, even without a TUI (#910).
+                    // Previously, collection started only after the workers finished,
+                    // so every result accumulated in kanal's unbounded queue. Its
+                    // VecDeque grows while holding the channel lock, blocking result
+                    // senders and stalling request processing as the queue gets larger.
+                    // Concurrent collection keeps the queue short and moves ResultData
+                    // growth outside that lock. Async recv also leaves runtime workers
+                    // free while waiting, and this task owns the results for Ctrl+C.
+                    let collector = tokio::spawn(async move {
+                        let result_rx = result_rx.to_async();
+                        let mut all = ResultData::default();
+                        let ctrl_c = tokio::signal::ctrl_c();
+                        tokio::pin!(ctrl_c);
 
-                    let token = tokio_util::sync::CancellationToken::new();
-                    let result_rx_ctrl_c = result_rx.clone();
-                    let token_ctrl_c = token.clone();
-                    let ctrl_c = tokio::spawn(async move {
-                        tokio::select! {
-                            _ = tokio::signal::ctrl_c() => {
-                                let mut all: ResultData = Default::default();
-                                let mut buf = Vec::new();
-                                let _ = result_rx_ctrl_c.drain_into(&mut buf);
-                                for res in buf {
-                                    all.push(res);
+                        loop {
+                            let receive = result_rx.recv();
+                            tokio::pin!(receive);
+                            tokio::select! {
+                                result = &mut receive => {
+                                    match result {
+                                        Ok(res) => all.push(res),
+                                        Err(_) => return (all, print_config),
+                                    }
                                 }
-                                let _ = printer::print_result(print_config, start, &all, start.elapsed());
-                                std::process::exit(libc::EXIT_SUCCESS);
+                                _ = &mut ctrl_c => {
+                                    // Kanal can deliver directly to a pending receive.
+                                    // Poll it once before draining the queue so that an
+                                    // already-delivered result is included in the report.
+                                    if let std::task::Poll::Ready(Ok(res)) =
+                                        std::future::poll_fn(|cx| {
+                                            std::task::Poll::Ready(std::future::Future::poll(
+                                                receive.as_mut(), cx,
+                                            ))
+                                        }).await
+                                    {
+                                        all.push(res);
+                                    }
+                                    let mut buf = Vec::new();
+                                    let _ = result_rx.drain_into(&mut buf);
+                                    for res in buf {
+                                        all.push(res);
+                                    }
+                                    let _ = printer::print_result(print_config, start, &all, start.elapsed());
+                                    std::process::exit(libc::EXIT_SUCCESS);
+                                }
                             }
-                            _ = token_ctrl_c.cancelled() => {
-                                print_config
-                            }
-
                         }
                     });
 
-                    Box::pin(async move {
-                        token.cancel();
-                        let config = ctrl_c.await.unwrap();
-                        let mut all = ResultData::default();
-                        while let Ok(res) = result_rx.recv() {
-                            all.push(res);
-                        }
-                        (all, config)
-                    })
+                    Box::pin(async move { collector.await.unwrap() })
                         as Pin<Box<dyn std::future::Future<Output = (ResultData, PrintConfig)>>>
                 } else {
                     // Spawn monitor future which draws realtime tui
