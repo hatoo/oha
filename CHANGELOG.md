@@ -1,5 +1,17 @@
 # Unreleased
 
+# 1.17.0 (2026-11-14)
+
+- Add first byte stats to text output #906
+- Fix HTTP/3 hangs with a rate limit and `--latency-correction` #902
+- Fix HTTP/3 shutdown hangs in debug and fast modes #903
+- Reject invalid values for `-p`, `-q` and `--burst-rate` #901
+- Fix request processing stalls by collecting results concurrently in `--no-tui` mode #911
+- Reduce connection startup stalls on Linux by preallocating the file descriptor table #912
+- Improve PGO profiles by combining duration and request-count runs #897
+- Add Simplified Chinese README translation #904
+- Clarify how `--latency-correction` works #905
+
 # 1.16.0 (2026-08-23)
 
 - Support HTTP QUERY method #894
