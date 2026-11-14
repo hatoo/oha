@@ -1,7 +1,7 @@
 # oha (おはよう)
 
 [![GitHub Actions](https://github.com/hatoo/oha/workflows/CI/badge.svg)](https://github.com/hatoo/oha/actions?query=workflow%3ACI)
-[![Crates.io](https://img.shields.io/crates/v/oha.svg)](https://crates.io/crates/oha)
+
 [![Arch Linux](https://img.shields.io/archlinux/v/extra/x86_64/oha)](https://archlinux.org/packages/extra/x86_64/oha/)
 [![Homebrew](https://img.shields.io/homebrew/v/oha)](https://formulae.brew.sh/formula/oha)
 
