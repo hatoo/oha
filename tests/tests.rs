@@ -730,6 +730,44 @@ async fn test_redirect() {
     }
 }
 
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_chained_relative_redirects(#[case] cross_authority: bool) {
+    let (listener, port) = bind_port().await;
+    let (tx, rx) = kanal::unbounded();
+    let target = format!("http://127.0.0.1:{port}");
+    let app = Router::new()
+        .route("/start", get(|| async { Redirect::temporary("/dir/next") }))
+        .route("/dir/next", get(|| async { Redirect::temporary("leaf") }))
+        .route(
+            "/dir/leaf",
+            get(move |headers: HeaderMap| async move {
+                tx.send(headers["host"].to_str().unwrap().to_string())
+                    .unwrap();
+                "done"
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let start = if cross_authority {
+        let (listener, _) = bind_port().await;
+        let address = listener.local_addr().unwrap();
+        let location = format!("{target}/start");
+        let app = Router::new().route(
+            "/start",
+            get(move || async move { Redirect::temporary(&location) }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{address}/start")
+    } else {
+        format!("{target}/start")
+    };
+    run(["-n", "1", "-c", "1", "--redirect", "5", &start]).await;
+    assert_eq!(rx.try_recv().unwrap(), Some(format!("127.0.0.1:{port}")));
+}
+
 #[tokio::test]
 async fn test_connect_to() {
     assert_eq!(
