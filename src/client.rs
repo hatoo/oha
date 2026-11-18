@@ -42,6 +42,12 @@ fn format_host_port(host: &str, port: u16) -> String {
     }
 }
 
+/// A redirect may reuse the current connection only if both the scheme and the
+/// authority are unchanged (e.g. `http://B` -> `https://B` needs a new connection).
+fn can_reuse_connection(from: &Url, to: &Url) -> bool {
+    from.scheme() == to.scheme() && from.authority() == to.authority()
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionTime {
     pub dns_lookup: std::time::Duration,
@@ -940,7 +946,7 @@ impl Client {
         };
 
         let (mut send_request, send_request_base) =
-            if base_url.authority() == url.authority() && !self.disable_keepalive {
+            if can_reuse_connection(&base_url, &url) && !self.disable_keepalive {
                 // reuse connection
                 (send_request, None)
             } else {
@@ -953,8 +959,8 @@ impl Client {
             send_request = stream;
         }
 
-        let mut request = self.generate_request(&mut seed.clone())?.1;
-        if url.authority() != base_url.authority() {
+        let (request_url, mut request, _) = self.generate_request(&mut seed.clone())?;
+        if url.authority() != request_url.authority() {
             request.headers_mut().insert(
                 http::header::HOST,
                 http::HeaderValue::from_str(url.authority())?,
@@ -994,9 +1000,15 @@ impl Client {
         }
 
         if let Some(location) = parts.headers.get("Location") {
-            let (send_request_redirect, new_status, len) =
-                Box::pin(self.redirect(base_url, seed, send_request, location, limit - 1, rng))
-                    .await?;
+            let (send_request_redirect, new_status, len) = Box::pin(self.redirect(
+                Cow::Owned(url),
+                seed,
+                send_request,
+                location,
+                limit - 1,
+                rng,
+            ))
+            .await?;
             send_request = send_request_redirect;
             status = new_status;
             len_bytes = len;
@@ -2651,5 +2663,18 @@ pub mod fast {
                 let _ = handle.join();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod redirect_reuse_tests {
+    use super::*;
+
+    #[test]
+    fn connection_is_reused_only_for_same_scheme_and_authority() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        assert!(can_reuse_connection(&u("http://b/x"), &u("http://b/y")));
+        assert!(!can_reuse_connection(&u("http://b/x"), &u("https://b/y")));
+        assert!(!can_reuse_connection(&u("http://a/x"), &u("http://b/y")));
     }
 }
